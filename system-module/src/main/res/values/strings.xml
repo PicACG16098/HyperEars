@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">HyperEars</string>
+    <string name="xposed_description">Third-party TWS integration for Xiaomi HyperOS. Currently supports vivo TWS Air3 Pro.</string>
+    <string-array name="xposed_scope">
+        <item>com.android.bluetooth</item>
+        <item>com.milink.service</item>
+    </string-array>
+</resources>

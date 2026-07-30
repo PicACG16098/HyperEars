@@ -1,0 +1,3 @@
+-keep class dev.hyperears.hook.HookEntry { *; }
+-keep class dev.hyperears.hook.** { *; }
+-keep class dev.hyperears.integration.** { *; }
