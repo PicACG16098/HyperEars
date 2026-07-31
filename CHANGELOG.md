@@ -2,6 +2,19 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/)。公开版本变化记录在此文件中。
 
+## [0.10.3] - 2026-07-31
+
+### Added
+
+- 增加独立“关于”页面，集中展示版本、设备支持分级、许可证、源码、发布、问题反馈、
+  第三方声明和隐私说明。
+- 为项目文档增加 HyperEars 横版标题图。
+
+### Architecture
+
+- 应用界面引入 Compose Navigation，将运行看板与静态项目信息拆分为独立导航目的地。
+- 关于页不订阅运行状态，也不会触发 Bluetooth 或 MiLink 操作。
+
 ## [0.10.2] - 2026-07-31
 
 ### Added
@@ -28,4 +41,5 @@
 - Release 构建改用独立环境变量签名，不再使用 debug 证书。
 - 增加 CI、标签发布、APK 签名验证和 SHA-256 产物。
 
+[0.10.3]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.10.3
 [0.10.2]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.10.2

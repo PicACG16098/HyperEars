@@ -11,11 +11,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.hyperears.bridge.ModuleContract
 import dev.hyperears.integration.ControlRequest
-import dev.hyperears.ui.dashboard.DashboardScreen
 import dev.hyperears.ui.dashboard.DashboardUiState
 import dev.hyperears.ui.dashboard.DeviceSessionCollection
 import dev.hyperears.ui.dashboard.DeviceSessionReducer
 import dev.hyperears.ui.dashboard.DeviceSessionSnapshot
+import dev.hyperears.ui.navigation.HyperEarsApp
 import dev.hyperears.ui.theme.HyperEarsTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -86,7 +86,7 @@ class MainActivity : ComponentActivity() {
                 val bridgeProcesses = miLinkProcesses.collectAsStateWithLifecycle().value
                 val updatedAt = lastUpdatedAtMillis.collectAsStateWithLifecycle().value
 
-                DashboardScreen(
+                HyperEarsApp(
                     uiState = DashboardUiState(
                         sessions = activeSessions.values
                             .sortedBy { it.state.deviceName.orEmpty() },

@@ -1,5 +1,7 @@
 # HyperEars
 
+![HyperEars cover](docs/assets/coolapk-title.png)
+
 [简体中文](README.md) · [Installation](docs/installation.md) · [Compatibility](docs/compatibility.md) · [Troubleshooting](docs/troubleshooting.md)
 
 [![CI](https://github.com/silverpoetry/HyperEars/actions/workflows/ci.yml/badge.svg)](https://github.com/silverpoetry/HyperEars/actions/workflows/ci.yml)
