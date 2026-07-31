@@ -7,33 +7,40 @@ import org.junit.Test
 
 class BoseQuietComfortMiLinkCardAdapterTest {
     @Test
-    fun mapsOnlyDeviceConfirmedQuietComfortModesToNativeSelections() {
-        assertTrue(
-            BoseQuietComfortMiLinkCardAdapter.isTransparencySelected(
-                NoiseMode.TRANSPARENCY,
-            ),
+    fun quietAwareAndWindKeepMutuallyExclusiveNativeSelections() {
+        val presentedModes = listOf(
+            NoiseMode.TRANSPARENCY,
+            NoiseMode.ANC,
+            NoiseMode.WIND,
         )
-        assertFalse(
-            BoseQuietComfortMiLinkCardAdapter.isNoiseCancellationSelected(
-                NoiseMode.TRANSPARENCY,
-            ),
-        )
+        presentedModes.forEach { current ->
+            val selected = presentedModes.filter { candidate ->
+                BoseQuietComfortMiLinkCardAdapter.isModeSelected(candidate, current)
+            }
+            assertTrue(selected == listOf(current))
+        }
+    }
 
-        assertTrue(
-            BoseQuietComfortMiLinkCardAdapter.isNoiseCancellationSelected(
-                NoiseMode.ANC,
-            ),
-        )
-        assertFalse(
-            BoseQuietComfortMiLinkCardAdapter.isTransparencySelected(NoiseMode.ANC),
-        )
-
-        listOf(null, NoiseMode.OFF, NoiseMode.WIND).forEach { unsupported ->
+    @Test
+    fun unsupportedOffDoesNotSelectAnyPresentedMode() {
+        listOf(null, NoiseMode.OFF).forEach { unsupported ->
             assertFalse(
-                BoseQuietComfortMiLinkCardAdapter.isTransparencySelected(unsupported),
+                BoseQuietComfortMiLinkCardAdapter.isModeSelected(
+                    NoiseMode.TRANSPARENCY,
+                    unsupported,
+                ),
             )
             assertFalse(
-                BoseQuietComfortMiLinkCardAdapter.isNoiseCancellationSelected(unsupported),
+                BoseQuietComfortMiLinkCardAdapter.isModeSelected(
+                    NoiseMode.ANC,
+                    unsupported,
+                ),
+            )
+            assertFalse(
+                BoseQuietComfortMiLinkCardAdapter.isModeSelected(
+                    NoiseMode.WIND,
+                    unsupported,
+                ),
             )
         }
     }

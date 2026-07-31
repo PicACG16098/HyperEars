@@ -1,5 +1,6 @@
 package dev.hyperears.integration
 
+import dev.hyperears.protocol.bose.BoseBmapWireCodec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -262,8 +263,9 @@ class EarbudAdapterHierarchyTest {
         val protocol = requireNotNull(adapter.createProtocol())
 
         assertTrue(adapter.capabilities.noiseControl)
+        assertTrue(adapter.capabilities.windNoiseControl)
         assertEquals(
-            setOf(NoiseMode.ANC, NoiseMode.TRANSPARENCY),
+            setOf(NoiseMode.ANC, NoiseMode.TRANSPARENCY, NoiseMode.WIND),
             adapter.supportedNoiseModes,
         )
         assertEquals(
@@ -300,6 +302,16 @@ class EarbudAdapterHierarchyTest {
                 .single()
                 .hex(),
         )
+        assertTrue(protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.WIND)).isEmpty())
+
+        protocol.offer(boseModeConfigStatus(0, "Quiet", rawCnc = 0, wind = false))
+        protocol.offer(boseModeConfigStatus(1, "Aware", rawCnc = 10, wind = false))
+        protocol.offer(boseModeConfigStatus(2, "Commute", rawCnc = 4, wind = true))
+        protocol.offer(boseModeConfigStatus(3, "Music", rawCnc = 5, wind = false))
+        assertEquals(
+            "1F 03 05 02 02 00",
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.WIND)).single().hex(),
+        )
         assertTrue(protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.OFF)).isEmpty())
         assertEquals(
             "1F 03 01 00",
@@ -309,8 +321,8 @@ class EarbudAdapterHierarchyTest {
                 .hex(),
         )
         assertEquals(
-            EarbudEvent.NoiseModeChanged(NoiseMode.TRANSPARENCY, acknowledged = true),
-            protocol.offer(hex("1F 03 03 01 01")).single(),
+            EarbudEvent.NoiseModeChanged(NoiseMode.WIND, acknowledged = true),
+            protocol.offer(hex("1F 03 03 01 02")).single(),
         )
     }
 
@@ -392,6 +404,31 @@ class EarbudAdapterHierarchyTest {
 
     private fun ByteArray.hex(): String =
         joinToString(" ") { "%02X".format(it.toInt() and 0xFF) }
+
+    private fun boseModeConfigStatus(
+        index: Int,
+        name: String,
+        rawCnc: Int,
+        wind: Boolean,
+    ): ByteArray {
+        val payload = ByteArray(47).apply {
+            this[0] = index.toByte()
+            this[2] = index.toByte()
+            name.toByteArray().copyInto(
+                destination = this,
+                destinationOffset = 6,
+                endIndex = minOf(name.toByteArray().size, 32),
+            )
+            this[42] = rawCnc.toByte()
+            this[46] = if (wind) 1.toByte() else 0.toByte()
+        }
+        return BoseBmapWireCodec.packet(
+            functionBlock = 0x1F,
+            function = 0x06,
+            operator = BoseBmapWireCodec.Operator.STATUS,
+            payload = payload,
+        )
+    }
 
     private fun identity(
         name: String?,

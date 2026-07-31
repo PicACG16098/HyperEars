@@ -1,6 +1,5 @@
 package dev.hyperears.hook
 
-import android.content.Context
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -37,7 +36,7 @@ internal object StarRingUltraMiLinkCardAdapter : MiLinkCardAdapter {
             return null
         }
 
-        val wind = createHostAncItem(
+        val wind = createNativeMiLinkAncItem(
             context = root.context,
             hostClassLoader = environment.hostClassLoader,
             layoutTemplate = noiseCancellation,
@@ -123,35 +122,11 @@ internal object StarRingUltraMiLinkCardAdapter : MiLinkCardAdapter {
         }
     }
 
-    private fun createHostAncItem(
-        context: Context,
-        hostClassLoader: ClassLoader,
-        layoutTemplate: View,
-    ): View? = runCatching {
-        val item = Class.forName(HOST_ANC_ITEM_CLASS, true, hostClassLoader)
-            .asSubclass(View::class.java)
-            .getConstructor(Context::class.java)
-            .newInstance(context)
-        item.layoutParams = when (val source = layoutTemplate.layoutParams) {
-            is LinearLayout.LayoutParams -> LinearLayout.LayoutParams(source)
-            else -> LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f,
-            )
-        }
-        item
-    }.onFailure {
-        ModuleLog.warn("MiLinkUi", "native ANC item unavailable", it)
-    }.getOrNull()
-
     internal fun isModeSelected(
         itemMode: NoiseMode,
         currentMode: NoiseMode?,
     ): Boolean = itemMode == currentMode
 
-    private const val HOST_ANC_ITEM_CLASS =
-        "com.miui.circulate.world.headset.ui.HeadsetControlAncItemView"
     private const val ANC_CARD_ID = "anc_card"
     private const val ANC_TRANSPARENCY_ID = "anc_clear"
     private const val ANC_NOISE_CANCELLATION_ID = "anc_noise_cancel"

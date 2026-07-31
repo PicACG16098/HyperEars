@@ -104,13 +104,16 @@ object BoseQuietComfortHeadphonesAdapter : BoseHeadphonesAdapter() {
         quietModeIndex = 0,
         awareModeIndex = 1,
         fullAwareCnc = 10,
+        windModeFromConfig = true,
     )
     override val capabilities: EarbudCapabilities = super.capabilities.copy(
         noiseControl = true,
+        windNoiseControl = true,
     )
     override val supportedNoiseModes: Set<NoiseMode> = setOf(
         NoiseMode.ANC,
         NoiseMode.TRANSPARENCY,
+        NoiseMode.WIND,
     )
 
     /**
@@ -134,6 +137,12 @@ data class BoseBmapProfile(
     val quietModeIndex: Int,
     val awareModeIndex: Int,
     val fullAwareCnc: Int,
+    /**
+     * Whether a non-built-in ModeConfig slot with `wind=true` is exposed as the WIND mode.
+     *
+     * This does not enable ModeConfig editing; HyperEars only switches to the returned slot.
+     */
+    val windModeFromConfig: Boolean,
 )
 
 private class BoseBmapEarbudProtocol(
@@ -162,7 +171,12 @@ private class BoseBmapEarbudProtocol(
                 ?.let { listOf(BoseBmapWireCodec.switchMode(it.awareModeIndex)) }
                 .orEmpty()
 
-            NoiseMode.OFF, NoiseMode.WIND -> emptyList()
+            NoiseMode.WIND -> activeProfile
+                ?.windModeIndex()
+                ?.let { listOf(BoseBmapWireCodec.switchMode(it)) }
+                .orEmpty()
+
+            NoiseMode.OFF -> emptyList()
         }
     }
 
@@ -259,12 +273,21 @@ private class BoseBmapEarbudProtocol(
         profile.quietModeIndex -> NoiseMode.ANC
         profile.awareModeIndex -> NoiseMode.TRANSPARENCY
         else -> modeConfigs[this]?.let { config ->
-            if (config.rawCnc >= profile.fullAwareCnc) {
-                NoiseMode.TRANSPARENCY
-            } else {
-                NoiseMode.ANC
+            when {
+                profile.windModeFromConfig && config.wind -> NoiseMode.WIND
+                config.rawCnc >= profile.fullAwareCnc -> NoiseMode.TRANSPARENCY
+                else -> NoiseMode.ANC
             }
         }
+    }
+
+    private fun BoseBmapProfile.windModeIndex(): Int? {
+        if (!windModeFromConfig) return null
+        return modeConfigs.values
+            .asSequence()
+            .filterNot { it.index == quietModeIndex || it.index == awareModeIndex }
+            .firstOrNull { it.wind }
+            ?.index
     }
 }
 

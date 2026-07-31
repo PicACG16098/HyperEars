@@ -100,13 +100,15 @@ HyperEars 不改写其卡片形态。具体型号呈现适配器只移除协议�
 读取模式配置  1F 06 05 00
 ```
 
-Quiet 映射为 MiLink“降噪”，Aware 映射为“通透”。切换后再次读取
-CurrentMode，只有耳机返回的状态才会更新卡片。
+Quiet 映射为 MiLink“降噪”，Aware 映射为“通透”。后续自定义模式槽仍由
+ModeConfig 动态发现；其中非内置槽且 `wind=true` 的通勤模式映射为
+MiLink“抗风噪”。切换三者都只发送 CurrentMode START，随后再次读取
+CurrentMode；HyperEars 不修改模式名称、CNC、空间音频或风噪参数。
 
 该固件没有已验证的免鉴权“关闭降噪”指令，因此不会伪造第三种状态。HyperEars
 使用 MiLink 17.2.4 原生头戴式 ANC 卡片，具体可用模式仍由
 `BoseQuietComfortHeadphonesAdapter.supportedNoiseModes` 和协议能力共同约束。
-自定义模式槽按设备返回的 CNC 配置折叠为“降噪”或“通透”状态。
+其他未呈现的自定义模式槽按设备返回的 CNC 配置折叠为“降噪”或“通透”状态。
 
 卡片生命周期入口按四个稳定参数类型定位，不依赖被混淆为 `m`（17.2.0）或
 `p`（17.2.4）的函数名。
@@ -115,8 +117,9 @@ ANC 能力从 MiLink 稳定的
 `QueryLocal/QueryServer.getSupportAncMode(targetAddress, deviceId)` 边界发布：
 原始能力位 `3` 表示不含通透，`7` 表示完整原生三态集合；MiLink 自己再把它们
 标准化为 UI 值 `1/2` 并执行异步加载。这样无需依赖在 17.2.0 中被混淆为
-`b0.L()` 的 Controller。Bose 仍发布包含 Quiet/Aware 的原生能力集合，具体
-Adapter 只在卡片绑定时移除设备实际不支持的“关闭”入口。
+`b0.L()` 的 Controller。Bose 仍发布完整的原生三项能力集合，具体 Adapter
+在卡片绑定时以 MiLink 自己的 ANC item 把设备不支持的“关闭”入口替换为
+“抗风噪”；它只切换动态发现的通勤槽，不提供 ModeConfig 参数编辑。
 
 ## 实现边界
 

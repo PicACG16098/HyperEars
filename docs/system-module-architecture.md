@@ -127,8 +127,9 @@ WireCodec 不认识 Adapter、MiLink 或生命周期。
 
 具体型号拥有自己的不可变协议画像。例如
 `BoseQuietComfortHeadphonesAdapter.bmapProfile` 声明产品 ID、Quiet/Aware
-槽位和模式解释阈值；Bose 家族协议在产品 ID 未确认前只读型号与电量，不发送
-AudioModes 查询，也不暴露具体型号能力。产品画像 Registry 是唯一组合根，
+槽位、模式解释阈值，以及从 ModeConfig 的 `wind=true` 动态发现通勤槽的策略；
+Bose 家族协议在产品 ID 未确认前只读型号与电量，不发送 AudioModes 查询，也
+不暴露具体型号能力。产品画像 Registry 是唯一组合根，
 通用协议中没有具体产品常量。
 
 控制确认策略由 Adapter 声明为
@@ -265,11 +266,10 @@ MiLink 的设备 ID 只承担“进入官方耳机路径并选择物理形态”
   布局和跨型号污染。
 
 Bose QuietComfort 的具体卡片 Adapter 一次性把不受支持的“关闭”按钮替换为
-同 ID 占位 View；MiLink 后续异步更新仍只持有已脱离布局的原按钮，因此不会
-把第三个按钮重新显示。StarRing Ultra 的具体卡片 Adapter 则直接实例化
-MiLink 自己的 `HeadsetControlAncItemView`，在原生降噪卡中加入等权的第四个
-“抗风噪”模式项；布局、字体、图标尺寸和选中动画继续由宿主控件负责。通用
-MiLink Hook 不包含这两种型号的 UI 分支。
+同 ID、同布局参数的原生 `HeadsetControlAncItemView`，用于切换协议动态发现的
+“抗风噪”模式槽。StarRing Ultra 的具体卡片 Adapter 则用同一原生控件工厂，
+在原生降噪卡中加入等权的第四个“抗风噪”模式项；布局、字体、图标尺寸和选中
+动画继续由宿主控件负责。通用 MiLink Hook 不包含这两种型号的 UI 分支。
 
 Hook 只在实机确认使用耳机桥的 MiLink `:audio`、`:core` 和 `:ui` 进程安装。
 通用卡片扩展仅结构匹配 `HeadSetsDetail` 的稳定四参数绑定签名；不依赖其
