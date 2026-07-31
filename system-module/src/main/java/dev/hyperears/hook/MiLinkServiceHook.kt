@@ -580,7 +580,6 @@ internal class MiLinkServiceHook : HookContext() {
             ?.let(ProcessStateStore::knownSnapshot)
             ?: EarbudState()
         val state = ProcessStateStore.accept(intent) ?: return
-        headsetDetailExtension?.onStateChanged(state)
         state.address?.let {
             val normalized = normalizeAddress(it)
             if (state.sessionActive) {
@@ -594,6 +593,9 @@ internal class MiLinkServiceHook : HookContext() {
             }
         }
         notifyRuntimeChanged(previous, state)
+        // Let the model-specific card adapter render after MiLink has consumed the stock
+        // three-state callback; otherwise the host can overwrite an extended mode such as WIND.
+        headsetDetailExtension?.onStateChanged(state)
     }
 
     private fun publishCurrentBridgeStatus(targetPackage: String) {

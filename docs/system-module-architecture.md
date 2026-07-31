@@ -266,8 +266,10 @@ MiLink 的设备 ID 只承担“进入官方耳机路径并选择物理形态”
 
 Bose QuietComfort 的具体卡片 Adapter 一次性把不受支持的“关闭”按钮替换为
 同 ID 占位 View；MiLink 后续异步更新仍只持有已脱离布局的原按钮，因此不会
-把第三个按钮重新显示。StarRing Ultra 的抗风噪开关也只由其具体卡片 Adapter
-创建和维护。通用 MiLink Hook 不包含这两种型号的 UI 分支。
+把第三个按钮重新显示。StarRing Ultra 的具体卡片 Adapter 则直接实例化
+MiLink 自己的 `HeadsetControlAncItemView`，在原生降噪卡中加入等权的第四个
+“抗风噪”模式项；布局、字体、图标尺寸和选中动画继续由宿主控件负责。通用
+MiLink Hook 不包含这两种型号的 UI 分支。
 
 Hook 只在实机确认使用耳机桥的 MiLink `:audio`、`:core` 和 `:ui` 进程安装。
 通用卡片扩展仅结构匹配 `HeadSetsDetail` 的稳定四参数绑定签名；不依赖其

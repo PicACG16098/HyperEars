@@ -1,22 +1,22 @@
 package dev.hyperears.hook
 
 import android.content.Context
-import android.util.TypedValue
-import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
-import android.widget.CompoundButton
-import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.Switch
 import android.widget.TextView
-import androidx.core.view.isVisible
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.NoiseMode
 import dev.hyperears.integration.StarRingUltraAdapter
 import java.lang.ref.WeakReference
 
-/** Adds StarRing Ultra's vendor-only wind control once to MiLink's native ANC card. */
+/**
+ * Adds StarRing Ultra's fourth, device-native wind-noise mode to MiLink's ANC card.
+ *
+ * The added item is MiLink's own [HOST_ANC_ITEM_CLASS]: the host remains responsible for layout,
+ * typography, icon sizing and selected-state animation. This adapter only supplies the additional
+ * model capability, routes its click, and renders the four mutually-exclusive device states.
+ */
 internal object StarRingUltraMiLinkCardAdapter : MiLinkCardAdapter {
     override val presentationId = StarRingUltraAdapter.PRESENTATION_ID
 
@@ -25,160 +25,140 @@ internal object StarRingUltraMiLinkCardAdapter : MiLinkCardAdapter {
         address: String,
         environment: MiLinkCardEnvironment,
     ): MiLinkCardBinding? {
-        val title = root.findMiLinkView("anc_card_title") as? TextView ?: return null
-        val ancCard = root.findMiLinkView("anc_card") ?: return null
-        val parent = title.parent as? ViewGroup ?: return null
-        val index = parent.indexOfChild(title).takeIf { it >= 0 } ?: return null
-        val originalParams = title.layoutParams
-        val originalWidth = originalParams.width
+        val ancCard = root.findMiLinkView(ANC_CARD_ID) as? LinearLayout ?: return null
+        val transparency = root.findMiLinkView(ANC_TRANSPARENCY_ID) ?: return null
+        val noiseCancellation = root.findMiLinkView(ANC_NOISE_CANCELLATION_ID) ?: return null
+        val off = root.findMiLinkView(ANC_OFF_ID) ?: return null
+        if (
+            transparency.parent !== ancCard ||
+            noiseCancellation.parent !== ancCard ||
+            off.parent !== ancCard
+        ) {
+            return null
+        }
 
-        parent.removeViewAt(index)
-        val wrapper = FrameLayout(root.context).apply {
-            layoutParams = originalParams.apply {
-                width = ViewGroup.LayoutParams.MATCH_PARENT
-            }
-        }
-        title.layoutParams = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        )
-        wrapper.addView(title)
+        val wind = createHostAncItem(
+            context = root.context,
+            hostClassLoader = environment.hostClassLoader,
+            layoutTemplate = noiseCancellation,
+        ) ?: return null
+        val windTitle = wind.findMiLinkView(ANC_TITLE_ID) as? TextView ?: return null
+        val windIcon = wind.findMiLinkView(ANC_ICON_ID) as? ImageView ?: return null
+        val noiseIcon =
+            noiseCancellation.findMiLinkView(ANC_ICON_ID) as? ImageView ?: return null
 
-        val accessory = LinearLayout(root.context).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            orientation = LinearLayout.HORIZONTAL
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-        }
-        val label = TextView(root.context).apply {
-            text = WIND_LABEL
-            setTextColor(title.currentTextColor)
-            setTextSize(TypedValue.COMPLEX_UNIT_PX, title.textSize)
-            typeface = title.typeface
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            setPadding(0, 0, root.context.dp(LABEL_END_PADDING_DP), 0)
-        }
-        val toggle = createHostToggle(root.context, environment.hostClassLoader).apply {
-            contentDescription = WIND_LABEL
-            isSaveEnabled = false
-        }
-        accessory.addView(label)
-        accessory.addView(toggle)
-        wrapper.addView(
-            accessory,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                Gravity.END or Gravity.CENTER_VERTICAL,
-            ),
+        windTitle.text = WIND_LABEL
+        windIcon.setImageDrawable(
+            noiseIcon.drawable?.constantState
+                ?.newDrawable(root.resources)
+                ?.mutate()
+                ?: noiseIcon.drawable,
         )
-        parent.addView(wrapper, index)
+        wind.contentDescription = WIND_LABEL
+        wind.visibility = View.VISIBLE
+        wind.isSaveEnabled = false
+        ancCard.addView(wind)
 
         val binding = Binding(
-            parent = parent,
-            originalIndex = index,
-            originalLayoutParams = originalParams,
-            originalWidth = originalWidth,
-            wrapper = wrapper,
-            title = title,
-            ancCard = ancCard,
-            accessory = accessory,
-            toggle = toggle,
+            parent = ancCard,
+            transparency = transparency,
+            noiseCancellation = noiseCancellation,
+            off = off,
+            wind = wind,
             address = address,
             environment = environment,
         )
-        toggle.setOnCheckedChangeListener { _, checked -> binding.onToggle(checked) }
-        ModuleLog.debug("MiLinkUi", "bound StarRing Ultra wind-noise presentation")
+        wind.setOnClickListener { binding.onWindClick() }
+        ModuleLog.debug("MiLinkUi", "bound StarRing Ultra fourth ANC mode")
         return binding
     }
 
     private class Binding(
-        parent: ViewGroup,
-        private val originalIndex: Int,
-        private val originalLayoutParams: ViewGroup.LayoutParams,
-        private val originalWidth: Int,
-        wrapper: View,
-        title: View,
-        ancCard: View,
-        accessory: View,
-        toggle: CompoundButton,
+        parent: LinearLayout,
+        transparency: View,
+        noiseCancellation: View,
+        off: View,
+        wind: View,
         private val address: String,
         private val environment: MiLinkCardEnvironment,
     ) : MiLinkCardBinding {
         private val parent = WeakReference(parent)
-        private val wrapper = WeakReference(wrapper)
-        private val title = WeakReference(title)
-        private val ancCard = WeakReference(ancCard)
-        private val accessory = WeakReference(accessory)
-        private val toggle = WeakReference(toggle)
-        private var rendering = false
+        private val transparency = WeakReference(transparency)
+        private val noiseCancellation = WeakReference(noiseCancellation)
+        private val off = WeakReference(off)
+        private val wind = WeakReference(wind)
 
         override fun render(state: EarbudState) {
-            val wrapper = wrapper.get() ?: return
-            val title = title.get() ?: return
-            val ancCard = ancCard.get() ?: return
-            val accessory = accessory.get() ?: return
-            val toggle = toggle.get() ?: return
-            wrapper.visibility = ancCard.visibility
-            accessory.visibility =
-                if (ancCard.isVisible && title.isVisible) View.VISIBLE else View.GONE
-            val ancActive =
-                state.noiseMode == NoiseMode.ANC || state.noiseMode == NoiseMode.WIND
-            rendering = true
-            toggle.isChecked = state.noiseMode == NoiseMode.WIND
-            toggle.isEnabled = state.connected && ancActive
-            toggle.alpha = if (toggle.isEnabled) ENABLED_ALPHA else DISABLED_ALPHA
-            accessory.alpha = if (toggle.isEnabled) ENABLED_ALPHA else DISABLED_ALPHA
-            rendering = false
+            val mode = state.noiseMode ?: return
+            transparency.get()?.isSelected =
+                isModeSelected(NoiseMode.TRANSPARENCY, mode)
+            noiseCancellation.get()?.isSelected =
+                isModeSelected(NoiseMode.ANC, mode)
+            off.get()?.isSelected =
+                isModeSelected(NoiseMode.OFF, mode)
+            wind.get()?.apply {
+                isSelected = isModeSelected(NoiseMode.WIND, mode)
+                isEnabled = state.sessionActive && state.connected
+                alpha = if (isEnabled) ENABLED_ALPHA else DISABLED_ALPHA
+            }
         }
 
-        fun onToggle(checked: Boolean) {
-            if (rendering) return
+        fun onWindClick() {
             val current = environment.stateProvider(address)
-            val currentIsAnc =
-                current.noiseMode == NoiseMode.ANC || current.noiseMode == NoiseMode.WIND
-            val toggle = toggle.get() ?: return
-            rendering = true
-            toggle.isChecked = current.noiseMode == NoiseMode.WIND
-            rendering = false
-            if (!current.connected || !currentIsAnc) return
-            environment.controlSender(
-                address,
-                if (checked) NoiseMode.WIND else NoiseMode.ANC,
-            )
+            if (
+                !current.sessionActive ||
+                !current.connected ||
+                current.noiseMode == NoiseMode.WIND
+            ) {
+                return
+            }
+            environment.controlSender(address, NoiseMode.WIND)
         }
 
         override fun unbind() {
             val parent = parent.get() ?: return
-            val wrapper = wrapper.get() ?: return
-            val title = title.get() ?: return
-            if (wrapper.parent !== parent) return
-            (title.parent as? ViewGroup)?.removeView(title)
-            parent.removeView(wrapper)
-            originalLayoutParams.width = originalWidth
-            title.layoutParams = originalLayoutParams
-            parent.addView(title, originalIndex.coerceAtMost(parent.childCount))
+            val wind = wind.get() ?: return
+            wind.setOnClickListener(null)
+            if (wind.parent === parent) parent.removeView(wind)
         }
     }
 
-    private fun createHostToggle(
+    private fun createHostAncItem(
         context: Context,
         hostClassLoader: ClassLoader,
-    ): CompoundButton = runCatching {
-        Class.forName(MIUIX_SLIDING_BUTTON, true, hostClassLoader)
-            .asSubclass(CompoundButton::class.java)
+        layoutTemplate: View,
+    ): View? = runCatching {
+        val item = Class.forName(HOST_ANC_ITEM_CLASS, true, hostClassLoader)
+            .asSubclass(View::class.java)
             .getConstructor(Context::class.java)
             .newInstance(context)
-    }.getOrElse {
-        @Suppress("DEPRECATION")
-        Switch(context)
-    }
+        item.layoutParams = when (val source = layoutTemplate.layoutParams) {
+            is LinearLayout.LayoutParams -> LinearLayout.LayoutParams(source)
+            else -> LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f,
+            )
+        }
+        item
+    }.onFailure {
+        ModuleLog.warn("MiLinkUi", "native ANC item unavailable", it)
+    }.getOrNull()
 
-    private fun Context.dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
+    internal fun isModeSelected(
+        itemMode: NoiseMode,
+        currentMode: NoiseMode?,
+    ): Boolean = itemMode == currentMode
 
-    private const val MIUIX_SLIDING_BUTTON = "miuix.slidingwidget.widget.SlidingButton"
+    private const val HOST_ANC_ITEM_CLASS =
+        "com.miui.circulate.world.headset.ui.HeadsetControlAncItemView"
+    private const val ANC_CARD_ID = "anc_card"
+    private const val ANC_TRANSPARENCY_ID = "anc_clear"
+    private const val ANC_NOISE_CANCELLATION_ID = "anc_noise_cancel"
+    private const val ANC_OFF_ID = "anc_off"
+    private const val ANC_TITLE_ID = "anc_title"
+    private const val ANC_ICON_ID = "anc_icon"
     private const val WIND_LABEL = "抗风噪"
-    private const val LABEL_END_PADDING_DP = 8
     private const val ENABLED_ALPHA = 1.0f
     private const val DISABLED_ALPHA = 0.45f
 }

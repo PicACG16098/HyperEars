@@ -65,7 +65,7 @@ internal class MiLinkHeadsetDetailExtension(
         }
         dispatchRender(target)
         root.post {
-            if (target.binding == null && root.isAttachedToWindow) render(target)
+            if (root.isAttachedToWindow) render(target)
         }
     }
 
@@ -85,9 +85,16 @@ internal class MiLinkHeadsetDetailExtension(
 
     fun onStateChanged(state: EarbudState) {
         val address = state.address?.uppercase(Locale.ROOT) ?: return
-        synchronized(targetLock) {
+        val matchingTargets = synchronized(targetLock) {
             targets.values.filter { it.address == address }
-        }.forEach(::dispatchRender)
+        }
+        matchingTargets.forEach { target ->
+            dispatchRender(target)
+            val root = target.root.get() ?: return@forEach
+            root.post {
+                if (root.isAttachedToWindow) render(target)
+            }
+        }
     }
 
     private fun dispatchRender(target: Target) {
