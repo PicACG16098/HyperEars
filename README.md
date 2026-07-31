@@ -1,8 +1,9 @@
 # HyperEars
 
 HyperEars 用于把非小米耳机接入 HyperOS 耳机体验。当前包含
-`vivo TWS Air3 Pro`、`StarRing Ultra` 和 Bose BMAP 耳机适配，并为其余
-标准蓝牙耳机提供流转、音量和系统整机电量回退。
+vivo/iQOO TWS 家族、`StarRing Ultra`、Bose BMAP 和 OPPO Enco 家族适配，
+并为其余标准蓝牙耳机提供流转、音量和系统整机电量回退。vivo TWS Air3 Pro
+使用实机验证的完整协议；vivo TWS 3e 使用公开实现对应的独立协议画像。
 
 ## 当前结论
 
@@ -20,8 +21,12 @@ HyperEars 用于把非小米耳机接入 HyperOS 耳机体验。当前包含
 
 详细帧、字段和未解析事件见
 [`docs/vivo-tws-air3-pro-protocol.md`](docs/vivo-tws-air3-pro-protocol.md)。
+vivo/iQOO 型号目录、家族默认画像与型号覆盖边界见
+[`docs/vivo-family-support.md`](docs/vivo-family-support.md)。
 Bose 型号与电量帧见
 [`docs/bose-bmap-protocol.md`](docs/bose-bmap-protocol.md)。
+OPPO 家族的盲适配依据、协议帧与型号 Profile 见
+[`docs/oppo-enco-protocol.md`](docs/oppo-enco-protocol.md)。
 
 ## 模块
 
@@ -39,12 +44,19 @@ Bose 型号与电量帧见
 [`docs/system-module-architecture.md`](docs/system-module-architecture.md)。
 运行看板的产品定位、生命周期语义与性能边界见
 [`docs/dashboard-ui-architecture.md`](docs/dashboard-ui-architecture.md)。
-`vivo-tws-air3-pro` Adapter 提供完整电量与降噪协议支持。未知 vivo 型号会
-落到 vivo 家族 Adapter，其他可确认是耳机的 A2DP 设备会落到标准 Adapter；
-两种回退向 MiLink 提供耳机身份、音频流转能力和 Android 已缓存的整机
-电量；整机电量按 MiLink 数据结构同时映射到左右耳，充电盒保持未知。回退
-不建立私有通道，也不伪造降噪能力。音箱、车机、无法判断为耳机的设备以及名称可确认由
-HyperOS 原生支持的小米/REDMI 耳机不会被接管。
+`VivoEarbudAdapter` 统一提供 vivo/iQOO 家族已有多份资料相互印证的
+`0x0207/0x8207` 私有电量和 `0x0130/0x0230` 三态降噪能力。未知具体型号
+采用公开 v4 画像作为家族默认值；`vivo-tws-air3-pro` 和 `vivo-tws-3e`
+Adapter 只覆盖各自已经明确的 GAIA 版本与设置参数，TWS 3e 另保留
+RFCOMM channel 13 回退。其他可确认是耳机的 A2DP 设备落到标准 Adapter，
+仅提供流转、音量和 Android 已缓存的整机电量。音箱、车机、无法判断为耳机
+的设备以及名称可确认由 HyperOS 原生支持的小米/REDMI 耳机不会被接管。
+
+OPPO/Enco 名称会进入 OPPO 家族 Adapter，通过固定 RFCOMM UUID 读取真实
+左右耳/充电盒电量和三态降噪，并一次性协商耳机主动通知。Air2 Pro 使用独立
+Profile 处理其相反的关闭/降噪编码；Free4、X3、Air5 已保留具体型号 Adapter，
+其余型号复用参考项目的标准 OPPO 编码。本项尚属基于公开实现的盲适配，不把
+游戏模式、均衡器、空间音频等未接入统一领域的能力暴露给 MiLink。
 
 Adapter 只声明 `TWS` 或 `HEADPHONES` 物理形态。MiLink 桥分别复用一个
 官方已知载体 ID，让系统原生完成耳机支持判断、去重、跨端类型恢复和卡片
@@ -57,12 +69,13 @@ Adapter 只声明 `TWS` 或 `HEADPHONES` 物理形态。MiLink 桥分别复用�
 | 变体 | GAIA 版本 | 降噪查询载荷 | 降噪设置载荷 |
 |---|---:|---|---|
 | Air3 Pro 实机抓包 | 3 | 空 | `mode 04 00` |
-| 手工逆向公开资料 | 4 | `00` | `mode 03 01` |
+| 手工逆向公开资料（未绑定型号） | 4 | `00` | `mode 03 01` |
 | vivo TWS 3e 公开实现 | 3 | 空 | `mode 03` |
 
 三种变体共同使用 vivo vendor `0x001B`、降噪命令 `0x0130/0x0230`
 以及模式编号 `0=降噪、1=关闭、2=通透`。电量实验使用公开资料中的
-`0x0207/0x8207`。
+`0x0207/0x8207`，并已在 Air3 Pro 上得到相同响应。正式模块把公开 v4
+Profile 作为 vivo 家族默认画像；发现具体型号差异时只增加或覆盖 Profile。
 
 ## 构建
 
@@ -88,3 +101,4 @@ adb logcat -s HyperEarsProtocol:D "*:S"
 - 当前 `AndroidBluetoothHelper` 的 Air3 Pro 实机抓包实现。
 - https://github.com/Star-ZER0/Pods-Protocol-Reverse-Engineering
 - https://github.com/moculll/ScrewVivoTWS
+- https://github.com/1812z/OppoPods

@@ -80,15 +80,22 @@ open class StandardEarbudAdapter : EarbudAdapter() {
 object EarbudAdapterRegistry {
     private val vivoFamilyAdapter = VivoEarbudAdapter()
     private val starRingFamilyAdapter = StarRingEarbudAdapter()
+    private val oppoFamilyAdapter = OppoEarbudAdapter()
     private val boseFamilyAdapter = BoseEarbudAdapter()
     private val boseHeadphonesAdapter = BoseHeadphonesAdapter()
     private val standardAdapter = StandardEarbudAdapter()
 
     val adapters: List<EarbudAdapter> = listOf(
         VivoTwsAir3ProAdapter,
+        VivoTws3eAdapter,
         vivoFamilyAdapter,
         StarRingUltraAdapter,
         starRingFamilyAdapter,
+        OppoEncoAir2ProAdapter,
+        OppoEncoFree4Adapter,
+        OppoEncoX3Adapter,
+        OppoEncoAir5Adapter,
+        oppoFamilyAdapter,
         BoseQuietComfortHeadphonesAdapter,
         boseHeadphonesAdapter,
         boseFamilyAdapter,

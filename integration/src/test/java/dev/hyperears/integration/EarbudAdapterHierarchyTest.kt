@@ -1,6 +1,7 @@
 package dev.hyperears.integration
 
 import dev.hyperears.protocol.bose.BoseBmapWireCodec
+import dev.hyperears.protocol.oppo.OppoWireCodec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -15,6 +16,8 @@ class EarbudAdapterHierarchyTest {
         assertEquals(HeadsetFormFactor.TWS, VivoTwsAir3ProAdapter.formFactor)
         assertEquals(HeadsetFormFactor.TWS, StarRingEarbudAdapter().formFactor)
         assertEquals(HeadsetFormFactor.TWS, StarRingUltraAdapter.formFactor)
+        assertEquals(HeadsetFormFactor.TWS, OppoEarbudAdapter().formFactor)
+        assertEquals(HeadsetFormFactor.TWS, OppoEncoAir2ProAdapter.formFactor)
         assertEquals(HeadsetFormFactor.TWS, BoseEarbudAdapter().formFactor)
         assertEquals(HeadsetFormFactor.HEADPHONES, BoseHeadphonesAdapter().formFactor)
         assertEquals(
@@ -33,8 +36,16 @@ class EarbudAdapterHierarchyTest {
             VivoTwsAir3ProAdapter,
             EarbudAdapterRegistry.resolve(identity("VIVO-TWS Air3 Pro")),
         )
+        assertEquals(
+            VivoTws3eAdapter,
+            EarbudAdapterRegistry.resolve(identity("vivo TWS 3e")),
+        )
         assertTrue(
-            EarbudAdapterRegistry.resolve(identity("vivo TWS 3e")) is VivoEarbudAdapter,
+            EarbudAdapterRegistry.resolve(identity("vivo TWS Air2")) is VivoEarbudAdapter,
+        )
+        assertTrue(
+            EarbudAdapterRegistry.resolve(identity("iQOO TWS Air Pro")) is
+                VivoEarbudAdapter,
         )
         assertEquals(
             StarRingUltraAdapter,
@@ -43,6 +54,35 @@ class EarbudAdapterHierarchyTest {
         assertTrue(
             EarbudAdapterRegistry.resolve(identity("StarRing Future")) is
                 StarRingEarbudAdapter,
+        )
+        assertEquals(
+            OppoEncoAir2ProAdapter,
+            EarbudAdapterRegistry.resolve(
+                identity("OPPO Enco Air2 Pro", standardHeadset = true),
+            ),
+        )
+        assertEquals(
+            OppoEncoFree4Adapter,
+            EarbudAdapterRegistry.resolve(
+                identity("OPPO Enco Free4", standardHeadset = true),
+            ),
+        )
+        assertEquals(
+            OppoEncoX3Adapter,
+            EarbudAdapterRegistry.resolve(
+                identity("OPPO Enco X3", standardHeadset = true),
+            ),
+        )
+        assertEquals(
+            OppoEncoAir5Adapter,
+            EarbudAdapterRegistry.resolve(
+                identity("OPPO Enco Air5", standardHeadset = true),
+            ),
+        )
+        assertTrue(
+            EarbudAdapterRegistry.resolve(
+                identity("OPPO Enco Buds2", standardHeadset = true),
+            ) is OppoEarbudAdapter,
         )
         assertTrue(
             EarbudAdapterRegistry.resolve(
@@ -97,6 +137,8 @@ class EarbudAdapterHierarchyTest {
         )
         assertNull(VivoEarbudAdapter().miLinkCardPresentationId)
         assertNull(StarRingEarbudAdapter().miLinkCardPresentationId)
+        assertNull(OppoEarbudAdapter().miLinkCardPresentationId)
+        assertNull(OppoEncoAir2ProAdapter.miLinkCardPresentationId)
         assertNull(BoseEarbudAdapter().miLinkCardPresentationId)
         assertNull(BoseHeadphonesAdapter().miLinkCardPresentationId)
         assertEquals(
@@ -107,25 +149,25 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun familyAndStandardFallbacksAreIdentityOnlyIntegrations() {
+    fun vivoFamilyOwnsCommonProtocolWhileStandardRemainsIdentityOnly() {
         assertEquals(
             VivoTwsAir3ProAdapter,
             EarbudAdapterRegistry.forIntegration(identity("vivo TWS Air3 Pro")),
         )
 
         val vivoFallback =
-            EarbudAdapterRegistry.forIntegration(identity("vivo TWS 3e"))
+            EarbudAdapterRegistry.forIntegration(identity("vivo TWS Air2"))
         val standardFallback = EarbudAdapterRegistry.forIntegration(
             identity("LE-Headset", standardHeadset = true),
         )
 
         assertTrue(vivoFallback is VivoEarbudAdapter)
-        assertFalse(requireNotNull(vivoFallback).privateProtocolRequired)
-        assertEquals(BatterySource.SYSTEM_AGGREGATE, vivoFallback.batterySource)
+        assertTrue(requireNotNull(vivoFallback).privateProtocolRequired)
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, vivoFallback.batterySource)
         assertTrue(vivoFallback.capabilities.battery)
-        assertFalse(vivoFallback.capabilities.noiseControl)
+        assertTrue(vivoFallback.capabilities.noiseControl)
         assertTrue(vivoFallback.capabilities.audioHandoff)
-        assertNull(vivoFallback.createProtocol())
+        assertTrue(vivoFallback.createProtocol() != null)
 
         assertTrue(standardFallback is StandardEarbudAdapter)
         assertFalse(requireNotNull(standardFallback).privateProtocolRequired)
@@ -158,6 +200,95 @@ class EarbudAdapterHierarchyTest {
         assertFalse(VivoTwsAir3ProAdapter.capabilities.spatialAudio)
         assertFalse(VivoTwsAir3ProAdapter.capabilities.wearDetection)
         assertFalse(VivoTwsAir3ProAdapter.capabilities.windNoiseControl)
+    }
+
+    @Test
+    fun tws3eSelectsItsOwnWireProfileAndChannelFallback() {
+        assertEquals(
+            VivoEarbudAdapter::class.java,
+            VivoTws3eAdapter.javaClass.superclass,
+        )
+        assertTrue(VivoTws3eAdapter.privateProtocolRequired)
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, VivoTws3eAdapter.batterySource)
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
+            VivoTws3eAdapter.supportedNoiseModes,
+        )
+        assertEquals(
+            listOf("vivo-gaia-0837", "rfcomm-13"),
+            VivoTws3eAdapter.endpoints.map(RfcommEndpointSpec::id),
+        )
+
+        val protocol = requireNotNull(VivoTws3eAdapter.createProtocol())
+        assertEquals(
+            listOf(
+                "FF 04 00 00 00 0A 03 00",
+                "FF 03 00 00 00 1B 02 30",
+                "FF 04 00 00 00 1B 02 07",
+            ),
+            protocol.initialReadCommands().map { it.hex() },
+        )
+        assertEquals(
+            "FF 03 00 02 00 1B 01 30 00 03",
+            protocol
+                .encode(ControlRequest.SetNoiseMode(NoiseMode.ANC))
+                .single()
+                .hex(),
+        )
+        assertEquals(
+            listOf(EarbudEvent.NoiseModeChanged(NoiseMode.ANC, acknowledged = true)),
+            protocol.offer(hex("FF 03 00 03 00 1B 81 30 00 00 03")),
+        )
+    }
+
+    @Test
+    fun vivoRetailCatalogUsesFamilyProtocolDefaults() {
+        assertEquals(
+            "vivo TWS Air2",
+            VivoRetailModelCatalog.find("vivo TWS Air200")?.canonicalName,
+        )
+        assertEquals(
+            "iQOO TWS Air Pro",
+            VivoRetailModelCatalog.find("IQOO-TWS Air Pro")?.canonicalName,
+        )
+        assertTrue(VivoRetailModelCatalog.isFamilyName("vivo TWS 5e"))
+        assertTrue(VivoRetailModelCatalog.isFamilyName("iQOO TWS Future"))
+        assertFalse(VivoRetailModelCatalog.isFamilyName("vivo WATCH 5"))
+
+        val air2 = requireNotNull(
+            EarbudAdapterRegistry.forIntegration(identity("vivo TWS Air2")),
+        )
+        val iqoo = requireNotNull(
+            EarbudAdapterRegistry.forIntegration(identity("iQOO TWS Air Pro")),
+        )
+        listOf(air2, iqoo).forEach { adapter ->
+            assertTrue(adapter.privateProtocolRequired)
+            assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.batterySource)
+            assertTrue(adapter.capabilities.battery)
+            assertTrue(adapter.capabilities.audioHandoff)
+            assertTrue(adapter.capabilities.noiseControl)
+            assertEquals(
+                setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
+                adapter.supportedNoiseModes,
+            )
+
+            val protocol = requireNotNull(adapter.createProtocol())
+            assertEquals(
+                listOf(
+                    "FF 04 00 00 00 0A 03 00",
+                    "FF 04 00 01 00 1B 02 30 00",
+                    "FF 04 00 00 00 1B 02 07",
+                ),
+                protocol.initialReadCommands().map { it.hex() },
+            )
+            assertEquals(
+                "FF 04 00 03 00 1B 01 30 00 03 01",
+                protocol
+                    .encode(ControlRequest.SetNoiseMode(NoiseMode.ANC))
+                    .single()
+                    .hex(),
+            )
+        }
     }
 
     @Test
@@ -201,6 +332,133 @@ class EarbudAdapterHierarchyTest {
             protocol.offer(
                 hex("09 FF 00 00 01 06 02 0E 00 00 00 01 00 20"),
             ).single(),
+        )
+    }
+
+    @Test
+    fun oppoFamilyUsesOneWireCodecWithModelOwnedAncMapping() {
+        assertEquals(
+            StandardEarbudAdapter::class.java,
+            OppoEarbudAdapter::class.java.superclass,
+        )
+        assertEquals(
+            OppoEarbudAdapter::class.java,
+            OppoEncoAir2ProAdapter.javaClass.superclass,
+        )
+
+        val generic = OppoEarbudAdapter()
+        assertTrue(generic.privateProtocolRequired)
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, generic.batterySource)
+        assertTrue(generic.capabilities.battery)
+        assertTrue(generic.capabilities.noiseControl)
+        assertTrue(generic.capabilities.audioHandoff)
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
+            generic.supportedNoiseModes,
+        )
+        assertEquals(
+            listOf("oppo-private-rfcomm"),
+            generic.endpoints.map(RfcommEndpointSpec::id),
+        )
+
+        val standardProtocol = requireNotNull(generic.createProtocol())
+        assertEquals(
+            listOf(
+                "AA 07 00 00 00 02 F0 00 00",
+                "AA 07 00 00 06 01 F0 00 00",
+                "AA 09 00 00 0C 01 F0 02 00 01 01",
+            ),
+            standardProtocol.initialReadCommands().map { it.hex() },
+        )
+        assertEquals(
+            "AA 0A 00 00 04 04 F0 03 00 01 01 02",
+            standardProtocol
+                .encode(ControlRequest.SetNoiseMode(NoiseMode.ANC))
+                .single()
+                .hex(),
+        )
+        assertEquals(
+            "AA 0A 00 00 04 04 F0 03 00 01 01 01",
+            standardProtocol
+                .encode(ControlRequest.SetNoiseMode(NoiseMode.OFF))
+                .single()
+                .hex(),
+        )
+
+        val compatibleProtocol = requireNotNull(OppoEncoAir2ProAdapter.createProtocol())
+        assertEquals(
+            "AA 0A 00 00 04 04 F0 03 00 01 01 01",
+            compatibleProtocol
+                .encode(ControlRequest.SetNoiseMode(NoiseMode.ANC))
+                .single()
+                .hex(),
+        )
+        assertEquals(
+            "AA 0A 00 00 04 04 F0 03 00 01 01 02",
+            compatibleProtocol
+                .encode(ControlRequest.SetNoiseMode(NoiseMode.OFF))
+                .single()
+                .hex(),
+        )
+        assertEquals(
+            listOf(
+                EarbudEvent.Handshake(true),
+                EarbudEvent.NoiseModeChanged(NoiseMode.ANC, acknowledged = true),
+            ),
+            compatibleProtocol.offer(
+                OppoWireCodec.packet(
+                    command = OppoWireCodec.ANC_RESPONSE,
+                    payload = hex("01 01 01 00"),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun oppoProtocolPublishesAuthoritativeBatteryAndNoiseReports() {
+        val protocol = requireNotNull(OppoEarbudAdapter().createProtocol())
+        val notificationSupport = OppoWireCodec.packet(
+            command = OppoWireCodec.NOTIFICATION_SUPPORT_RESPONSE,
+            payload = hex("00 04 01 02 03 F1"),
+        )
+        val battery = OppoWireCodec.packet(
+            command = OppoWireCodec.BATTERY_RESPONSE,
+            payload = hex("01 4B 02 CA 03 64"),
+        )
+        val anc = OppoWireCodec.packet(
+            command = OppoWireCodec.ANC_RESPONSE,
+            payload = hex("01 01 02 00"),
+        )
+
+        val handshake = protocol.offer(notificationSupport).single()
+        assertEquals(EarbudEvent.Handshake(true), handshake)
+        assertEquals(
+            "AA 0B 00 00 05 02 F0 04 00 03 01 02 03",
+            protocol.followUpCommands(handshake).single().hex(),
+        )
+        assertTrue(protocol.followUpCommands(handshake).isEmpty())
+        assertEquals(
+            listOf(
+                EarbudEvent.BatteryChanged(
+                    EarbudBattery(
+                        left = BatteryReading(75, false),
+                        right = BatteryReading(74, true),
+                        case = BatteryReading(100, false),
+                    ),
+                ),
+            ),
+            protocol.offer(battery),
+        )
+        assertEquals(
+            listOf(EarbudEvent.NoiseModeChanged(NoiseMode.ANC, acknowledged = true)),
+            protocol.offer(anc),
+        )
+        assertEquals(
+            "AA 09 00 00 0C 01 F0 02 00 01 01",
+            protocol
+                .readback(ControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY))
+                .single()
+                .hex(),
         )
     }
 

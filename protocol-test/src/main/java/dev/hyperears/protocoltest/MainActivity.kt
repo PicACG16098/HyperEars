@@ -67,7 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.hyperears.protocol.vivo.VivoEarbudModelCatalog
 import dev.hyperears.protocol.vivo.VivoTwsProtocol
 import dev.hyperears.protocol.vivo.VivoTwsProtocol.NoiseMode
-import dev.hyperears.protocol.vivo.VivoTwsProtocol.Variant
+import dev.hyperears.protocol.vivo.VivoTwsProtocol.Profile
 
 class MainActivity : ComponentActivity() {
     private val model: ProtocolTestViewModel by viewModels()
@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
                     onSelectTarget = model::selectTarget,
                     onConnect = model::connect,
                     onDisconnect = model::disconnect,
-                    onSelectVariant = model::selectVariant,
+                    onSelectProfile = model::selectProfile,
                     onFullProbe = model::runReadOnlyProbe,
                     onHandshake = model::sendHandshake,
                     onQueryNoise = model::queryNoise,
@@ -169,7 +169,7 @@ private fun ProtocolLabScreen(
     onSelectTarget: (ProtocolTarget) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
-    onSelectVariant: (Variant) -> Unit,
+    onSelectProfile: (Profile) -> Unit,
     onFullProbe: () -> Unit,
     onHandshake: () -> Unit,
     onQueryNoise: () -> Unit,
@@ -286,10 +286,10 @@ private fun ProtocolLabScreen(
                     }
 
                     item {
-                        VariantCard(
-                            selected = state.selectedVariant,
-                            detected = state.detectedVariant,
-                            onSelect = onSelectVariant,
+                        ProfileCard(
+                            selected = state.selectedProfile,
+                            detected = state.detectedProfile,
+                            onSelect = onSelectProfile,
                         )
                     }
                 } else {
@@ -684,25 +684,25 @@ private fun VivoIdentityDetectionCard(
 }
 
 @Composable
-private fun VariantCard(
-    selected: Variant,
-    detected: Variant?,
-    onSelect: (Variant) -> Unit,
+private fun ProfileCard(
+    selected: Profile,
+    detected: Profile?,
+    onSelect: (Profile) -> Unit,
 ) {
     LabCard(
-        title = "协议变体",
+        title = "协议画像",
         subtitle = detected?.let { "响应特征推断：${it.label}" }
             ?: "读操作可以全部探测；写操作只发送当前选择的变体。",
     ) {
-        Variant.entries.forEach { variant ->
+        Profile.entries.forEach { profile ->
             FilterChip(
-                selected = selected == variant,
-                onClick = { onSelect(variant) },
+                selected = selected == profile,
+                onClick = { onSelect(profile) },
                 label = {
                     Column(Modifier.padding(vertical = 3.dp)) {
-                        Text(variant.label)
+                        Text(profile.label)
                         Text(
-                            variant.note,
+                            profile.note,
                             style = MaterialTheme.typography.labelSmall,
                         )
                     }

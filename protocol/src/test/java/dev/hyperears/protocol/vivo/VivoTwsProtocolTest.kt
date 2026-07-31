@@ -1,7 +1,7 @@
 package dev.hyperears.protocol.vivo
 
 import dev.hyperears.protocol.vivo.VivoTwsProtocol.NoiseMode
-import dev.hyperears.protocol.vivo.VivoTwsProtocol.Variant
+import dev.hyperears.protocol.vivo.VivoTwsProtocol.Profile
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,15 +14,18 @@ class VivoTwsProtocolTest {
     fun buildsAllKnownNoiseVariants() {
         assertArrayEquals(
             hex("FF 03 00 03 00 1B 01 30 00 04 00"),
-            VivoTwsProtocol.setNoiseMode(NoiseMode.ANC, Variant.AIR3_PRO_CAPTURED),
+            VivoTwsProtocol.setNoiseMode(NoiseMode.ANC, Profile.AIR3_PRO_CAPTURED),
         )
         assertArrayEquals(
             hex("FF 04 00 03 00 1B 01 30 02 03 01"),
-            VivoTwsProtocol.setNoiseMode(NoiseMode.TRANSPARENCY, Variant.HANDMADE_V4),
+            VivoTwsProtocol.setNoiseMode(
+                NoiseMode.TRANSPARENCY,
+                Profile.FAMILY_DEFAULT_V4,
+            ),
         )
         assertArrayEquals(
             hex("FF 03 00 02 00 1B 01 30 01 03"),
-            VivoTwsProtocol.setNoiseMode(NoiseMode.OFF, Variant.TWS_3E_V3),
+            VivoTwsProtocol.setNoiseMode(NoiseMode.OFF, Profile.TWS_3E_V3),
         )
     }
 
@@ -34,11 +37,11 @@ class VivoTwsProtocolTest {
         )
         assertArrayEquals(
             hex("FF 03 00 00 00 1B 02 30"),
-            VivoTwsProtocol.queryNoiseMode(Variant.AIR3_PRO_CAPTURED),
+            VivoTwsProtocol.queryNoiseMode(Profile.AIR3_PRO_CAPTURED),
         )
         assertArrayEquals(
             hex("FF 04 00 01 00 1B 02 30 00"),
-            VivoTwsProtocol.queryNoiseMode(Variant.HANDMADE_V4),
+            VivoTwsProtocol.queryNoiseMode(Profile.FAMILY_DEFAULT_V4),
         )
         assertArrayEquals(
             hex("FF 04 00 00 00 1B 02 07"),
@@ -58,6 +61,20 @@ class VivoTwsProtocolTest {
         assertEquals(4, state?.noiseEffect)
         assertEquals(0, state?.transparencyEffect)
         assertFalse(state?.acknowledged ?: true)
+    }
+
+    @Test
+    fun parsesShortFamilyNoiseStateWithoutInventingOptionalEffects() {
+        val frame = VivoTwsProtocol.Decoder()
+            .offer(hex("FF 03 00 03 00 1B 81 30 00 02 03"))
+            .single()
+
+        val state = VivoTwsProtocol.parseNoiseState(frame)
+
+        assertEquals(NoiseMode.TRANSPARENCY, state?.mode)
+        assertEquals(3, state?.noiseEffect)
+        assertNull(state?.transparencyEffect)
+        assertTrue(state?.acknowledged == true)
     }
 
     @Test

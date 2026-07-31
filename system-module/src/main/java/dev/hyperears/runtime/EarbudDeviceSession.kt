@@ -81,8 +81,8 @@ internal class EarbudDeviceSession(
             requestConnection()
         } else {
             listener.onEvent(this, EarbudEvent.AdapterReady)
-            publishCachedSystemBattery()
         }
+        publishCachedSystemBattery()
     }
 
     fun onSystemBatteryChanged(percent: Int?) {

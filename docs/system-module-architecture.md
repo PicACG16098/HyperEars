@@ -8,8 +8,8 @@
 - 向 MiLink 暴露最小兼容身份，使融合设备中心识别目标耳机。
 - 在融合卡片读取左右耳/充电盒电量和当前降噪状态。
 - 将融合卡片的控制操作交给具体型号 Adapter，翻译为已实机验证的厂商命令。
-- 通过 `Standard → 厂商家族 → 具体型号` 继承链接入 vivo、StarRing 和
-  Bose，并保留其他型号的稳定扩展点。
+- 通过 `Standard → 厂商家族 → 具体型号` 继承链接入 vivo、StarRing、OPPO
+  和 Bose，并保留其他型号的稳定扩展点。
 
 首版不伪造尚未验证的能力。空间音频、自适应降噪、入耳检测、查找耳机等
 能力默认关闭；`0x820D`、`0x8224` 在语义确认前只记录，不参与系统状态。
@@ -32,13 +32,13 @@ HyperEars 仅复用融合设备中心所需边界，不注入
 
 ```text
 protocol
-  └─ vivo / StarRing / Bose WireCodec、流式分帧与纯字节编解码
+  └─ vivo / StarRing / OPPO / Bose WireCodec、流式分帧与纯字节编解码
 
 integration
   ├─ 通用耳机模型与控制事件
   ├─ Standard / 厂商家族 / 具体型号 Adapter 继承链
   ├─ Adapter Registry
-  ├─ vivo Air3 Pro 私有协议组件
+  ├─ vivo 具体型号选择的不可变协议画像与通用协议组件
   ├─ 状态 Reducer
   └─ MiLink 状态编码
 
@@ -75,9 +75,15 @@ protocol <- protocol-test
 EarbudAdapter
   └─ StandardEarbudAdapter
        ├─ VivoEarbudAdapter
-       │    └─ VivoTwsAir3ProAdapter
+       │    ├─ VivoTwsAir3ProAdapter
+       │    └─ VivoTws3eAdapter
        ├─ StarRingEarbudAdapter
        │    └─ StarRingUltraAdapter
+       ├─ OppoEarbudAdapter
+       │    ├─ OppoEncoAir2ProAdapter
+       │    ├─ OppoEncoFree4Adapter
+       │    ├─ OppoEncoX3Adapter
+       │    └─ OppoEncoAir5Adapter
        └─ BoseEarbudAdapter
             └─ BoseHeadphonesAdapter
                 └─ BoseQuietComfortHeadphonesAdapter
@@ -87,25 +93,34 @@ EarbudAdapter
 
 - `StandardEarbudAdapter` 表示 Android 原生 A2DP/HFP、音量、路由和系统
   缓存的整机电量能力。
-- `VivoEarbudAdapter` 继承标准层，增加 vivo 家族名称规则和 GAIA 端点。
-- `VivoTwsAir3ProAdapter` 继承 vivo 层，增加精确名称、已验证电量/降噪
-  能力及 Air3 Pro 协议创建方法。
+- `VivoEarbudAdapter` 继承标准层，增加 vivo/iQOO TWS 家族名称规则和
+  GAIA 端点、家族默认 v4 Profile、私有电量和三态降噪能力。
+- `VivoTwsAir3ProAdapter` 继承 vivo 层，只覆盖精确名称并选择实机验证的
+  Air3 Pro `mode 04 00` Profile。
+- `VivoTws3eAdapter` 继承 vivo 层，选择公开实现对应的 v3 `mode 03`
+  Profile，把 channel 13 作为 UUID/SDP 失败后的端点回退；电量继承家族
+  `0x0207/0x8207` 只读查询。
+- `OppoEarbudAdapter` 继承标准层，增加 OPPO/Enco 名称规则、固定 RFCOMM
+  UUID、电量和标准三态降噪；具体 OPPO Adapter 只声明型号 Profile，
+  `Air2 Pro` 覆盖其相反的 ANC/关闭编码。
 - `BoseEarbudAdapter` 使用已连接耳机的名称/Bose OUI 做无扫描初筛，创建
   BMAP 会话后以 `[0.3]` 确认产品 ID，以 `[2.2]` 读取组件电量。名称只允许
   进入家族层；只有协议内产品 ID 才能升级到具体 Bose 型号。
 
 Registry 固定按“具体型号 → 厂商家族 → 标准耳机”解析：
 
-- 具体 Air3 Pro Adapter 建立私有通道并发布完整电量、降噪和流转能力。
-- 未知 vivo 家族 Adapter 发布耳机身份、系统整机电量和流转能力。
+- vivo/iQOO TWS 家族 Adapter 建立私有通道并发布家族电量、三态降噪和
+  流转能力；Air3 Pro/TWS 3e 具体 Adapter 仅覆盖已知字节差异。
+- OPPO 具体型号优先覆盖通用 OPPO Profile；其余 OPPO/Enco 名称使用参考
+  实现的标准电量和三态降噪协议。
 - 标准 Adapter 只接管 Bluetooth Class 明确为耳机，或名称保守命中耳机
   关键词的设备，同样发布身份、系统整机电量和流转能力。
 - 音箱、车机和无法确认是耳机的设备不匹配任何 Adapter；名称可确认由
   HyperOS 原生支持的小米/REDMI 耳机也明确排除，保留官方完整路径。
 
-身份级回退不会创建 RFCOMM、启动 Reader、安排重连或覆盖降噪方法。它只在
-A2DP 会话建立时读取一次 Android 蓝牙电量缓存，并监听系统已有的电量变化
-广播，不轮询设备。
+标准耳机身份级回退不会创建 RFCOMM、启动 Reader、安排重连或覆盖降噪方法。
+它只在 A2DP 会话建立时读取一次 Android 蓝牙电量缓存，并监听系统已有的
+电量变化广播，不轮询设备。
 
 Registry 只选择 Adapter，不包含蓝牙连接或全局状态。新增型号不修改 Hook
 分发代码，也不依赖“当前只有一个型号”的默认兜底。
@@ -121,11 +136,15 @@ Adapter 与有状态协议组件采用组合关系。每个 RFCOMM 会话从选�
 - 在权威型号事件后给出该型号才允许执行的后续只读命令。
 - 给出控制成功后需要执行的权威只读回查。
 
-厂商原始帧由 `VivoTwsProtocol`、`StarRingWireCodec`、
+厂商原始帧由 `VivoTwsProtocol`、`StarRingWireCodec`、`OppoWireCodec`、
 `BoseBmapWireCodec` 等纯字节组件负责。`EarbudProtocol` 不拥有 Socket，
 WireCodec 不认识 Adapter、MiLink 或生命周期。
 
 具体型号拥有自己的不可变协议画像。例如
+`VivoTwsAir3ProAdapter` 与 `VivoTws3eAdapter` 分别选择 GAIA v3 的
+`mode 04 00` 和 `mode 03` Profile；通用 vivo 协议实例只消费所选 Profile，
+没有零售型号分支。`VivoEarbudAdapter` 默认选择公开 v4 Profile；发现具体
+型号不兼容时，由该型号 Adapter 覆盖 Profile，而不修改家族状态机。
 `BoseQuietComfortHeadphonesAdapter.bmapProfile` 声明产品 ID、Quiet/Aware
 槽位、模式解释阈值，以及从 ModeConfig 的 `wind=true` 动态发现通勤槽的策略；
 Bose 家族协议在产品 ID 未确认前只读型号与电量，不发送 AudioModes 查询，也
@@ -196,7 +215,7 @@ EarbudSessionService
 1. Hook `A2dpService.handleConnectionStateChanged`。
 2. A2DP 进入 connected 且 Registry 解析到允许接入的 Adapter 时，向
    连接管理器注册设备并创建一个设备会话。
-3. 若具体 Adapter 要求私有协议，会话使用继承得到的候选端点建立 RFCOMM，
+3. 若 Adapter 要求私有协议，会话使用继承得到的候选端点建立 RFCOMM，
    通道成功后向 MiLink 发布 MMA connected，并发送家族安全的初始只读查询；
    权威型号事件可在同一串行事务中解锁具体型号后续查询。身份级回退则立即
    就绪，不创建任何私有通道。
@@ -401,8 +420,10 @@ Air3 Pro 设置帧固定使用 GAIA v3 载荷 `mode 04 00`。
 新增 vivo 型号只需要：
 
 1. 从对应家族 Adapter 继承新的具体型号 Adapter。
-2. 只覆盖型号名称、能力、物理形态及可选卡片呈现 ID。
-3. 若协议差异可由参数表达，复用协议组件；否则实现新的 `EarbudProtocol`。
+2. 只覆盖精确名称，并选择经验证的 `VivoTwsProtocol.Profile`；未登记型号
+   自动继承家族默认 Profile。
+3. 若字节差异可由 GAIA 版本、查询载荷和设置后缀表达，只增加 Profile；
+   只有全新状态机才实现新的 `EarbudProtocol`。
 4. 按具体型号优先级在 Registry 注册。
 5. 增加继承、匹配、抓包与能力回归测试。
 

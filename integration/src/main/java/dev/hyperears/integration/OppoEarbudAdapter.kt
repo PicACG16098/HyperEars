@@ -1,0 +1,228 @@
+package dev.hyperears.integration
+
+import dev.hyperears.protocol.oppo.OppoWireCodec
+
+/**
+ * Shared OPPO Enco family adapter.
+ *
+ * OppoPods uses the same private RFCOMM service and standard three-state ANC mapping for the
+ * family, with explicitly documented model exceptions. Unknown OPPO/Enco headsets therefore use
+ * this standard profile; a concrete adapter overrides only a verified difference.
+ */
+open class OppoEarbudAdapter : StandardEarbudAdapter() {
+    override val id: String = ID
+    override val displayName: String = "OPPO Enco headset"
+    override val privateProtocolRequired: Boolean = true
+    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
+    override val capabilities: EarbudCapabilities = super.capabilities.copy(
+        noiseControl = true,
+    )
+    override val supportedNoiseModes: Set<NoiseMode> = setOf(
+        NoiseMode.ANC,
+        NoiseMode.OFF,
+        NoiseMode.TRANSPARENCY,
+    )
+    override val endpoints: List<RfcommEndpointSpec> = listOf(
+        RfcommEndpointSpec.ServiceUuid(
+            uuid = OPPO_RFCOMM_UUID,
+            id = "oppo-private-rfcomm",
+        ),
+    )
+    open val protocolProfile: OppoProtocolProfile = OppoProtocolProfile.STANDARD
+
+    override fun matches(identity: EarbudIdentity): Boolean {
+        if (!identity.standardHeadset || identity.nativeSystemEarbud) return false
+        val name = normalizeDeviceName(identity.deviceName.orEmpty())
+        return name.contains("oppo") || name.contains("enco")
+    }
+
+    override fun createProtocol(): EarbudProtocol =
+        OppoEarbudProtocol(protocolProfile)
+
+    companion object {
+        const val ID = "oppo-enco-family"
+        const val OPPO_RFCOMM_UUID = "0000079a-d102-11e1-9b23-00025b00a5a5"
+    }
+}
+
+/** OPPO Enco Air2 Pro reverses the family's standard ANC and off values. */
+object OppoEncoAir2ProAdapter : OppoEarbudAdapter() {
+    const val ID = "oppo-enco-air2-pro"
+
+    override val id: String = ID
+    override val displayName: String = "OPPO Enco Air2 Pro"
+    override val protocolProfile: OppoProtocolProfile = OppoProtocolProfile.COMPATIBLE
+
+    override fun matches(identity: EarbudIdentity): Boolean =
+        super.matches(identity) &&
+            normalizeDeviceName(identity.deviceName.orEmpty()).contains("encoair2pro")
+}
+
+/** Named profile reserved for Free4's documented adaptive/spatial extensions. */
+object OppoEncoFree4Adapter : OppoEarbudAdapter() {
+    const val ID = "oppo-enco-free4"
+
+    override val id: String = ID
+    override val displayName: String = "OPPO Enco Free4"
+
+    override fun matches(identity: EarbudIdentity): Boolean =
+        super.matches(identity) &&
+            normalizeDeviceName(identity.deviceName.orEmpty()).contains("encofree4")
+}
+
+/** Named profile reserved for Enco X3's documented spatial-audio extensions. */
+object OppoEncoX3Adapter : OppoEarbudAdapter() {
+    const val ID = "oppo-enco-x3"
+
+    override val id: String = ID
+    override val displayName: String = "OPPO Enco X3"
+
+    override fun matches(identity: EarbudIdentity): Boolean =
+        super.matches(identity) &&
+            normalizeDeviceName(identity.deviceName.orEmpty()).contains("encox3")
+}
+
+/** Named profile reserved for Enco Air5's documented spatial-sound extensions. */
+object OppoEncoAir5Adapter : OppoEarbudAdapter() {
+    const val ID = "oppo-enco-air5"
+
+    override val id: String = ID
+    override val displayName: String = "OPPO Enco Air5"
+
+    override fun matches(identity: EarbudIdentity): Boolean =
+        super.matches(identity) &&
+            normalizeDeviceName(identity.deviceName.orEmpty()).contains("encoair5")
+}
+
+/**
+ * Model-owned interpretation of the raw ANC values.
+ *
+ * Adaptive and intensity variants remain read-compatible, but HyperEars intentionally exposes
+ * only MiLink's native ANC/off/transparency controls until the common domain gains a distinct
+ * adaptive mode.
+ */
+data class OppoProtocolProfile(
+    val ancPrimary: Int,
+    val offPrimary: Int,
+) {
+    companion object {
+        val STANDARD = OppoProtocolProfile(ancPrimary = 0x02, offPrimary = 0x01)
+        val COMPATIBLE = OppoProtocolProfile(ancPrimary = 0x01, offPrimary = 0x02)
+    }
+}
+
+private class OppoEarbudProtocol(
+    private val profile: OppoProtocolProfile,
+) : EarbudProtocol {
+    private val decoder = OppoWireCodec.Decoder()
+    private var handshakePublished = false
+    private var battery = EarbudBattery()
+    private var pendingNotificationRegistration: ByteArray? = null
+
+    override fun initialReadCommands(): List<ByteArray> = listOf(
+        OppoWireCodec.queryNotificationSupport,
+        OppoWireCodec.queryBattery,
+        OppoWireCodec.queryAnc,
+    )
+
+    override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
+        ControlRequest.Refresh -> initialReadCommands()
+        is ControlRequest.SetNoiseMode -> request.mode.toWireCommand()?.let(::listOf).orEmpty()
+    }
+
+    override fun readback(request: ControlRequest): List<ByteArray> = when (request) {
+        ControlRequest.Refresh -> emptyList()
+        is ControlRequest.SetNoiseMode -> listOf(OppoWireCodec.queryAnc)
+    }
+
+    override fun followUpCommands(event: EarbudEvent): List<ByteArray> {
+        if (event !is EarbudEvent.Handshake) return emptyList()
+        return pendingNotificationRegistration
+            ?.also { pendingNotificationRegistration = null }
+            ?.let(::listOf)
+            .orEmpty()
+    }
+
+    override fun offer(bytes: ByteArray): List<EarbudEvent> =
+        decoder.offer(bytes).flatMap { frame ->
+            buildList {
+                OppoWireCodec.parseNotificationSupport(frame)?.let { advertisedIds ->
+                    val subscribableIds = advertisedIds.filterNot { it.isDebugNotification() }
+                        .toByteArray()
+                    pendingNotificationRegistration = subscribableIds
+                        .takeIf(ByteArray::isNotEmpty)
+                        ?.let(OppoWireCodec::registerNotifications)
+                    handshakePublished = true
+                    add(EarbudEvent.Handshake(true))
+                    return@buildList
+                }
+                OppoWireCodec.parseBatteryState(frame)?.let { state ->
+                    publishHandshakeIfNeeded()
+                    battery = battery.copy(
+                        left = state.left?.toDomainReading() ?: battery.left,
+                        right = state.right?.toDomainReading() ?: battery.right,
+                        case = state.case?.toDomainReading() ?: battery.case,
+                    )
+                    add(EarbudEvent.BatteryChanged(battery))
+                    return@buildList
+                }
+                OppoWireCodec.parseAncState(frame)
+                    ?.toDomainMode()
+                    ?.let { mode ->
+                        publishHandshakeIfNeeded()
+                        add(EarbudEvent.NoiseModeChanged(mode, acknowledged = true))
+                        return@buildList
+                    }
+                add(
+                    EarbudEvent.UnknownFrame(
+                        version = 1,
+                        vendor = OPPO_LOG_VENDOR,
+                        command = frame.command,
+                        payloadSize = frame.payload.size,
+                    ),
+                )
+            }
+        }
+
+    override fun reset() {
+        decoder.reset()
+        handshakePublished = false
+        battery = EarbudBattery()
+        pendingNotificationRegistration = null
+    }
+
+    private fun MutableList<EarbudEvent>.publishHandshakeIfNeeded() {
+        if (handshakePublished) return
+        handshakePublished = true
+        add(EarbudEvent.Handshake(true))
+    }
+
+    private fun NoiseMode.toWireCommand(): ByteArray? = when (this) {
+        NoiseMode.ANC -> OppoWireCodec.setAnc(profile.ancPrimary)
+        NoiseMode.OFF -> OppoWireCodec.setAnc(profile.offPrimary)
+        NoiseMode.TRANSPARENCY -> OppoWireCodec.setAnc(primary = 0x04)
+        NoiseMode.WIND -> null
+    }
+
+    private fun OppoWireCodec.AncState.toDomainMode(): NoiseMode? = when {
+        primary == profile.ancPrimary && secondary in setOf(null, 0x00) -> NoiseMode.ANC
+        primary == profile.offPrimary && secondary in setOf(null, 0x00) -> NoiseMode.OFF
+        primary == 0x04 && secondary in setOf(null, 0x00) -> NoiseMode.TRANSPARENCY
+        primary == 0x00 && secondary in setOf(0x01, 0x02) -> NoiseMode.TRANSPARENCY
+        primary == 0x00 && secondary == 0x08 -> NoiseMode.ANC
+        primary == 0x08 && secondary in setOf(null, 0x00) -> NoiseMode.OFF
+        primary in ANC_INTENSITY_VALUES && secondary in setOf(null, 0x00) -> NoiseMode.ANC
+        else -> null
+    }
+
+    private fun OppoWireCodec.BatteryReading.toDomainReading(): BatteryReading =
+        BatteryReading(percent = percent, charging = charging)
+
+    private fun Byte.isDebugNotification(): Boolean =
+        (toInt() and 0xF0) == 0xF0
+
+    private companion object {
+        const val OPPO_LOG_VENDOR = 0x4F50
+        val ANC_INTENSITY_VALUES = setOf(0x10, 0x20, 0x40, 0x80)
+    }
+}

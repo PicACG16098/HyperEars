@@ -34,25 +34,39 @@ object VivoTwsProtocol {
         }
     }
 
-    enum class Variant(
+    /**
+     * Immutable wire profile selected by a concrete model adapter.
+     *
+     * Profiles describe byte-level differences only. They deliberately do not contain retail
+     * name matching, capabilities or transport policy.
+     */
+    enum class Profile(
         val label: String,
         val note: String,
         internal val gaiaVersion: Int,
+        internal val noiseQueryPayload: ByteArray,
+        internal val noiseSetSuffix: ByteArray,
     ) {
         AIR3_PRO_CAPTURED(
             label = "Air3 Pro 抓包 v3",
             note = "当前项目实机确认：设置载荷 mode 04 00",
             gaiaVersion = 3,
+            noiseQueryPayload = byteArrayOf(),
+            noiseSetSuffix = byteArrayOf(4, 0),
         ),
-        HANDMADE_V4(
-            label = "公开手工逆向 v4",
-            note = "Star-ZER0：查询尾随 00，设置载荷 mode 03 01",
+        FAMILY_DEFAULT_V4(
+            label = "vivo 家族默认 v4",
+            note = "Star-ZER0 公共画像：具体型号未注明，作为家族默认兼容参数",
             gaiaVersion = 4,
+            noiseQueryPayload = byteArrayOf(0),
+            noiseSetSuffix = byteArrayOf(3, 1),
         ),
         TWS_3E_V3(
             label = "TWS 3e 参考 v3",
             note = "ScrewVivoTWS：设置载荷 mode 03",
             gaiaVersion = 3,
+            noiseQueryPayload = byteArrayOf(),
+            noiseSetSuffix = byteArrayOf(3),
         ),
     }
 
@@ -67,8 +81,8 @@ object VivoTwsProtocol {
 
     data class NoiseState(
         val mode: NoiseMode,
-        val noiseEffect: Int,
-        val transparencyEffect: Int,
+        val noiseEffect: Int?,
+        val transparencyEffect: Int?,
         val acknowledged: Boolean,
         val version: Int,
     )
@@ -95,27 +109,18 @@ object VivoTwsProtocol {
         command = HANDSHAKE,
     )
 
-    fun queryNoiseMode(variant: Variant): ByteArray = frame(
-        version = variant.gaiaVersion,
+    fun queryNoiseMode(profile: Profile): ByteArray = frame(
+        version = profile.gaiaVersion,
         vendor = VIVO_VENDOR,
         command = QUERY_NOISE_MODE,
-        payload = when (variant) {
-            Variant.HANDMADE_V4 -> byteArrayOf(0)
-            Variant.AIR3_PRO_CAPTURED,
-            Variant.TWS_3E_V3,
-            -> byteArrayOf()
-        },
+        payload = profile.noiseQueryPayload.copyOf(),
     )
 
-    fun setNoiseMode(mode: NoiseMode, variant: Variant): ByteArray = frame(
-        version = variant.gaiaVersion,
+    fun setNoiseMode(mode: NoiseMode, profile: Profile): ByteArray = frame(
+        version = profile.gaiaVersion,
         vendor = VIVO_VENDOR,
         command = SET_NOISE_MODE,
-        payload = when (variant) {
-            Variant.AIR3_PRO_CAPTURED -> byteArrayOf(mode.wireValue.toByte(), 4, 0)
-            Variant.HANDMADE_V4 -> byteArrayOf(mode.wireValue.toByte(), 3, 1)
-            Variant.TWS_3E_V3 -> byteArrayOf(mode.wireValue.toByte(), 3)
-        },
+        payload = byteArrayOf(mode.wireValue.toByte()) + profile.noiseSetSuffix,
     )
 
     /**
@@ -131,12 +136,12 @@ object VivoTwsProtocol {
     fun parseNoiseState(frame: Frame): NoiseState? {
         if (frame.vendor != VIVO_VENDOR) return null
         if (frame.command != ACK_NOISE_MODE && frame.command != REPORT_NOISE_MODE) return null
-        if (frame.payload.size < 4 || frame.payload[0].unsigned() != 0) return null
+        if (frame.payload.size < 2 || frame.payload[0].unsigned() != 0) return null
         val mode = NoiseMode.fromWire(frame.payload[1].unsigned()) ?: return null
         return NoiseState(
             mode = mode,
-            noiseEffect = frame.payload[2].unsigned(),
-            transparencyEffect = frame.payload[3].unsigned(),
+            noiseEffect = frame.payload.getOrNull(2)?.unsigned(),
+            transparencyEffect = frame.payload.getOrNull(3)?.unsigned(),
             acknowledged = frame.command == ACK_NOISE_MODE,
             version = frame.version,
         )
@@ -292,4 +297,3 @@ object VivoTwsProtocol {
 
     private const val MAX_FRAME_BYTES = 65_544
 }
-

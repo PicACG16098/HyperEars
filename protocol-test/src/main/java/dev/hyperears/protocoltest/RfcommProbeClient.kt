@@ -167,7 +167,7 @@ internal enum class ProtocolTarget(
                     normalized.contains("lightyear") ||
                     normalized.contains("籁特") -> STARRING_ULTRA
 
-                normalized.contains("vivo") &&
+                (normalized.contains("vivo") || normalized.contains("iqoo")) &&
                     (normalized.contains("tws") || normalized.contains("air")) -> VIVO_TWS
 
                 else -> null
