@@ -15,7 +15,7 @@ open class BoseEarbudAdapter : StandardEarbudAdapter() {
     override val displayName: String = "Bose BMAP headset"
     override val privateProtocolRequired: Boolean = true
     override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
-    override val endpoints: List<RfcommEndpointSpec> = listOf(
+    override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.Channel(number = 8),
         RfcommEndpointSpec.ServiceUuid(
             uuid = STANDARD_SPP_UUID,

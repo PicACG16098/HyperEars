@@ -22,7 +22,7 @@ open class OppoEarbudAdapter : StandardEarbudAdapter() {
         NoiseMode.OFF,
         NoiseMode.TRANSPARENCY,
     )
-    override val endpoints: List<RfcommEndpointSpec> = listOf(
+    override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.ServiceUuid(
             uuid = OPPO_RFCOMM_UUID,
             id = "oppo-private-rfcomm",

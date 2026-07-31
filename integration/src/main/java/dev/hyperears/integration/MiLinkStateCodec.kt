@@ -44,8 +44,8 @@ object MiLinkStateCodec {
     /**
      * Encodes MiLink's stock three-state transport ABI.
      *
-     * WIND uses the ANC-compatible value only to keep the host ANC container available. A
-     * model-specific card adapter renders it as an independent fourth item and handles its click.
+     * WIND uses the ANC-compatible value because it is presented as an ANC-branch option by the
+     * model-specific card adapter, while MiLink continues to own its native three-state row.
      */
     fun ancState(state: EarbudState): Int = when (state.noiseMode) {
         NoiseMode.ANC, NoiseMode.WIND -> 1

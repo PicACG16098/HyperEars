@@ -190,8 +190,8 @@ class EarbudAdapterHierarchyTest {
             VivoEarbudAdapter::class.java.superclass,
         )
 
-        val first = VivoTwsAir3ProAdapter.endpoints.first() as RfcommEndpointSpec.ServiceUuid
-        assertEquals(1, VivoTwsAir3ProAdapter.endpoints.size)
+        val first = VivoTwsAir3ProAdapter.transports.first() as RfcommEndpointSpec.ServiceUuid
+        assertEquals(1, VivoTwsAir3ProAdapter.transports.size)
         assertEquals(VivoEarbudAdapter.VIVO_GAIA_UUID, first.uuid)
         assertEquals(BatterySource.PRIVATE_PROTOCOL, VivoTwsAir3ProAdapter.batterySource)
         assertTrue(VivoTwsAir3ProAdapter.capabilities.battery)
@@ -216,7 +216,7 @@ class EarbudAdapterHierarchyTest {
         )
         assertEquals(
             listOf("vivo-gaia-0837", "rfcomm-13"),
-            VivoTws3eAdapter.endpoints.map(RfcommEndpointSpec::id),
+            VivoTws3eAdapter.transports.map(EarbudTransportSpec::id),
         )
 
         val protocol = requireNotNull(VivoTws3eAdapter.createProtocol())
@@ -304,7 +304,7 @@ class EarbudAdapterHierarchyTest {
         assertEquals(BatterySource.PRIVATE_PROTOCOL, StarRingUltraAdapter.batterySource)
         assertTrue(StarRingUltraAdapter.privateProtocolRequired)
         assertEquals(
-            ControlConfirmationPolicy.PUBLISH_AFTER_WRITE_THEN_REFRESH,
+            ControlConfirmationPolicy.DEVICE_REPORT,
             StarRingUltraAdapter.noiseControlConfirmation,
         )
         assertTrue(StarRingUltraAdapter.capabilities.battery)
@@ -312,9 +312,26 @@ class EarbudAdapterHierarchyTest {
         assertTrue(StarRingUltraAdapter.capabilities.windNoiseControl)
         assertTrue(StarRingUltraAdapter.capabilities.audioHandoff)
         assertEquals(
-            listOf("rfcomm-28", "rfcomm-28-insecure", "spp-uuid", "rfcomm-5"),
-            StarRingUltraAdapter.endpoints.map(RfcommEndpointSpec::id),
+            listOf(
+                "starring-official-gatt",
+                "rfcomm-28",
+                "rfcomm-28-insecure",
+                "spp-uuid",
+                "rfcomm-5",
+            ),
+            StarRingUltraAdapter.transports.map(EarbudTransportSpec::id),
         )
+        val gatt = StarRingUltraAdapter.transports.first() as GattTransportSpec
+        assertEquals(
+            "00007777-0000-1000-8000-00805F9B34FB",
+            gatt.writeCharacteristicUuid,
+        )
+        assertEquals(
+            "00008888-0000-1000-8000-00805F9B34FB",
+            gatt.notifyCharacteristicUuid,
+        )
+        assertEquals(0xA102, gatt.writeInstanceId)
+        assertEquals(0xA105, gatt.notifyInstanceId)
 
         val protocol = requireNotNull(StarRingUltraAdapter.createProtocol())
         val windCommands = protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.WIND))
@@ -323,10 +340,7 @@ class EarbudAdapterHierarchyTest {
             "08 EE 00 00 00 06 82 0E 00 00 00 01 00 8D",
             windCommands.single().hex(),
         )
-        assertEquals(
-            "08 EE 00 00 00 06 02 0A 00 08",
-            protocol.readback(ControlRequest.SetNoiseMode(NoiseMode.WIND)).single().hex(),
-        )
+        assertTrue(protocol.readback(ControlRequest.SetNoiseMode(NoiseMode.WIND)).isEmpty())
         assertEquals(
             EarbudEvent.NoiseModeChanged(NoiseMode.WIND, acknowledged = true),
             protocol.offer(
@@ -358,7 +372,7 @@ class EarbudAdapterHierarchyTest {
         )
         assertEquals(
             listOf("oppo-private-rfcomm"),
-            generic.endpoints.map(RfcommEndpointSpec::id),
+            generic.transports.map(EarbudTransportSpec::id),
         )
 
         val standardProtocol = requireNotNull(generic.createProtocol())
@@ -483,7 +497,7 @@ class EarbudAdapterHierarchyTest {
         assertFalse(adapter.capabilities.noiseControl)
         assertEquals(
             listOf("rfcomm-8", "spp-uuid", "bmap-uuid", "rfcomm-2"),
-            adapter.endpoints.map(RfcommEndpointSpec::id),
+            adapter.transports.map(EarbudTransportSpec::id),
         )
 
         val protocol = requireNotNull(adapter.createProtocol())

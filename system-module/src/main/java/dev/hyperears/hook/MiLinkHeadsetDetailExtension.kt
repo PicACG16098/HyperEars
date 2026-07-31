@@ -19,6 +19,7 @@ internal class MiLinkHeadsetDetailExtension(
     hostClassLoader: ClassLoader,
     stateProvider: (String) -> EarbudState,
     controlSender: (String, NoiseMode) -> Unit,
+    nativeSelectionController: MiLinkNativeAncSelectionController,
 ) {
     private class Target(
         root: View,
@@ -34,6 +35,7 @@ internal class MiLinkHeadsetDetailExtension(
         hostClassLoader = hostClassLoader,
         stateProvider = stateProvider,
         controlSender = controlSender,
+        nativeSelectionController = nativeSelectionController,
     )
     private val targetLock = Any()
     private val targets = WeakHashMap<View, Target>()

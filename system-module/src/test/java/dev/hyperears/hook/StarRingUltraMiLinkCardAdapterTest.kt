@@ -1,39 +1,51 @@
 package dev.hyperears.hook
 
+import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.NoiseMode
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StarRingUltraMiLinkCardAdapterTest {
+    private val connected = EarbudState(
+        sessionActive = true,
+        connected = true,
+    )
+
     @Test
-    fun windIsAnIndependentFourthModeRatherThanAncProjection() {
-        assertTrue(
-            StarRingUltraMiLinkCardAdapter.isModeSelected(
-                NoiseMode.WIND,
-                NoiseMode.WIND,
-            ),
-        )
-        assertFalse(
-            StarRingUltraMiLinkCardAdapter.isModeSelected(
-                NoiseMode.ANC,
-                NoiseMode.WIND,
-            ),
-        )
+    fun windIsAnAncBranchSwitchRatherThanAFourthPeerButton() {
+        val anc = StarRingWindControlPolicy.render(connected.copy(noiseMode = NoiseMode.ANC))
+        val wind = StarRingWindControlPolicy.render(connected.copy(noiseMode = NoiseMode.WIND))
+
+        assertTrue(anc.enabled)
+        assertFalse(anc.checked)
+        assertTrue(wind.enabled)
+        assertTrue(wind.checked)
     }
 
     @Test
-    fun eachNativeModeKeepsMutuallyExclusiveSelection() {
-        listOf(
-            NoiseMode.TRANSPARENCY,
-            NoiseMode.ANC,
-            NoiseMode.OFF,
-            NoiseMode.WIND,
-        ).forEach { current ->
-            val selected = NoiseMode.entries.filter { candidate ->
-                StarRingUltraMiLinkCardAdapter.isModeSelected(candidate, current)
-            }
-            assertTrue(selected == listOf(current))
+    fun toggleTransitionsOnlyBetweenAncAndWind() {
+        val anc = connected.copy(noiseMode = NoiseMode.ANC)
+        val wind = connected.copy(noiseMode = NoiseMode.WIND)
+
+        assertEquals(NoiseMode.WIND, StarRingWindControlPolicy.request(anc, checked = true))
+        assertEquals(NoiseMode.ANC, StarRingWindControlPolicy.request(wind, checked = false))
+        assertNull(StarRingWindControlPolicy.request(anc, checked = false))
+        assertNull(StarRingWindControlPolicy.request(wind, checked = true))
+    }
+
+    @Test
+    fun switchIsDisabledOutsideAncBranchOrWithoutLiveSession() {
+        listOf(NoiseMode.TRANSPARENCY, NoiseMode.OFF, null).forEach { mode ->
+            val state = connected.copy(noiseMode = mode)
+            assertFalse(StarRingWindControlPolicy.render(state).enabled)
+            assertNull(StarRingWindControlPolicy.request(state, checked = true))
         }
+
+        val disconnected = connected.copy(connected = false, noiseMode = NoiseMode.ANC)
+        assertFalse(StarRingWindControlPolicy.render(disconnected).enabled)
+        assertNull(StarRingWindControlPolicy.request(disconnected, checked = true))
     }
 }

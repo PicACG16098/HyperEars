@@ -49,7 +49,7 @@ internal class EarbudDeviceSession(
     val earbudAdapter: EarbudAdapter,
     private val connectionCoordinator: ConnectionAttemptCoordinator,
     private val listener: Listener,
-    private val channelFactory: EarbudChannelFactory = AndroidRfcommChannelFactory,
+    private val channelFactory: EarbudChannelFactory = AndroidEarbudChannelFactory,
 ) : Closeable {
     fun interface Listener {
         fun onEvent(session: EarbudDeviceSession, event: EarbudEvent)
@@ -285,9 +285,9 @@ internal class EarbudDeviceSession(
 
     private suspend fun connectFirstEndpointSerially(): EarbudChannel {
         var lastError: Throwable? = null
-        earbudAdapter.endpoints.forEach { endpoint ->
+        earbudAdapter.transports.forEach { transport ->
             currentCoroutineContext().ensureActive()
-            val candidate = channelFactory.create(device, endpoint)
+            val candidate = channelFactory.create(context, device, transport)
             synchronized(transportLock) { channel = candidate }
             try {
                 withTimeout(CONNECT_TIMEOUT_MS) { candidate.connect() }
@@ -305,7 +305,7 @@ internal class EarbudDeviceSession(
                 lastError = error
                 ModuleLog.debug(
                     COMPONENT,
-                    "endpoint ${endpoint.id} failed: ${error.javaClass.simpleName}",
+                    "transport ${transport.id} failed: ${error.javaClass.simpleName}",
                 )
             }
         }

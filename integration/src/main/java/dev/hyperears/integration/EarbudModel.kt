@@ -130,8 +130,12 @@ sealed interface ControlRequest {
     data class SetNoiseMode(val mode: NoiseMode) : ControlRequest
 }
 
-sealed interface RfcommEndpointSpec {
+/** A model-declared private-protocol transport candidate. */
+sealed interface EarbudTransportSpec {
     val id: String
+}
+
+sealed interface RfcommEndpointSpec : EarbudTransportSpec {
 
     data class ServiceUuid(
         val uuid: String,
@@ -144,6 +148,20 @@ sealed interface RfcommEndpointSpec {
         override val id: String = "rfcomm-$number${if (secure) "" else "-insecure"}",
     ) : RfcommEndpointSpec
 }
+
+/**
+ * BLE GATT transport whose characteristics carry the protocol's unmodified business frames.
+ *
+ * UUIDs are authoritative. Optional instance IDs pin a captured attribute table when a device
+ * exposes duplicate characteristic UUIDs; runtimes still validate characteristic properties.
+ */
+data class GattTransportSpec(
+    val writeCharacteristicUuid: String,
+    val notifyCharacteristicUuid: String,
+    val writeInstanceId: Int? = null,
+    val notifyInstanceId: Int? = null,
+    override val id: String,
+) : EarbudTransportSpec
 
 data class EarbudCapabilities(
     val battery: Boolean = false,

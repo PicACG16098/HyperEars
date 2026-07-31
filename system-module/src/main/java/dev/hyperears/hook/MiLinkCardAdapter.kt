@@ -7,6 +7,7 @@ import android.widget.LinearLayout
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.NoiseMode
+import java.util.WeakHashMap
 
 /**
  * A model-specific, one-shot adaptation of MiLink's already-created native headset card.
@@ -35,7 +36,110 @@ internal data class MiLinkCardEnvironment(
     val hostClassLoader: ClassLoader,
     val stateProvider: (String) -> EarbudState,
     val controlSender: (String, NoiseMode) -> Unit,
+    val nativeSelectionController: MiLinkNativeAncSelectionController,
 )
+
+/**
+ * Guards MiLink's native three-state renderer only for model adapters that register extra modes.
+ *
+ * WIND must travel through MiLink's stock ANC integer to keep the native card available. MiLink
+ * therefore reselects ANC after receiving a WIND callback. Only that visible WIND-to-ANC
+ * projection is rejected; every other native selection is accepted and clears its peer items.
+ * This deliberately avoids consulting process-local protocol snapshots, which may lag behind a
+ * remote MiLink card.
+ */
+internal class MiLinkNativeAncSelectionController {
+    private data class Rule(
+        val address: String,
+        val itemMode: NoiseMode,
+    )
+
+    private val lock = Any()
+    private val rules = WeakHashMap<View, Rule>()
+    private val acceptedSelection = ThreadLocal<View?>()
+
+    fun register(view: View, address: String, itemMode: NoiseMode) {
+        synchronized(lock) {
+            rules[view] = Rule(address, itemMode)
+        }
+    }
+
+    fun unregister(view: View) {
+        synchronized(lock) {
+            rules.remove(view)
+        }
+    }
+
+    fun shouldSuppress(view: View, requestedSelected: Boolean): Boolean {
+        if (!requestedSelected) return false
+        if (acceptedSelection.get() === view) return false
+        val (rule, peers, windSelected) = synchronized(lock) {
+            val matchedRule = rules[view] ?: return false
+            val matching = rules.entries.filter { (_, candidateRule) ->
+                candidateRule.address == matchedRule.address
+            }
+            Triple(
+                matchedRule,
+                matching.map(Map.Entry<View, Rule>::key).filter { it !== view },
+                matching.any { (candidate, candidateRule) ->
+                    candidateRule.itemMode == NoiseMode.WIND && candidate.isSelected
+                },
+            )
+        }
+        val suppress = MiLinkNativeAncSelectionPolicy.shouldSuppress(
+            itemMode = rule.itemMode,
+            windSelected = windSelected,
+            requestedSelected = requestedSelected,
+        )
+        if (!suppress) {
+            peers.forEach { peer -> peer.isSelected = false }
+        }
+        return suppress
+    }
+
+    /**
+     * Reflects MiLink's successful semantic control operation without waiting for its later
+     * property callback to traverse the remote-service pipeline. The real device callback still
+     * renders through the normal path and therefore remains authoritative.
+     */
+    fun onControlAccepted(address: String, mode: NoiseMode) {
+        val (target, peers) = synchronized(lock) {
+            val matching = rules.entries.filter { (_, rule) ->
+                rule.address.equals(address, ignoreCase = true)
+            }
+            val selected = matching.firstOrNull { (_, rule) -> rule.itemMode == mode }?.key
+                ?: return
+            selected to matching.map(Map.Entry<View, Rule>::key).filter { it !== selected }
+        }
+        target.post {
+            peers.forEach { peer -> peer.isSelected = false }
+            acceptedSelection.set(target)
+            try {
+                target.isSelected = true
+            } finally {
+                acceptedSelection.remove()
+            }
+        }
+    }
+}
+
+internal object MiLinkNativeAncModeCodec {
+    fun decode(mode: Int): NoiseMode? = when (mode) {
+        0 -> NoiseMode.ANC
+        1 -> NoiseMode.TRANSPARENCY
+        2 -> NoiseMode.OFF
+        else -> null
+    }
+}
+
+internal object MiLinkNativeAncSelectionPolicy {
+    fun shouldSuppress(
+        itemMode: NoiseMode,
+        windSelected: Boolean,
+        requestedSelected: Boolean,
+    ): Boolean =
+        requestedSelected && itemMode == NoiseMode.ANC && windSelected
+}
 
 /**
  * Single composition root for model-specific MiLink presentations.
@@ -95,6 +199,7 @@ internal fun createNativeMiLinkAncItem(
     ModuleLog.warn("MiLinkUi", "native ANC item unavailable", it)
 }.getOrNull()
 
-private const val HOST_ANC_ITEM_CLASS =
+/** Stable, non-obfuscated native item boundary shared by construction and selection guarding. */
+internal const val HOST_ANC_ITEM_CLASS =
     "com.miui.circulate.world.headset.ui.HeadsetControlAncItemView"
 private const val MILINK_PACKAGE = "com.milink.service"

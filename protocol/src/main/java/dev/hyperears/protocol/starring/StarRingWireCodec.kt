@@ -1,10 +1,10 @@
 package dev.hyperears.protocol.starring
 
 /**
- * StarRing Ultra's checksum-framed protocol carried over its private RFCOMM channel.
+ * StarRing Ultra's checksum-framed business protocol.
  *
- * Android's BluetoothSocket exposes only these business bytes; RFCOMM headers and FCS bytes
- * observed in HCI snoops must not be written by callers.
+ * The official app carries these same bytes over BLE GATT; captured firmware also accepts them
+ * over private RFCOMM transports. Link-layer ATT/RFCOMM headers are never part of these frames.
  */
 object StarRingWireCodec {
     enum class NoiseMode(

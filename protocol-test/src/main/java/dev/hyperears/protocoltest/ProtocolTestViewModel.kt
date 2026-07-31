@@ -46,6 +46,12 @@ internal enum class IdentityScanPhase {
     FAILED,
 }
 
+private enum class ActiveTransport {
+    NONE,
+    RFCOMM,
+    STARRING_GATT,
+}
+
 internal data class VivoIdentityDetection(
     val id: String,
     val address: String,
@@ -87,6 +93,7 @@ internal data class ProtocolUiState(
     val detectedProfile: Profile? = null,
     val battery: BatteryObservation? = null,
     val noise: VivoTwsProtocol.NoiseState? = null,
+    val starRingNoise: StarRingWireCodec.NoiseMode? = null,
     val handshakeStatus: String = "未测试",
     val noiseApiStatus: String = "未测试",
     val batteryApiStatus: String = "未测试",
@@ -104,6 +111,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     private val adapter =
         (application.getSystemService(Application.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
     private val client = RfcommProbeClient(application)
+    private val starRingGattClient = StarRingGattProbeClient(application)
     private val identityScanner = VivoIdentityScanner(application)
     private val vivoDecoder = VivoTwsProtocol.Decoder()
     private val starRingDecoder = StarRingWireCodec.Decoder()
@@ -111,12 +119,17 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     private val mutableState = MutableStateFlow(ProtocolUiState())
     val state: StateFlow<ProtocolUiState> = mutableState.asStateFlow()
     private val logId = AtomicLong()
+    private val txId = AtomicLong()
     private var connectionJob: Job? = null
     private var identityScanTimeoutJob: Job? = null
+    private var activeTransport = ActiveTransport.NONE
 
     init {
         viewModelScope.launch {
             client.events.collect(::handleClientEvent)
+        }
+        viewModelScope.launch {
+            starRingGattClient.events.collect(::handleStarRingGattEvent)
         }
         viewModelScope.launch {
             identityScanner.events.collect(::handleIdentityScanEvent)
@@ -184,6 +197,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
             selectedProfile = device.suggestedVivoProfile(),
             battery = null,
             noise = null,
+            starRingNoise = null,
             handshakeStatus = "未测试",
             noiseApiStatus = "未测试",
             batteryApiStatus = "未测试",
@@ -208,6 +222,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
             selectedTarget = target,
             battery = null,
             noise = null,
+            starRingNoise = null,
             handshakeStatus = "未测试",
             noiseApiStatus = "未测试",
             batteryApiStatus = "未测试",
@@ -240,27 +255,50 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
 
         connectionJob?.cancel()
         connectionJob = viewModelScope.launch {
+            client.close()
+            starRingGattClient.close()
+            activeTransport = ActiveTransport.NONE
             vivoDecoder.reset()
             starRingDecoder.reset()
             boseDecoder.reset()
             val target = mutableState.value.selectedTarget
             mutableState.value = mutableState.value.copy(
                 phase = ConnectionPhase.CONNECTING,
-                connectionMessage = "正在探测 ${target.label} RFCOMM 入口…",
+                connectionMessage = if (target == ProtocolTarget.STARRING_ULTRA) {
+                    "正在连接官方 BLE GATT 通道…"
+                } else {
+                    "正在探测 ${target.label} RFCOMM 入口…"
+                },
                 endpoint = null,
                 detectedProfile = null,
                 battery = null,
                 noise = null,
+                starRingNoise = null,
                 handshakeStatus = "未测试",
                 noiseApiStatus = "未测试",
                 batteryApiStatus = "未测试",
             )
-            runCatching { client.connect(address, target.endpoints) }
-                .onSuccess { endpoint ->
+            runCatching {
+                if (target == ProtocolTarget.STARRING_ULTRA) {
+                    starRingGattClient.connect(address).label
+                } else {
+                    client.connect(address, target.endpoints).label
+                }
+            }
+                .onSuccess { endpointLabel ->
+                    activeTransport = if (target == ProtocolTarget.STARRING_ULTRA) {
+                        ActiveTransport.STARRING_GATT
+                    } else {
+                        ActiveTransport.RFCOMM
+                    }
                     mutableState.value = mutableState.value.copy(
                         phase = ConnectionPhase.CONNECTED,
-                        connectionMessage = "RFCOMM 已连接",
-                        endpoint = endpoint.label,
+                        connectionMessage = if (target == ProtocolTarget.STARRING_ULTRA) {
+                            "官方 BLE GATT 已连接"
+                        } else {
+                            "RFCOMM 已连接"
+                        },
+                        endpoint = endpointLabel,
                     )
                     runReadOnlyProbe()
                 }
@@ -279,7 +317,9 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     fun disconnect() {
         connectionJob?.cancel()
         connectionJob = null
+        activeTransport = ActiveTransport.NONE
         client.close()
+        starRingGattClient.close()
         mutableState.value = mutableState.value.copy(
             phase = ConnectionPhase.DISCONNECTED,
             connectionMessage = "已断开",
@@ -389,6 +429,21 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
         }
     }
 
+    fun setStarRingNoiseMode(mode: StarRingWireCodec.NoiseMode) {
+        viewModelScope.launch {
+            if (!ensureConnected()) return@launch
+            if (!ensureStarRingTarget()) return@launch
+            mutableState.value = mutableState.value.copy(
+                noiseApiStatus = "等待耳机主动回报",
+            )
+            send(
+                StarRingWireCodec.setNoiseMode(mode),
+                "StarRing 单帧设置${mode.label}",
+            )
+            markTimeoutsLater()
+        }
+    }
+
     fun sendRaw() {
         viewModelScope.launch {
             if (!ensureConnected()) return@launch
@@ -440,10 +495,25 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     }
 
     private suspend fun send(packet: ByteArray, message: String) {
-        addLog("TX", message, packet.hexBytes())
-        runCatching { client.send(packet) }
+        val sequence = txId.incrementAndGet()
+        addLog("TX", "#$sequence $message", packet.hexBytes())
+        runCatching {
+            when (activeTransport) {
+                ActiveTransport.RFCOMM -> client.send(packet)
+                ActiveTransport.STARRING_GATT -> starRingGattClient.send(packet)
+                ActiveTransport.NONE -> error("没有可用的协议传输")
+            }
+        }
+            .onSuccess {
+                val transport = when (activeTransport) {
+                    ActiveTransport.RFCOMM -> "RFCOMM write + flush"
+                    ActiveTransport.STARRING_GATT -> "BLE GATT Write Request"
+                    ActiveTransport.NONE -> "未知传输"
+                }
+                addLog("TX_OK", "#$sequence $transport 完成，共 ${packet.size} 字节")
+            }
             .onFailure {
-                addLog("ERR", "发送失败：${it.conciseMessage()}")
+                addLog("ERR", "#$sequence 发送失败：${it.conciseMessage()}")
                 mutableState.value = mutableState.value.copy(
                     phase = ConnectionPhase.FAILED,
                     connectionMessage = it.conciseMessage(),
@@ -468,6 +538,31 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
             is ClientEvent.Disconnected -> {
                 addLog("CONN", event.reason)
                 if (mutableState.value.phase == ConnectionPhase.CONNECTED) {
+                    mutableState.value = mutableState.value.copy(
+                        phase = ConnectionPhase.DISCONNECTED,
+                        connectionMessage = event.reason,
+                        endpoint = null,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun handleStarRingGattEvent(event: StarRingGattEvent) {
+        when (event) {
+            is StarRingGattEvent.Services ->
+                addLog("GATT", "服务发现完成", event.summary)
+
+            is StarRingGattEvent.Incoming ->
+                handleIncoming(event.bytes)
+
+            is StarRingGattEvent.Disconnected -> {
+                addLog("GATT", event.reason)
+                if (
+                    activeTransport == ActiveTransport.STARRING_GATT &&
+                    mutableState.value.phase == ConnectionPhase.CONNECTED
+                ) {
+                    activeTransport = ActiveTransport.NONE
                     mutableState.value = mutableState.value.copy(
                         phase = ConnectionPhase.DISCONNECTED,
                         connectionMessage = event.reason,
@@ -545,6 +640,17 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                     "左=${battery.leftPercent ?: "—"}% 右=${battery.rightPercent ?: "—"}% " +
                         "盒=${battery.casePercent ?: "—"}%",
                     StarRingWireCodec.run { battery.rawPayload.hex() },
+                )
+            }
+            StarRingWireCodec.parseNoiseState(frame)?.let { noise ->
+                mutableState.value = mutableState.value.copy(
+                    starRingNoise = noise.mode,
+                    noiseApiStatus = "可用 · ${noise.mode.label} · 耳机主动回报",
+                )
+                addLog(
+                    "MODE",
+                    "StarRing 当前模式=${noise.mode.label}",
+                    StarRingWireCodec.run { noise.rawPayload.hex() },
                 )
             }
         }
@@ -711,13 +817,19 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
 
     private fun ensureConnected(): Boolean {
         if (mutableState.value.phase == ConnectionPhase.CONNECTED) return true
-        addLog("ERR", "请先连接耳机 RFCOMM")
+        addLog("ERR", "请先连接耳机协议通道")
         return false
     }
 
     private fun ensureVivoTarget(): Boolean {
         if (mutableState.value.selectedTarget == ProtocolTarget.VIVO_TWS) return true
         addLog("ERR", "当前连接不是 vivo TWS 协议")
+        return false
+    }
+
+    private fun ensureStarRingTarget(): Boolean {
+        if (mutableState.value.selectedTarget == ProtocolTarget.STARRING_ULTRA) return true
+        addLog("ERR", "当前连接不是 StarRing Ultra 协议")
         return false
     }
 
@@ -776,6 +888,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
         identityScanTimeoutJob?.cancel()
         identityScanner.close()
         client.destroy()
+        starRingGattClient.destroy()
         super.onCleared()
     }
 

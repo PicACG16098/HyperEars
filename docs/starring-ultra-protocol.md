@@ -1,12 +1,19 @@
 # StarRing Ultra 协议
 
 数据来源为籁特易耳官方 App `cn.lightyeartech.android` 3.1.4 的本地
-Bluetooth HCI snoop。目标设备为 `StarRing Ultra`，业务协议运行在经典蓝牙
-RFCOMM server channel 28 上。
+Bluetooth HCI snoop。目标设备为 `StarRing Ultra`。旧样本观察到经典蓝牙
+RFCOMM server channel 28；2026-08-01 的当前官方 App 样本确认同一业务协议
+优先通过 BLE GATT 传输：
+
+- 写特征：`00007777-0000-1000-8000-00805F9B34FB`，实测 value handle `0xA102`；
+- 通知特征：`00008888-0000-1000-8000-00805F9B34FB`，实测 value handle `0xA105`；
+- 通知描述符：标准 CCCD `00002902-0000-1000-8000-00805F9B34FB`。
+
+GATT 与 RFCOMM 承载的业务帧逐字节相同；ATT/RFCOMM 包头均不属于业务帧。
 
 ## 电量查询
 
-通过 Android `BluetoothSocket` 写入以下业务帧：
+向 GATT 写特征（或 RFCOMM 回退通道）写入以下业务帧：
 
 ```text
 08 EE 00 00 00 01 01 0A 00 02
@@ -28,8 +35,8 @@ RFCOMM server channel 28 上。
 左右耳和盒子字段位置已由官方 App 初始化序列、重复查询和界面数值交叉定位；
 其余状态字节暂不赋予未经实机变量实验确认的语义。
 
-HCI 抓包中的 `E3/E1 ...` RFCOMM 头及 FCS 不属于业务帧，使用
-`BluetoothSocket` 时不得手工发送。
+HCI 抓包中的 ATT Write Request/Notification 包头，以及 `E3/E1 ...` RFCOMM
+头和 FCS 均不属于业务帧，Android API 调用方不得手工发送。
 
 ## 噪声模式
 
@@ -53,18 +60,20 @@ HCI 抓包中的 `E3/E1 ...` RFCOMM 头及 FCS 不属于业务帧，使用
 | 降噪 | `01 00 00 00` |
 
 耳机通过 `09 FF 00 00 01 06 02 0E 00` 开头的状态帧回报相同 one-hot
-值。当前实机可以稳定执行设置帧，但并不总是主动发送状态回报；因此 HyperEars
-在完整写入成功后先发布请求状态，并紧接着发送一次只读模式查询。若收到回报，
-回报状态会覆盖先前值。
+值。根据官方 App 的 HCI 抓包，设置完成后耳机会先确认写入，并约 0.7 秒后主动
+上报当前模式。因此 HyperEars 在完整写入成功后立即发布请求状态，并以耳机后续
+回报校正；模式查询仅用于连接初始化或显式刷新，不跟随每次设置发送。
 
 ## 测试入口
 
-`protocol-test` 选择 `StarRing Ultra` 后依次尝试：
+`protocol-test` 选择 `StarRing Ultra` 后直接使用官方 BLE GATT 写入/通知特征，
+用于验证单帧控制。正式 Adapter 的传输候选顺序为：
 
-1. RFCOMM channel 28（安全）。
-2. RFCOMM channel 28（不安全）。
-3. 标准 SPP UUID。
-4. 历史兼容 channel 5。
+1. 官方 BLE GATT 写入/通知特征；
+2. RFCOMM channel 28（安全）；
+3. RFCOMM channel 28（不安全）；
+4. 标准 SPP UUID；
+5. 历史兼容 channel 5。
 
 正式适配器连接成功后读取模式与电量，并解析耳机回报；测试界面仍保留原始
 收发字节用于核验。
