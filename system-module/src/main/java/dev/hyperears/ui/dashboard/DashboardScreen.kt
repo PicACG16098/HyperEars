@@ -546,6 +546,7 @@ private fun NoiseMode?.displayName(): String = when (this) {
     NoiseMode.ANC -> "降噪"
     NoiseMode.OFF -> "关闭"
     NoiseMode.TRANSPARENCY -> "通透"
+    NoiseMode.WIND -> "抗风噪"
     null -> "—"
 }
 

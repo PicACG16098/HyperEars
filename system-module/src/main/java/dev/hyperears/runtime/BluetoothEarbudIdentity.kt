@@ -22,6 +22,12 @@ internal fun BluetoothDevice.toEarbudIdentity(): EarbudIdentity {
             deviceClass in HEADSET_DEVICE_CLASSES ||
                 isLikelyEarbudName(deviceName),
         nativeSystemEarbud = isNativeXiaomiEarbudName(deviceName),
+        deviceAddress = runCatching { address }.getOrNull(),
+        bluetoothDeviceClass = deviceClass,
+        serviceUuids = runCatching {
+            uuids.orEmpty()
+                .mapTo(linkedSetOf()) { it.uuid.toString().lowercase(Locale.ROOT) }
+        }.getOrDefault(emptySet()),
     )
 }
 

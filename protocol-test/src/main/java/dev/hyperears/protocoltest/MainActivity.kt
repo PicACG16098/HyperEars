@@ -104,6 +104,7 @@ class MainActivity : ComponentActivity() {
                     onStopIdentityScan = model::stopIdentityScan,
                     onSelectDevice = model::selectDevice,
                     onAddressChange = model::updateAddress,
+                    onSelectTarget = model::selectTarget,
                     onConnect = model::connect,
                     onDisconnect = model::disconnect,
                     onSelectVariant = model::selectVariant,
@@ -130,12 +131,20 @@ class MainActivity : ComponentActivity() {
     private fun handleAutomationIntent(intent: Intent) {
         if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_AUTO_PROBE, false)) {
             intent.removeExtra(EXTRA_AUTO_PROBE)
+            intent.getStringExtra(EXTRA_DEVICE_ADDRESS)
+                ?.takeIf(String::isNotBlank)
+                ?.let(model::updateAddress)
+            intent.getStringExtra(EXTRA_PROTOCOL_TARGET)
+                ?.let { runCatching { ProtocolTarget.valueOf(it) }.getOrNull() }
+                ?.let(model::selectTarget)
             model.connect()
         }
     }
 
     private companion object {
         const val EXTRA_AUTO_PROBE = "auto_probe"
+        const val EXTRA_DEVICE_ADDRESS = "device_address"
+        const val EXTRA_PROTOCOL_TARGET = "protocol_target"
         val REQUIRED_BLUETOOTH_PERMISSIONS = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(
                 Manifest.permission.BLUETOOTH_CONNECT,
@@ -157,6 +166,7 @@ private fun ProtocolLabScreen(
     onStopIdentityScan: () -> Unit,
     onSelectDevice: (PairedDevice) -> Unit,
     onAddressChange: (String) -> Unit,
+    onSelectTarget: (ProtocolTarget) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onSelectVariant: (Variant) -> Unit,
@@ -176,7 +186,7 @@ private fun ProtocolLabScreen(
                     Column {
                         Text("HyperEars")
                         Text(
-                            text = "vivo TWS 协议实验室",
+                            text = "耳机私有协议实验室",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -227,7 +237,7 @@ private fun ProtocolLabScreen(
                     item {
                         LabCard(
                             title = "没有已配对设备",
-                            subtitle = "请先在系统蓝牙设置中完成 vivo TWS 配对，或在下方输入 MAC 地址。",
+                            subtitle = "请先在系统蓝牙设置中完成目标耳机配对，或在下方输入 MAC 地址。",
                         ) {}
                     }
                 } else {
@@ -260,19 +270,30 @@ private fun ProtocolLabScreen(
                 }
 
                 item {
-                    VivoIdentityCard(
-                        state = state,
-                        onStart = onStartIdentityScan,
-                        onStop = onStopIdentityScan,
+                    ProtocolTargetCard(
+                        selected = state.selectedTarget,
+                        onSelect = onSelectTarget,
                     )
                 }
 
-                item {
-                    VariantCard(
-                        selected = state.selectedVariant,
-                        detected = state.detectedVariant,
-                        onSelect = onSelectVariant,
-                    )
+                if (state.selectedTarget == ProtocolTarget.VIVO_TWS) {
+                    item {
+                        VivoIdentityCard(
+                            state = state,
+                            onStart = onStartIdentityScan,
+                            onStop = onStopIdentityScan,
+                        )
+                    }
+
+                    item {
+                        VariantCard(
+                            selected = state.selectedVariant,
+                            detected = state.detectedVariant,
+                            onSelect = onSelectVariant,
+                        )
+                    }
+                } else {
+                    item { StarRingEvidenceCard() }
                 }
 
                 item {
@@ -281,6 +302,7 @@ private fun ProtocolLabScreen(
 
                 item {
                     ApiTestCard(
+                        target = state.selectedTarget,
                         connected = state.phase == ConnectionPhase.CONNECTED,
                         handshakeStatus = state.handshakeStatus,
                         noiseStatus = state.noiseApiStatus,
@@ -292,16 +314,19 @@ private fun ProtocolLabScreen(
                     )
                 }
 
-                item {
-                    NoiseControlCard(
-                        enabled = state.phase == ConnectionPhase.CONNECTED,
-                        current = state.noise?.mode,
-                        onSetNoise = onSetNoise,
-                    )
+                if (state.selectedTarget == ProtocolTarget.VIVO_TWS) {
+                    item {
+                        NoiseControlCard(
+                            enabled = state.phase == ConnectionPhase.CONNECTED,
+                            current = state.noise?.mode,
+                            onSetNoise = onSetNoise,
+                        )
+                    }
                 }
 
                 item {
                     RawCommandCard(
+                        target = state.selectedTarget,
                         enabled = state.phase == ConnectionPhase.CONNECTED,
                         value = state.rawCommand,
                         onValueChange = onRawChange,
@@ -321,7 +346,7 @@ private fun ProtocolLabScreen(
             if (state.logs.isEmpty()) {
                 item {
                     Text(
-                        text = "连接过程和每个 GAIA 帧都会显示在这里。",
+                        text = "连接过程和每个协议帧都会显示在这里。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -373,7 +398,16 @@ private fun ConnectionCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        text = state.endpoint ?: "将依次探测 vivo UUID、SPP、通道 12/13",
+                        text = state.endpoint ?: when (state.selectedTarget) {
+                            ProtocolTarget.VIVO_TWS ->
+                                "将依次探测 vivo UUID、SPP、通道 12/13"
+
+                            ProtocolTarget.STARRING_ULTRA ->
+                                "将依次探测通道 28、SPP、兼容通道 5"
+
+                            ProtocolTarget.BOSE_BMAP ->
+                                "将依次探测通道 8、SPP、BMAP UUID、兼容通道 2"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -428,15 +462,64 @@ private fun DeviceRow(
                 )
             }
             Text(
-                text = when {
-                    selected -> "已选择"
-                    device.likelyVivo -> "vivo TWS"
-                    else -> ""
-                },
+                text = if (selected) "已选择" else device.suggestedTarget?.label.orEmpty(),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
+    }
+}
+
+@Composable
+private fun ProtocolTargetCard(
+    selected: ProtocolTarget,
+    onSelect: (ProtocolTarget) -> Unit,
+) {
+    LabCard(
+        title = "实验协议",
+        subtitle = "选择设备时会按名称自动切换，也可在此手动指定。",
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ProtocolTarget.entries.forEach { target ->
+                FilterChip(
+                    selected = selected == target,
+                    onClick = { onSelect(target) },
+                    label = { Text(target.label) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarRingEvidenceCard() {
+    LabCard(
+        title = "StarRing 电量候选协议",
+        subtitle = "来自官方 App 的 RFCOMM 抓包；本页只发送查询，不改变耳机设置。",
+    ) {
+        Text(
+            "查询帧",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SelectionContainer {
+            Text(
+                "08 EE 00 00 00 01 01 0A 00 02",
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Text(
+            "预期回报：group 0x01 / command 0x01；左右耳取 payload[2]/[3]，" +
+                "充电盒取 payload[6]，0xFF 表示不可用。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -634,7 +717,7 @@ private fun VariantCard(
 private fun StatusCard(state: ProtocolUiState) {
     LabCard(
         title = "耳机实时状态",
-        subtitle = "数值仅在收到对应耳机响应后展示，不使用占位假数据。",
+        subtitle = "数值仅在收到当前所选协议的耳机响应后展示，不使用占位假数据。",
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -659,26 +742,29 @@ private fun StatusCard(state: ProtocolUiState) {
                 charging = state.battery?.caseCharging == true,
             )
         }
-        HorizontalDivider()
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("当前降噪", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = state.noise?.mode?.label ?: "尚未读取",
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        state.noise?.let { noise ->
-            Text(
-                "effect=${noise.noiseEffect}, transparency=${noise.transparencyEffect}, frame=v${noise.version}",
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (state.selectedTarget == ProtocolTarget.VIVO_TWS) {
+            HorizontalDivider()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("当前降噪", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = state.noise?.mode?.label ?: "尚未读取",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            state.noise?.let { noise ->
+                Text(
+                    "effect=${noise.noiseEffect}, transparency=" +
+                        "${noise.transparencyEffect}, frame=v${noise.version}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -716,6 +802,7 @@ private fun BatteryTile(
 
 @Composable
 private fun ApiTestCard(
+    target: ProtocolTarget,
     connected: Boolean,
     handshakeStatus: String,
     noiseStatus: String,
@@ -727,27 +814,55 @@ private fun ApiTestCard(
 ) {
     LabCard(
         title = "只读 API 验证",
-        subtitle = "自动探测会发送 v4 握手、v3/v4 降噪查询和 v4 电量查询，不改变耳机设置。",
+        subtitle = when (target) {
+            ProtocolTarget.VIVO_TWS ->
+                "发送 v4 握手、v3/v4 降噪查询和 v4 电量查询，不改变耳机设置。"
+
+            ProtocolTarget.STARRING_ULTRA ->
+                "只发送抓包确认的 StarRing 电量查询，不改变耳机设置。"
+
+            ProtocolTarget.BOSE_BMAP ->
+                "先读取 BMAP 产品 ID，再读取 [2.2] 组件电量；两条命令均为只读。"
+        },
     ) {
-        ApiStatusRow("握手", handshakeStatus)
-        ApiStatusRow("降噪查询", noiseStatus)
+        if (target == ProtocolTarget.VIVO_TWS || target == ProtocolTarget.BOSE_BMAP) {
+            ApiStatusRow(
+                if (target == ProtocolTarget.BOSE_BMAP) "产品判型" else "握手",
+                handshakeStatus,
+            )
+        }
+        if (target == ProtocolTarget.VIVO_TWS) {
+            ApiStatusRow("降噪查询", noiseStatus)
+        }
         ApiStatusRow("电量查询", batteryStatus)
         Button(
             onClick = onFullProbe,
             enabled = connected,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("运行完整只读探测")
+            Text(
+                when (target) {
+                    ProtocolTarget.VIVO_TWS -> "运行完整只读探测"
+                    ProtocolTarget.STARRING_ULTRA -> "查询 StarRing 电量"
+                    ProtocolTarget.BOSE_BMAP -> "读取 Bose 型号与电量"
+                },
+            )
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedButton(onClick = onHandshake, enabled = connected) { Text("握手") }
-            OutlinedButton(onClick = onQueryNoise, enabled = connected) { Text("读取降噪") }
-            OutlinedButton(onClick = onQueryBattery, enabled = connected) { Text("读取电量") }
+        if (target == ProtocolTarget.VIVO_TWS) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(onClick = onHandshake, enabled = connected) { Text("握手") }
+                OutlinedButton(onClick = onQueryNoise, enabled = connected) {
+                    Text("读取降噪")
+                }
+                OutlinedButton(onClick = onQueryBattery, enabled = connected) {
+                    Text("读取电量")
+                }
+            }
         }
     }
 }
@@ -804,6 +919,7 @@ private fun NoiseControlCard(
 
 @Composable
 private fun RawCommandCard(
+    target: ProtocolTarget,
     enabled: Boolean,
     value: String,
     onValueChange: (String) -> Unit,
@@ -811,7 +927,16 @@ private fun RawCommandCard(
 ) {
     LabCard(
         title = "原始命令",
-        subtitle = "高级诊断入口；输入完整 GAIA 帧，例如 FF 04 00 00 00 1B 02 07。",
+        subtitle = when (target) {
+            ProtocolTarget.VIVO_TWS ->
+                "高级诊断入口；输入完整 GAIA 帧，例如 FF 04 00 00 00 1B 02 07。"
+
+            ProtocolTarget.STARRING_ULTRA ->
+                "高级诊断入口；输入完整 StarRing 业务帧，不包含 RFCOMM 头/FCS。"
+
+            ProtocolTarget.BOSE_BMAP ->
+                "高级诊断入口；输入完整 BMAP 帧，例如电量只读请求 02 02 01 00。"
+        },
     ) {
         OutlinedTextField(
             value = value,

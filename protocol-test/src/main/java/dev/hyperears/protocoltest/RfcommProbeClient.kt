@@ -30,6 +30,9 @@ import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+private val STANDARD_SPP_UUID: UUID =
+    UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
+
 internal sealed interface ClientEvent {
     data class Attempt(val endpoint: RfcommEndpoint) : ClientEvent
     data class AttemptFailed(val endpoint: RfcommEndpoint, val reason: String) : ClientEvent
@@ -53,8 +56,128 @@ internal sealed class RfcommEndpoint(open val id: String, open val label: String
     ) : RfcommEndpoint(id, label)
 }
 
+internal enum class ProtocolTarget(
+    val label: String,
+    val endpoints: List<RfcommEndpoint>,
+) {
+    VIVO_TWS(
+        label = "vivo TWS",
+        endpoints = listOf(
+            RfcommEndpoint.ServiceUuid(
+                uuid = UUID.fromString("00000837-d102-11e1-9b23-00025b00a5a5"),
+                id = "vivo-gaia-0837",
+                label = "vivo GAIA UUID 0837",
+            ),
+            RfcommEndpoint.ServiceUuid(
+                uuid = UUID.fromString("a5a5005b-0200-239b-e111-02d137080000"),
+                id = "vivo-gaia-0837-compatible",
+                label = "vivo GAIA UUID 兼容字节序",
+            ),
+            RfcommEndpoint.ServiceUuid(
+                uuid = UUID.fromString("00001107-d102-11e1-9b23-00025b00a5a5"),
+                id = "vivo-gaia-1107",
+                label = "vivo GAIA UUID 1107",
+            ),
+            RfcommEndpoint.ServiceUuid(
+                uuid = STANDARD_SPP_UUID,
+                id = "standard-spp",
+                label = "标准 SPP UUID",
+            ),
+            RfcommEndpoint.Channel(
+                number = 12,
+                secure = true,
+                id = "rfcomm-12",
+                label = "RFCOMM 通道 12（Air3 Pro）",
+            ),
+            RfcommEndpoint.Channel(
+                number = 13,
+                secure = true,
+                id = "rfcomm-13",
+                label = "RFCOMM 通道 13（TWS 3e 参考）",
+            ),
+        ),
+    ),
+    STARRING_ULTRA(
+        label = "StarRing Ultra",
+        endpoints = listOf(
+            RfcommEndpoint.Channel(
+                number = 28,
+                secure = true,
+                id = "rfcomm-28",
+                label = "RFCOMM 通道 28（抓包确认）",
+            ),
+            RfcommEndpoint.Channel(
+                number = 28,
+                secure = false,
+                id = "rfcomm-28-insecure",
+                label = "RFCOMM 通道 28（不安全）",
+            ),
+            RfcommEndpoint.ServiceUuid(
+                uuid = STANDARD_SPP_UUID,
+                id = "standard-spp",
+                label = "标准 SPP UUID",
+            ),
+            RfcommEndpoint.Channel(
+                number = 5,
+                secure = true,
+                id = "rfcomm-5",
+                label = "RFCOMM 通道 5（历史兼容）",
+            ),
+        ),
+    ),
+    BOSE_BMAP(
+        label = "Bose BMAP",
+        endpoints = listOf(
+            RfcommEndpoint.Channel(
+                number = 8,
+                secure = true,
+                id = "rfcomm-8",
+                label = "RFCOMM 通道 8（QuietComfort 实测）",
+            ),
+            RfcommEndpoint.ServiceUuid(
+                uuid = STANDARD_SPP_UUID,
+                id = "standard-spp",
+                label = "标准 SPP UUID",
+            ),
+            RfcommEndpoint.ServiceUuid(
+                uuid = UUID.fromString("00000000-deca-fade-deca-deafdecacaff"),
+                id = "bmap-uuid",
+                label = "BMAP UUID",
+            ),
+            RfcommEndpoint.Channel(
+                number = 2,
+                secure = true,
+                id = "rfcomm-2",
+                label = "RFCOMM 通道 2（兼容回退）",
+            ),
+        ),
+    ),
+    ;
+
+    companion object {
+        fun fromDevice(name: String, address: String): ProtocolTarget? {
+            val normalized = name.lowercase()
+            return when {
+                normalized.contains("bose") ||
+                    normalized.contains("quietcomfort") ||
+                    address.startsWith("BC:87:FA", ignoreCase = true) -> BOSE_BMAP
+
+                normalized.contains("starring") ||
+                    normalized.contains("star ring") ||
+                    normalized.contains("lightyear") ||
+                    normalized.contains("籁特") -> STARRING_ULTRA
+
+                normalized.contains("vivo") &&
+                    (normalized.contains("tws") || normalized.contains("air")) -> VIVO_TWS
+
+                else -> null
+            }
+        }
+    }
+}
+
 @SuppressLint("MissingPermission")
-internal class VivoRfcommClient(context: Context) : Closeable {
+internal class RfcommProbeClient(context: Context) : Closeable {
     private val adapter: BluetoothAdapter? =
         (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -65,7 +188,10 @@ internal class VivoRfcommClient(context: Context) : Closeable {
     @Volatile
     private var socket: BluetoothSocket? = null
 
-    suspend fun connect(address: String, endpoints: List<RfcommEndpoint> = defaultEndpoints): RfcommEndpoint {
+    suspend fun connect(
+        address: String,
+        endpoints: List<RfcommEndpoint>,
+    ): RfcommEndpoint {
         closeSocket("重新连接")
         val bluetoothAdapter = adapter ?: error("设备没有可用的蓝牙适配器")
         check(bluetoothAdapter.isEnabled) { "请先开启蓝牙" }
@@ -153,15 +279,21 @@ internal class VivoRfcommClient(context: Context) : Closeable {
     }
 
     @SuppressLint("DiscouragedPrivateApi")
-    private fun createSocket(device: BluetoothDevice, endpoint: RfcommEndpoint): BluetoothSocket =
-        when (endpoint) {
-            is RfcommEndpoint.ServiceUuid -> device.createRfcommSocketToServiceRecord(endpoint.uuid)
-            is RfcommEndpoint.Channel -> {
-                val methodName = if (endpoint.secure) "createRfcommSocket" else "createInsecureRfcommSocket"
-                val method: Method = device.javaClass.getMethod(methodName, Int::class.javaPrimitiveType)
-                method.invoke(device, endpoint.number) as BluetoothSocket
-            }
+    private fun createSocket(
+        device: BluetoothDevice,
+        endpoint: RfcommEndpoint,
+    ): BluetoothSocket = when (endpoint) {
+        is RfcommEndpoint.ServiceUuid ->
+            device.createRfcommSocketToServiceRecord(endpoint.uuid)
+
+        is RfcommEndpoint.Channel -> {
+            val methodName =
+                if (endpoint.secure) "createRfcommSocket" else "createInsecureRfcommSocket"
+            val method: Method =
+                device.javaClass.getMethod(methodName, Int::class.javaPrimitiveType)
+            method.invoke(device, endpoint.number) as BluetoothSocket
         }
+    }
 
     private fun closeSocket(reason: String) {
         val active = socket
@@ -182,43 +314,7 @@ internal class VivoRfcommClient(context: Context) : Closeable {
     private fun Throwable.conciseMessage(): String =
         message?.takeIf { it.isNotBlank() } ?: javaClass.simpleName
 
-    companion object {
-        private const val CONNECT_TIMEOUT_MS = 4_500L
-
-        val defaultEndpoints = listOf(
-            RfcommEndpoint.ServiceUuid(
-                uuid = UUID.fromString("00000837-d102-11e1-9b23-00025b00a5a5"),
-                id = "vivo-gaia-0837",
-                label = "vivo GAIA UUID 0837",
-            ),
-            RfcommEndpoint.ServiceUuid(
-                uuid = UUID.fromString("a5a5005b-0200-239b-e111-02d137080000"),
-                id = "vivo-gaia-0837-compatible",
-                label = "vivo GAIA UUID 兼容字节序",
-            ),
-            RfcommEndpoint.ServiceUuid(
-                uuid = UUID.fromString("00001107-d102-11e1-9b23-00025b00a5a5"),
-                id = "vivo-gaia-1107",
-                label = "vivo GAIA UUID 1107",
-            ),
-            RfcommEndpoint.ServiceUuid(
-                uuid = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb"),
-                id = "standard-spp",
-                label = "标准 SPP UUID",
-            ),
-            RfcommEndpoint.Channel(
-                number = 12,
-                secure = true,
-                id = "rfcomm-12",
-                label = "RFCOMM 通道 12（Air3 Pro）",
-            ),
-            RfcommEndpoint.Channel(
-                number = 13,
-                secure = true,
-                id = "rfcomm-13",
-                label = "RFCOMM 通道 13（TWS 3e 参考）",
-            ),
-        )
+    private companion object {
+        const val CONNECT_TIMEOUT_MS = 4_500L
     }
 }
-

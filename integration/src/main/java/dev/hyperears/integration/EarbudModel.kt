@@ -4,6 +4,7 @@ enum class NoiseMode {
     ANC,
     OFF,
     TRANSPARENCY,
+    WIND,
 }
 
 data class BatteryReading(
@@ -21,7 +22,47 @@ data class EarbudBattery(
     val left: BatteryReading = BatteryReading(null, false),
     val right: BatteryReading = BatteryReading(null, false),
     val case: BatteryReading = BatteryReading(null, false),
-)
+    val overall: BatteryReading = BatteryReading(null, false),
+) {
+    companion object {
+        /**
+         * Projects Android's single headset battery value onto MiLink's left/right schema.
+         *
+         * Standard Bluetooth exposes no trustworthy case level or per-bud split, so both buds
+         * deliberately receive the same aggregate value and the case remains unavailable.
+         */
+        fun fromSystemAggregate(percent: Int?): EarbudBattery {
+            val reading = BatteryReading(percent?.takeIf { it in 0..100 }, charging = false)
+            return EarbudBattery(
+                left = reading,
+                right = reading,
+                overall = reading,
+            )
+        }
+    }
+}
+
+enum class BatterySource {
+    NONE,
+    SYSTEM_AGGREGATE,
+    PRIVATE_PROTOCOL,
+}
+
+/**
+ * Defines where control-state truth comes from after a successful vendor write.
+ *
+ * The policy belongs to the model adapter; byte-level readback commands belong to the protocol.
+ */
+enum class ControlConfirmationPolicy {
+    /** Publish only an authoritative device report. */
+    DEVICE_REPORT,
+
+    /** Publish the requested state after the complete write transaction succeeds. */
+    PUBLISH_AFTER_WRITE,
+
+    /** Publish after the write, then request an authoritative state refresh. */
+    PUBLISH_AFTER_WRITE_THEN_REFRESH,
+}
 
 data class EarbudState(
     val modelId: String? = null,
@@ -66,6 +107,9 @@ sealed interface EarbudEvent {
     /** The system profile lifecycle ended and the device session was removed. */
     data object SessionEnded : EarbudEvent
 
+    /** Refines a family match to a concrete model after an authoritative on-wire identity read. */
+    data class ModelIdentified(val modelId: String) : EarbudEvent
+
     data class Handshake(val accepted: Boolean) : EarbudEvent
     data class BatteryChanged(val battery: EarbudBattery) : EarbudEvent
     data class NoiseModeChanged(
@@ -104,13 +148,33 @@ sealed interface RfcommEndpointSpec {
 data class EarbudCapabilities(
     val battery: Boolean = false,
     val noiseControl: Boolean = false,
+    val windNoiseControl: Boolean = false,
     val audioHandoff: Boolean = false,
     val spatialAudio: Boolean = false,
     val wearDetection: Boolean = false,
     val findDevice: Boolean = false,
 )
 
-data class MiLinkIdentity(val deviceId: String)
+/**
+ * Physical presentation declared by an adapter.
+ *
+ * This is deliberately platform-neutral. The MiLink bridge maps it onto one known stock carrier
+ * ID per form factor; concrete model identity never leaks into Xiaomi's device-ID registry.
+ */
+enum class HeadsetFormFactor {
+    TWS,
+    HEADPHONES,
+}
+
+/** Opaque link from a concrete device adapter to its platform-specific MiLink presentation. */
+@JvmInline
+value class MiLinkCardPresentationId(
+    val value: String,
+) {
+    init {
+        require(value.isNotBlank())
+    }
+}
 
 /**
  * One private-protocol codec instance owned by one physical device session.
@@ -121,6 +185,18 @@ data class MiLinkIdentity(val deviceId: String)
 interface EarbudProtocol {
     fun initialReadCommands(): List<ByteArray>
     fun encode(request: ControlRequest): List<ByteArray>
+
+    /**
+     * Optional commands unlocked by an authoritative protocol event.
+     *
+     * This keeps family-safe discovery separate from model-specific reads. The session serializes
+     * returned commands on the existing transport; protocols never own sockets or coroutines.
+     */
+    fun followUpCommands(event: EarbudEvent): List<ByteArray> = emptyList()
+
+    /** Optional authoritative readback sent after [encode] completes successfully. */
+    fun readback(request: ControlRequest): List<ByteArray> = emptyList()
+
     fun offer(bytes: ByteArray): List<EarbudEvent>
     fun reset()
 }
@@ -174,6 +250,12 @@ object EarbudStateReducer {
                 privateChannelConnected = false,
                 handshakeAccepted = false,
             )
+
+            is EarbudEvent.ModelIdentified -> if (previous.sessionActive) {
+                previous.copy(modelId = event.modelId)
+            } else {
+                previous
+            }
 
             is EarbudEvent.Handshake -> previous.copy(
                 handshakeAccepted = event.accepted,

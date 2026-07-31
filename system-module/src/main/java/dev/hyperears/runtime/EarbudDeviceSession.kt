@@ -8,7 +8,11 @@ import android.os.SystemClock
 import dev.hyperears.hook.ModuleLog
 import dev.hyperears.hook.maskBluetoothAddress
 import dev.hyperears.integration.ControlRequest
+import dev.hyperears.integration.ControlConfirmationPolicy
+import dev.hyperears.integration.BatterySource
+import dev.hyperears.integration.EarbudBattery
 import dev.hyperears.integration.EarbudAdapter
+import dev.hyperears.integration.EarbudAdapterRegistry
 import dev.hyperears.integration.EarbudEvent
 import dev.hyperears.integration.EarbudProtocol
 import java.io.Closeable
@@ -56,7 +60,7 @@ internal class EarbudDeviceSession(
     private val closed = AtomicBoolean()
     private val connectionJobLock = Any()
     private val transportLock = Any()
-    private val writeMutex = Mutex()
+    private val transactionMutex = Mutex()
     private val unknownFrameLogTimes = mutableMapOf<Int, Long>()
 
     @Volatile
@@ -68,12 +72,27 @@ internal class EarbudDeviceSession(
     @Volatile
     private var protocol: EarbudProtocol? = null
 
+    @Volatile
+    var effectiveAdapter: EarbudAdapter = earbudAdapter
+        private set
+
     fun start() {
         if (earbudAdapter.privateProtocolRequired) {
             requestConnection()
         } else {
             listener.onEvent(this, EarbudEvent.AdapterReady)
+            publishCachedSystemBattery()
         }
+    }
+
+    fun onSystemBatteryChanged(percent: Int?) {
+        if (closed.get() || earbudAdapter.batterySource != BatterySource.SYSTEM_AGGREGATE) {
+            return
+        }
+        listener.onEvent(
+            this,
+            EarbudEvent.BatteryChanged(EarbudBattery.fromSystemAggregate(percent)),
+        )
     }
 
     /**
@@ -109,7 +128,10 @@ internal class EarbudDeviceSession(
             return request === ControlRequest.Refresh
         }
         if (request is ControlRequest.SetNoiseMode &&
-            !earbudAdapter.capabilities.noiseControl
+            (
+                !effectiveAdapter.capabilities.noiseControl ||
+                    request.mode !in effectiveAdapter.supportedNoiseModes
+                )
         ) {
             return false
         }
@@ -117,24 +139,24 @@ internal class EarbudDeviceSession(
         val activeProtocol = protocol ?: return false
         scope.launch {
             runCatching {
-                val commands = activeProtocol.encode(request)
-                commands.forEachIndexed { index, command ->
-                    ensureActive()
-                    write(activeChannel, command)
-                    ModuleLog.debug(
-                        COMPONENT,
-                        "control wrote ${request.description()} bytes=${command.toHex()}",
+                transactionMutex.withLock {
+                    sendCommands(
+                        activeChannel = activeChannel,
+                        commands = activeProtocol.encode(request),
+                        gapMs = COMMAND_GAP_MS,
+                        description = request.description(),
                     )
-                    if (index != commands.lastIndex) delay(COMMAND_GAP_MS)
-                }
-                if (request is ControlRequest.SetNoiseMode) {
-                    listener.onEvent(
-                        this@EarbudDeviceSession,
-                        EarbudEvent.NoiseModeChanged(
-                            mode = request.mode,
-                            acknowledged = false,
-                        ),
-                    )
+                    publishWrittenStateIfConfigured(request)
+                    val readback = activeProtocol.readback(request)
+                    if (readback.isNotEmpty()) {
+                        delay(CONTROL_READBACK_DELAY_MS)
+                        sendCommands(
+                            activeChannel = activeChannel,
+                            commands = readback,
+                            gapMs = COMMAND_GAP_MS,
+                            description = "${request.description()} readback",
+                        )
+                    }
                 }
             }.onFailure {
                 if (it !is CancellationException) {
@@ -199,12 +221,13 @@ internal class EarbudDeviceSession(
                         "address=${maskBluetoothAddress(address)}",
                 )
 
-                val initialCommands = activeProtocol.initialReadCommands()
-                initialCommands.forEachIndexed { index, command ->
-                    write(activeChannel, command)
-                    if (index != initialCommands.lastIndex) {
-                        delay(INITIAL_COMMAND_GAP_MS)
-                    }
+                transactionMutex.withLock {
+                    sendCommands(
+                        activeChannel = activeChannel,
+                        commands = activeProtocol.initialReadCommands(),
+                        gapMs = INITIAL_COMMAND_GAP_MS,
+                        description = "initial read",
+                    )
                 }
                 readFrames(activeChannel, activeProtocol)
                 throw IOException("vendor channel stream ended")
@@ -247,6 +270,11 @@ internal class EarbudDeviceSession(
                 ?.takeIf { it.isDiscovering }
                 ?.cancelDiscovery()
         }
+    }
+
+    private fun publishCachedSystemBattery() {
+        if (earbudAdapter.batterySource != BatterySource.SYSTEM_AGGREGATE) return
+        onSystemBatteryChanged(BluetoothSystemBattery.cachedLevel(device))
     }
 
     private suspend fun connectFirstEndpoint(): EarbudChannel {
@@ -296,19 +324,62 @@ internal class EarbudDeviceSession(
                 if (event is EarbudEvent.UnknownFrame) {
                     logUnknownFrame(event)
                 } else {
+                    if (event is EarbudEvent.ModelIdentified) {
+                        EarbudAdapterRegistry.integratedById(event.modelId)?.let {
+                            effectiveAdapter = it
+                        }
+                    }
                     listener.onEvent(this, event)
+                    val followUp = activeProtocol.followUpCommands(event)
+                    if (followUp.isNotEmpty()) {
+                        transactionMutex.withLock {
+                            sendCommands(
+                                activeChannel = activeChannel,
+                                commands = followUp,
+                                gapMs = INITIAL_COMMAND_GAP_MS,
+                                description = "model follow-up",
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 
-    private suspend fun write(activeChannel: EarbudChannel, command: ByteArray) {
-        writeMutex.withLock {
+    private suspend fun sendCommands(
+        activeChannel: EarbudChannel,
+        commands: List<ByteArray>,
+        gapMs: Long,
+        description: String,
+    ) {
+        commands.forEachIndexed { index, command ->
+            currentCoroutineContext().ensureActive()
             if (closed.get() || channel !== activeChannel) {
                 throw CancellationException("stale vendor-channel writer")
             }
             activeChannel.write(command)
+            ModuleLog.debug(
+                COMPONENT,
+                "$description wrote bytes=${command.toHex()}",
+            )
+            if (index != commands.lastIndex) delay(gapMs)
         }
+    }
+
+    private fun publishWrittenStateIfConfigured(request: ControlRequest) {
+        if (request !is ControlRequest.SetNoiseMode) return
+        if (effectiveAdapter.noiseControlConfirmation ==
+            ControlConfirmationPolicy.DEVICE_REPORT
+        ) {
+            return
+        }
+        listener.onEvent(
+            this,
+            EarbudEvent.NoiseModeChanged(
+                mode = request.mode,
+                acknowledged = false,
+            ),
+        )
     }
 
     private fun clearTransport() {
@@ -351,6 +422,7 @@ internal class EarbudDeviceSession(
         const val CONNECT_TIMEOUT_MS = 60_000L
         const val INITIAL_COMMAND_GAP_MS = 150L
         const val COMMAND_GAP_MS = 120L
+        const val CONTROL_READBACK_DELAY_MS = 120L
         const val STABLE_CONNECTION_MS = 30_000L
         const val UNKNOWN_FRAME_LOG_INTERVAL_MS = 5 * 60_000L
         const val READ_BUFFER_SIZE = 1_024

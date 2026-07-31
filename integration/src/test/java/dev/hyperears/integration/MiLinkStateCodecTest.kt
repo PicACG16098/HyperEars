@@ -192,6 +192,25 @@ class MiLinkStateCodecTest {
         assertEquals(listOf(-1, 83, 82, 0, 1, 0), MiLinkStateCodec.batteryLevels(state))
         assertEquals(2, MiLinkStateCodec.ancState(state))
         assertEquals(82, MiLinkStateCodec.regularBatteryLevel(state))
+        assertEquals(
+            1,
+            MiLinkStateCodec.ancState(state.copy(noiseMode = NoiseMode.WIND)),
+        )
+    }
+
+    @Test
+    fun encodesHeadphonesAsOneBatteryInsteadOfLeftAndRightBuds() {
+        val state = EarbudState(
+            battery = EarbudBattery(
+                overall = BatteryReading(90, charging = false),
+            ),
+        )
+
+        assertEquals(
+            listOf(-1, -1, 90, 0, 0, 0),
+            MiLinkStateCodec.batteryLevels(state, HeadsetFormFactor.HEADPHONES),
+        )
+        assertEquals(90, MiLinkStateCodec.regularBatteryLevel(state))
     }
 
     private fun assertNullBattery(reading: BatteryReading) {

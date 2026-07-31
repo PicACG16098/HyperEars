@@ -10,6 +10,8 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.hyperears.protocol.bose.BoseBmapWireCodec
+import dev.hyperears.protocol.starring.StarRingWireCodec
 import dev.hyperears.protocol.vivo.VivoTwsProtocol
 import dev.hyperears.protocol.vivo.VivoTwsProtocol.NoiseMode
 import dev.hyperears.protocol.vivo.VivoTwsProtocol.Variant
@@ -28,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong
 internal data class PairedDevice(
     val name: String,
     val address: String,
-    val likelyVivo: Boolean,
+    val suggestedTarget: ProtocolTarget?,
 )
 
 internal enum class ConnectionPhase {
@@ -63,17 +65,27 @@ internal data class ProtocolLog(
     val hex: String? = null,
 )
 
+internal data class BatteryObservation(
+    val leftPercent: Int?,
+    val rightPercent: Int?,
+    val casePercent: Int?,
+    val leftCharging: Boolean = false,
+    val rightCharging: Boolean = false,
+    val caseCharging: Boolean = false,
+)
+
 internal data class ProtocolUiState(
     val permissionGranted: Boolean = false,
     val pairedDevices: List<PairedDevice> = emptyList(),
     val selectedAddress: String = "",
     val selectedName: String = "",
+    val selectedTarget: ProtocolTarget = ProtocolTarget.VIVO_TWS,
     val phase: ConnectionPhase = ConnectionPhase.DISCONNECTED,
     val connectionMessage: String = "尚未连接",
     val endpoint: String? = null,
     val selectedVariant: Variant = Variant.AIR3_PRO_CAPTURED,
     val detectedVariant: Variant? = null,
-    val battery: VivoTwsProtocol.BatteryState? = null,
+    val battery: BatteryObservation? = null,
     val noise: VivoTwsProtocol.NoiseState? = null,
     val handshakeStatus: String = "未测试",
     val noiseApiStatus: String = "未测试",
@@ -91,9 +103,11 @@ internal data class ProtocolUiState(
 internal class ProtocolTestViewModel(application: Application) : AndroidViewModel(application) {
     private val adapter =
         (application.getSystemService(Application.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
-    private val client = VivoRfcommClient(application)
+    private val client = RfcommProbeClient(application)
     private val identityScanner = VivoIdentityScanner(application)
-    private val decoder = VivoTwsProtocol.Decoder()
+    private val vivoDecoder = VivoTwsProtocol.Decoder()
+    private val starRingDecoder = StarRingWireCodec.Decoder()
+    private val boseDecoder = BoseBmapWireCodec.Decoder()
     private val mutableState = MutableStateFlow(ProtocolUiState())
     val state: StateFlow<ProtocolUiState> = mutableState.asStateFlow()
     private val logId = AtomicLong()
@@ -131,12 +145,13 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                     PairedDevice(
                         name = name,
                         address = device.address,
-                        likelyVivo = name.contains("vivo", ignoreCase = true) &&
-                            (name.contains("TWS", ignoreCase = true) ||
-                                name.contains("Air", ignoreCase = true)),
+                        suggestedTarget = ProtocolTarget.fromDevice(name, device.address),
                     )
                 }
-                .sortedWith(compareByDescending<PairedDevice> { it.likelyVivo }.thenBy { it.name })
+                .sortedWith(
+                    compareByDescending<PairedDevice> { it.suggestedTarget != null }
+                        .thenBy { it.name },
+                )
         }.getOrElse {
             addLog("ERR", "读取已配对设备失败：${it.conciseMessage()}")
             emptyList()
@@ -144,32 +159,56 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
 
         val current = mutableState.value
         val selected = devices.firstOrNull { it.address == current.selectedAddress }
-            ?: devices.firstOrNull { it.likelyVivo }
+            ?: devices.firstOrNull { it.suggestedTarget != null }
         mutableState.value = current.copy(
             permissionGranted = true,
             pairedDevices = devices,
             selectedAddress = selected?.address ?: current.selectedAddress,
             selectedName = selected?.name ?: current.selectedName,
+            selectedTarget = selected?.suggestedTarget ?: current.selectedTarget,
         )
-        addLog("SYS", "发现 ${devices.size} 个已配对设备，其中 ${devices.count { it.likelyVivo }} 个疑似 vivo TWS")
+        addLog(
+            "SYS",
+            "发现 ${devices.size} 个已配对设备，其中 " +
+                "${devices.count { it.suggestedTarget != null }} 个命中已知实验协议",
+        )
     }
 
     fun selectDevice(device: PairedDevice) {
-        if (mutableState.value.phase == ConnectionPhase.CONNECTED) disconnect()
+        if (mutableState.value.phase != ConnectionPhase.DISCONNECTED) disconnect()
         mutableState.value = mutableState.value.copy(
             selectedAddress = device.address,
             selectedName = device.name,
+            selectedTarget = device.suggestedTarget ?: mutableState.value.selectedTarget,
+            battery = null,
+            noise = null,
+            handshakeStatus = "未测试",
+            noiseApiStatus = "未测试",
+            batteryApiStatus = "未测试",
         )
     }
 
     fun updateAddress(address: String) {
+        val paired = mutableState.value.pairedDevices
+            .firstOrNull { it.address.equals(address.trim(), ignoreCase = true) }
         mutableState.value = mutableState.value.copy(
             selectedAddress = address.trim().uppercase(Locale.US),
-            selectedName = mutableState.value.pairedDevices
-                .firstOrNull { it.address.equals(address.trim(), ignoreCase = true) }
-                ?.name
-                .orEmpty(),
+            selectedName = paired?.name.orEmpty(),
+            selectedTarget = paired?.suggestedTarget ?: mutableState.value.selectedTarget,
         )
+    }
+
+    fun selectTarget(target: ProtocolTarget) {
+        if (mutableState.value.phase != ConnectionPhase.DISCONNECTED) disconnect()
+        mutableState.value = mutableState.value.copy(
+            selectedTarget = target,
+            battery = null,
+            noise = null,
+            handshakeStatus = "未测试",
+            noiseApiStatus = "未测试",
+            batteryApiStatus = "未测试",
+        )
+        addLog("SYS", "选择实验协议：${target.label}")
     }
 
     fun selectVariant(variant: Variant) {
@@ -197,10 +236,13 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
 
         connectionJob?.cancel()
         connectionJob = viewModelScope.launch {
-            decoder.reset()
+            vivoDecoder.reset()
+            starRingDecoder.reset()
+            boseDecoder.reset()
+            val target = mutableState.value.selectedTarget
             mutableState.value = mutableState.value.copy(
                 phase = ConnectionPhase.CONNECTING,
-                connectionMessage = "正在探测 RFCOMM 入口…",
+                connectionMessage = "正在探测 ${target.label} RFCOMM 入口…",
                 endpoint = null,
                 detectedVariant = null,
                 battery = null,
@@ -209,7 +251,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                 noiseApiStatus = "未测试",
                 batteryApiStatus = "未测试",
             )
-            runCatching { client.connect(address) }
+            runCatching { client.connect(address, target.endpoints) }
                 .onSuccess { endpoint ->
                     mutableState.value = mutableState.value.copy(
                         phase = ConnectionPhase.CONNECTED,
@@ -244,31 +286,56 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     fun runReadOnlyProbe() {
         viewModelScope.launch {
             if (!ensureConnected()) return@launch
-            mutableState.value = mutableState.value.copy(
-                handshakeStatus = "等待响应",
-                noiseApiStatus = "等待响应",
-                batteryApiStatus = "等待响应",
-            )
-            send(VivoTwsProtocol.handshake(), "v4 握手")
-            delay(PROBE_GAP_MS)
-            send(
-                VivoTwsProtocol.queryNoiseMode(Variant.AIR3_PRO_CAPTURED),
-                "查询降噪（Air3 Pro v3）",
-            )
-            delay(PROBE_GAP_MS)
-            send(
-                VivoTwsProtocol.queryNoiseMode(Variant.HANDMADE_V4),
-                "查询降噪（公开资料 v4）",
-            )
-            delay(PROBE_GAP_MS)
-            send(VivoTwsProtocol.queryBattery(), "查询左右耳/充电盒电量")
+            when (mutableState.value.selectedTarget) {
+                ProtocolTarget.VIVO_TWS -> runVivoReadOnlyProbe()
+                ProtocolTarget.STARRING_ULTRA -> {
+                    mutableState.value = mutableState.value.copy(
+                        handshakeStatus = "不适用",
+                        noiseApiStatus = "未测试",
+                        batteryApiStatus = "等待响应",
+                    )
+                    send(StarRingWireCodec.queryBattery, "StarRing 查询左右耳/充电盒电量")
+                }
+                ProtocolTarget.BOSE_BMAP -> {
+                    mutableState.value = mutableState.value.copy(
+                        handshakeStatus = "等待产品 ID",
+                        noiseApiStatus = "不适用",
+                        batteryApiStatus = "等待响应",
+                    )
+                    send(BoseBmapWireCodec.queryProductIdentity, "Bose 查询产品 ID/变体")
+                    delay(PROBE_GAP_MS)
+                    send(BoseBmapWireCodec.queryBattery, "Bose 查询组件电量")
+                }
+            }
             markTimeoutsLater()
         }
+    }
+
+    private suspend fun runVivoReadOnlyProbe() {
+        mutableState.value = mutableState.value.copy(
+            handshakeStatus = "等待响应",
+            noiseApiStatus = "等待响应",
+            batteryApiStatus = "等待响应",
+        )
+        send(VivoTwsProtocol.handshake(), "v4 握手")
+        delay(PROBE_GAP_MS)
+        send(
+            VivoTwsProtocol.queryNoiseMode(Variant.AIR3_PRO_CAPTURED),
+            "查询降噪（Air3 Pro v3）",
+        )
+        delay(PROBE_GAP_MS)
+        send(
+            VivoTwsProtocol.queryNoiseMode(Variant.HANDMADE_V4),
+            "查询降噪（公开资料 v4）",
+        )
+        delay(PROBE_GAP_MS)
+        send(VivoTwsProtocol.queryBattery(), "查询左右耳/充电盒电量")
     }
 
     fun sendHandshake() {
         viewModelScope.launch {
             if (!ensureConnected()) return@launch
+            if (!ensureVivoTarget()) return@launch
             mutableState.value = mutableState.value.copy(handshakeStatus = "等待响应")
             send(VivoTwsProtocol.handshake(), "v4 握手")
             markTimeoutsLater()
@@ -278,6 +345,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     fun queryNoise() {
         viewModelScope.launch {
             if (!ensureConnected()) return@launch
+            if (!ensureVivoTarget()) return@launch
             val variant = mutableState.value.selectedVariant
             mutableState.value = mutableState.value.copy(noiseApiStatus = "等待响应")
             send(VivoTwsProtocol.queryNoiseMode(variant), "查询降噪（${variant.label}）")
@@ -289,7 +357,16 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
         viewModelScope.launch {
             if (!ensureConnected()) return@launch
             mutableState.value = mutableState.value.copy(batteryApiStatus = "等待响应")
-            send(VivoTwsProtocol.queryBattery(), "查询左右耳/充电盒电量")
+            when (mutableState.value.selectedTarget) {
+                ProtocolTarget.VIVO_TWS ->
+                    send(VivoTwsProtocol.queryBattery(), "查询左右耳/充电盒电量")
+
+                ProtocolTarget.STARRING_ULTRA ->
+                    send(StarRingWireCodec.queryBattery, "StarRing 查询左右耳/充电盒电量")
+
+                ProtocolTarget.BOSE_BMAP ->
+                    send(BoseBmapWireCodec.queryBattery, "Bose 查询组件电量")
+            }
             markTimeoutsLater()
         }
     }
@@ -297,6 +374,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     fun setNoiseMode(mode: NoiseMode) {
         viewModelScope.launch {
             if (!ensureConnected()) return@launch
+            if (!ensureVivoTarget()) return@launch
             val variant = mutableState.value.selectedVariant
             mutableState.value = mutableState.value.copy(noiseApiStatus = "等待设置确认")
             send(
@@ -358,7 +436,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     }
 
     private suspend fun send(packet: ByteArray, message: String) {
-        addLog("TX", message, VivoTwsProtocol.run { packet.hex() })
+        addLog("TX", message, packet.hexBytes())
         runCatching { client.send(packet) }
             .onFailure {
                 addLog("ERR", "发送失败：${it.conciseMessage()}")
@@ -397,8 +475,16 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     }
 
     private fun handleIncoming(bytes: ByteArray) {
-        addLog("RX", "收到 ${bytes.size} 字节", VivoTwsProtocol.run { bytes.hex() })
-        decoder.offer(bytes).forEach { frame ->
+        addLog("RX", "收到 ${bytes.size} 字节", bytes.hexBytes())
+        when (mutableState.value.selectedTarget) {
+            ProtocolTarget.VIVO_TWS -> handleVivoIncoming(bytes)
+            ProtocolTarget.STARRING_ULTRA -> handleStarRingIncoming(bytes)
+            ProtocolTarget.BOSE_BMAP -> handleBoseIncoming(bytes)
+        }
+    }
+
+    private fun handleVivoIncoming(bytes: ByteArray) {
+        vivoDecoder.offer(bytes).forEach { frame ->
             addLog(
                 "FRAME",
                 "v${frame.version} vendor=0x${frame.vendor.hex4()} cmd=0x${frame.command.hex4()} payload=${frame.payload.size}",
@@ -419,8 +505,86 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
             }
             VivoTwsProtocol.parseBatteryState(frame)?.let { battery ->
                 mutableState.value = mutableState.value.copy(
-                    battery = battery,
+                    battery = BatteryObservation(
+                        leftPercent = battery.leftPercent,
+                        rightPercent = battery.rightPercent,
+                        casePercent = battery.casePercent,
+                        leftCharging = battery.leftCharging,
+                        rightCharging = battery.rightCharging,
+                        caseCharging = battery.caseCharging,
+                    ),
                     batteryApiStatus = "可用 · 响应 v${battery.version}",
+                )
+            }
+        }
+    }
+
+    private fun handleStarRingIncoming(bytes: ByteArray) {
+        starRingDecoder.offer(bytes).forEach { frame ->
+            addLog(
+                "FRAME",
+                "StarRing group=0x${frame.group.hex2()} cmd=0x${frame.command.hex2()} " +
+                    "payload=${frame.payload.size}",
+                StarRingWireCodec.run { frame.bytes.hex() },
+            )
+            StarRingWireCodec.parseBatteryState(frame)?.let { battery ->
+                mutableState.value = mutableState.value.copy(
+                    battery = BatteryObservation(
+                        leftPercent = battery.leftPercent,
+                        rightPercent = battery.rightPercent,
+                        casePercent = battery.casePercent,
+                    ),
+                    batteryApiStatus = "可用 · StarRing 私有协议响应",
+                )
+                addLog(
+                    "BAT",
+                    "左=${battery.leftPercent ?: "—"}% 右=${battery.rightPercent ?: "—"}% " +
+                        "盒=${battery.casePercent ?: "—"}%",
+                    StarRingWireCodec.run { battery.rawPayload.hex() },
+                )
+            }
+        }
+    }
+
+    private fun handleBoseIncoming(bytes: ByteArray) {
+        boseDecoder.offer(bytes).forEach { frame ->
+            addLog(
+                "FRAME",
+                "BMAP [${frame.functionBlock}.${frame.function}] " +
+                    "op=${frame.operator?.name ?: "0x${frame.flags.hex2()}"} " +
+                    "payload=${frame.payload.size}",
+                BoseBmapWireCodec.run { frame.bytes.hex() },
+            )
+            BoseBmapWireCodec.parseProductIdentity(frame)?.let { identity ->
+                val model = if (identity.productId == 0x4075) {
+                    "QuietComfort Headphones / prince"
+                } else {
+                    "未登记 Bose 型号"
+                }
+                mutableState.value = mutableState.value.copy(
+                    handshakeStatus =
+                        "可用 · product=0x${identity.productId.hex4()} · variant=${identity.variant}",
+                )
+                addLog(
+                    "ID",
+                    "$model · product=0x${identity.productId.hex4()} variant=${identity.variant}",
+                )
+            }
+            BoseBmapWireCodec.parseBatteryState(frame)?.let { battery ->
+                val overall = battery.overallPercent
+                mutableState.value = mutableState.value.copy(
+                    battery = BatteryObservation(
+                        leftPercent = battery.leftPercent ?: overall,
+                        rightPercent = battery.rightPercent ?: overall,
+                        casePercent = battery.casePercent,
+                    ),
+                    batteryApiStatus = "可用 · Bose BMAP [2.2] 响应",
+                )
+                addLog(
+                    "BAT",
+                    "总=${overall ?: "—"}% 左=${battery.leftPercent ?: "—"}% " +
+                        "右=${battery.rightPercent ?: "—"}% 盒=${battery.casePercent ?: "—"}%",
+                    BoseBmapWireCodec.run { battery.rawPayload.hex() },
                 )
             }
         }
@@ -537,6 +701,12 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
         return false
     }
 
+    private fun ensureVivoTarget(): Boolean {
+        if (mutableState.value.selectedTarget == ProtocolTarget.VIVO_TWS) return true
+        addLog("ERR", "当前连接不是 vivo TWS 协议")
+        return false
+    }
+
     private fun addLog(direction: String, message: String, hex: String? = null) {
         val entry = ProtocolLog(
             id = logId.incrementAndGet(),
@@ -582,6 +752,8 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
         message?.takeIf { it.isNotBlank() } ?: javaClass.simpleName
 
     private fun Int.hex4(): String = toString(16).uppercase(Locale.US).padStart(4, '0')
+
+    private fun Int.hex2(): String = toString(16).uppercase(Locale.US).padStart(2, '0')
 
     private fun ByteArray.hexBytes(): String =
         joinToString(" ") { byte -> "%02X".format(Locale.US, byte.toInt() and 0xFF) }

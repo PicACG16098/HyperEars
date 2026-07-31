@@ -148,6 +148,15 @@ internal class EarbudConnectionManager(
         return removals.isNotEmpty()
     }
 
+    fun updateSystemBattery(device: BluetoothDevice, percent: Int?): Boolean {
+        val address = runCatching { device.address }.getOrNull() ?: return false
+        val session = synchronized(lifecycleLock) {
+            sessions[normalizeAddress(address)]?.session
+        } ?: return false
+        session.onSystemBatteryChanged(percent)
+        return true
+    }
+
     fun execute(
         request: ControlRequest,
         address: String,
@@ -163,7 +172,10 @@ internal class EarbudConnectionManager(
         val (record, connected) = target
 
         if (request is ControlRequest.SetNoiseMode &&
-            !record.session.earbudAdapter.capabilities.noiseControl
+            (
+                !record.session.effectiveAdapter.capabilities.noiseControl ||
+                    request.mode !in record.session.effectiveAdapter.supportedNoiseModes
+                )
         ) {
             return false
         }

@@ -11,8 +11,8 @@ android {
         applicationId = "dev.hyperears"
         minSdk = 35
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.6.1"
+        versionCode = 26
+        versionName = "0.8.8"
     }
 
     buildTypes {

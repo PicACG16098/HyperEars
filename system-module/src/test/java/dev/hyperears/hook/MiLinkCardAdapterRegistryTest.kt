@@ -1,0 +1,29 @@
+package dev.hyperears.hook
+
+import dev.hyperears.integration.BoseQuietComfortHeadphonesAdapter
+import dev.hyperears.integration.MiLinkCardPresentationId
+import dev.hyperears.integration.StarRingUltraAdapter
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Test
+
+class MiLinkCardAdapterRegistryTest {
+    @Test
+    fun resolvesOnlyRegisteredConcreteModelPresentations() {
+        assertSame(
+            StarRingUltraMiLinkCardAdapter,
+            MiLinkCardAdapterRegistry.resolve(StarRingUltraAdapter.PRESENTATION_ID),
+        )
+        assertSame(
+            BoseQuietComfortMiLinkCardAdapter,
+            MiLinkCardAdapterRegistry.resolve(
+                BoseQuietComfortHeadphonesAdapter.PRESENTATION_ID,
+            ),
+        )
+        assertNull(
+            MiLinkCardAdapterRegistry.resolve(
+                MiLinkCardPresentationId("unknown-model"),
+            ),
+        )
+    }
+}

@@ -6,7 +6,8 @@ import dev.hyperears.protocol.vivo.VivoTwsProtocol
  * Shared vivo TWS family adapter.
  *
  * It contributes only family traits that are common and safe to inherit. Unknown vivo models are
- * recognized at this level but are not integrated until a concrete model adapter enables it.
+ * integrated through the standard identity, system battery and audio-handoff behavior without
+ * opening the unverified vivo private channel.
  */
 open class VivoEarbudAdapter : StandardEarbudAdapter() {
     override val id: String = ID
@@ -31,21 +32,28 @@ open class VivoEarbudAdapter : StandardEarbudAdapter() {
  * Concrete adapter for the currently verified vivo TWS Air3 Pro.
  */
 object VivoTwsAir3ProAdapter : VivoEarbudAdapter() {
-    override val id: String = "vivo-tws-air3-pro"
+    const val ID = "vivo-tws-air3-pro"
+
+    override val id: String = ID
     override val displayName: String = "vivo TWS Air3 Pro"
     override val privateProtocolRequired: Boolean = true
+    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
     override val capabilities: EarbudCapabilities = super.capabilities.copy(
-        battery = true,
         noiseControl = true,
+    )
+    override val supportedNoiseModes: Set<NoiseMode> = setOf(
+        NoiseMode.ANC,
+        NoiseMode.OFF,
+        NoiseMode.TRANSPARENCY,
     )
 
     override fun matches(identity: EarbudIdentity): Boolean =
         normalizeDeviceName(identity.deviceName.orEmpty()) == "vivotwsair3pro"
 
-    override fun createProtocol(): EarbudProtocol = VivoTwsAir3ProProtocol()
+    override fun createProtocol(): EarbudProtocol = VivoTwsAir3ProEarbudProtocol()
 }
 
-private class VivoTwsAir3ProProtocol : EarbudProtocol {
+private class VivoTwsAir3ProEarbudProtocol : EarbudProtocol {
     private val decoder = VivoTwsProtocol.Decoder()
 
     override fun initialReadCommands(): List<ByteArray> = listOf(
@@ -100,6 +108,7 @@ private class VivoTwsAir3ProProtocol : EarbudProtocol {
         NoiseMode.ANC -> VivoTwsProtocol.NoiseMode.ANC
         NoiseMode.OFF -> VivoTwsProtocol.NoiseMode.OFF
         NoiseMode.TRANSPARENCY -> VivoTwsProtocol.NoiseMode.TRANSPARENCY
+        NoiseMode.WIND -> error("vivo TWS Air3 Pro does not expose a wind-noise mode")
     }
 
     private fun VivoTwsProtocol.NoiseMode.toDomainMode(): NoiseMode = when (this) {

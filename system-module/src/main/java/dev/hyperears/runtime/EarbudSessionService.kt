@@ -63,6 +63,14 @@ internal object EarbudSessionService {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (context == null || intent == null) return
                 when (intent.action) {
+                    BluetoothSystemBattery.ACTION_LEVEL_CHANGED -> {
+                        val device = BluetoothSystemBattery.device(intent) ?: return
+                        connectionManager.updateSystemBattery(
+                            device,
+                            BluetoothSystemBattery.level(intent),
+                        )
+                    }
+
                     ModuleContract.ACTION_REQUEST_STATE -> {
                         val target = with(ModuleContract) { intent.readReplyPackage() }
                             ?: return
@@ -107,6 +115,7 @@ internal object EarbudSessionService {
             val filter = IntentFilter().apply {
                 addAction(ModuleContract.ACTION_REQUEST_STATE)
                 addAction(ModuleContract.ACTION_CONTROL)
+                addAction(BluetoothSystemBattery.ACTION_LEVEL_CHANGED)
             }
             context.registerReceiver(
                 receiver,

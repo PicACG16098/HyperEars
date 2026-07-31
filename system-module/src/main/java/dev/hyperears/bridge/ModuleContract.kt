@@ -42,6 +42,8 @@ object ModuleContract {
     private const val EXTRA_RIGHT_CHARGING = "right_charging"
     private const val EXTRA_CASE = "case_battery"
     private const val EXTRA_CASE_CHARGING = "case_charging"
+    private const val EXTRA_OVERALL = "overall_battery"
+    private const val EXTRA_OVERALL_CHARGING = "overall_charging"
 
     private const val CONTROL_REFRESH = "refresh"
     private const val CONTROL_SET_NOISE = "set_noise"
@@ -171,6 +173,8 @@ object ModuleContract {
         putExtra(EXTRA_RIGHT_CHARGING, state.battery.right.charging)
         putExtra(EXTRA_CASE, state.battery.case.percent ?: -1)
         putExtra(EXTRA_CASE_CHARGING, state.battery.case.charging)
+        putExtra(EXTRA_OVERALL, state.battery.overall.percent ?: -1)
+        putExtra(EXTRA_OVERALL_CHARGING, state.battery.overall.charging)
     }
 
     fun Intent.readState(): EarbudState? {
@@ -190,6 +194,7 @@ object ModuleContract {
                 left = batteryReading(EXTRA_LEFT, EXTRA_LEFT_CHARGING),
                 right = batteryReading(EXTRA_RIGHT, EXTRA_RIGHT_CHARGING),
                 case = batteryReading(EXTRA_CASE, EXTRA_CASE_CHARGING),
+                overall = batteryReading(EXTRA_OVERALL, EXTRA_OVERALL_CHARGING),
             ),
             noiseMode = getStringExtra(EXTRA_NOISE_MODE)
                 ?.let { runCatching { NoiseMode.valueOf(it) }.getOrNull() },

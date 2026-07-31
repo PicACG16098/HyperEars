@@ -2,13 +2,14 @@
 
 ## 1. 目标与范围
 
-首版只支持 `vivo TWS Air3 Pro`，在 HyperOS 3 / Android 16 上提供：
+当前版本在 HyperOS 3 / Android 16 上提供：
 
-- 跟随系统 A2DP 连接自动建立 vivo GAIA RFCOMM 控制链路。
+- 跟随系统 A2DP 连接，为需要私有协议的具体 Adapter 建立 RFCOMM 控制链路。
 - 向 MiLink 暴露最小兼容身份，使融合设备中心识别目标耳机。
 - 在融合卡片读取左右耳/充电盒电量和当前降噪状态。
-- 将融合卡片的关闭、降噪、通透操作翻译为已实机验证的 vivo 命令。
-- 保留后续 vivo 型号及其他厂商协议接入所需的稳定扩展点。
+- 将融合卡片的控制操作交给具体型号 Adapter，翻译为已实机验证的厂商命令。
+- 通过 `Standard → 厂商家族 → 具体型号` 继承链接入 vivo、StarRing 和
+  Bose，并保留其他型号的稳定扩展点。
 
 首版不伪造尚未验证的能力。空间音频、自适应降噪、入耳检测、查找耳机等
 能力默认关闭；`0x820D`、`0x8224` 在语义确认前只记录，不参与系统状态。
@@ -31,11 +32,11 @@ HyperEars 仅复用融合设备中心所需边界，不注入
 
 ```text
 protocol
-  └─ vivo GAIA 帧、流式解码、握手/电量/降噪编解码
+  └─ vivo / StarRing / Bose WireCodec、流式分帧与纯字节编解码
 
 integration
   ├─ 通用耳机模型与控制事件
-  ├─ Standard / vivo / 具体型号 Adapter 继承链
+  ├─ Standard / 厂商家族 / 具体型号 Adapter 继承链
   ├─ Adapter Registry
   ├─ vivo Air3 Pro 私有协议组件
   ├─ 状态 Reducer
@@ -73,28 +74,38 @@ protocol <- protocol-test
 ```text
 EarbudAdapter
   └─ StandardEarbudAdapter
-       └─ VivoEarbudAdapter
-            └─ VivoTwsAir3ProAdapter
+       ├─ VivoEarbudAdapter
+       │    └─ VivoTwsAir3ProAdapter
+       ├─ StarRingEarbudAdapter
+       │    └─ StarRingUltraAdapter
+       └─ BoseEarbudAdapter
+            └─ BoseHeadphonesAdapter
+                └─ BoseQuietComfortHeadphonesAdapter
 ```
 
 子类继承父类的通用能力，只覆盖经实机确认的差异：
 
-- `StandardEarbudAdapter` 表示 Android 原生 A2DP/HFP、音量和路由能力。
+- `StandardEarbudAdapter` 表示 Android 原生 A2DP/HFP、音量、路由和系统
+  缓存的整机电量能力。
 - `VivoEarbudAdapter` 继承标准层，增加 vivo 家族名称规则和 GAIA 端点。
 - `VivoTwsAir3ProAdapter` 继承 vivo 层，增加精确名称、已验证电量/降噪
-  能力、MiLink 兼容身份及 Air3 Pro 协议创建方法。
+  能力及 Air3 Pro 协议创建方法。
+- `BoseEarbudAdapter` 使用已连接耳机的名称/Bose OUI 做无扫描初筛，创建
+  BMAP 会话后以 `[0.3]` 确认产品 ID，以 `[2.2]` 读取组件电量。名称只允许
+  进入家族层；只有协议内产品 ID 才能升级到具体 Bose 型号。
 
 Registry 固定按“具体型号 → 厂商家族 → 标准耳机”解析：
 
 - 具体 Air3 Pro Adapter 建立私有通道并发布完整电量、降噪和流转能力。
-- 未知 vivo 家族 Adapter 只发布耳机身份和流转能力。
+- 未知 vivo 家族 Adapter 发布耳机身份、系统整机电量和流转能力。
 - 标准 Adapter 只接管 Bluetooth Class 明确为耳机，或名称保守命中耳机
-  关键词的设备，同样只发布身份和流转能力。
+  关键词的设备，同样发布身份、系统整机电量和流转能力。
 - 音箱、车机和无法确认是耳机的设备不匹配任何 Adapter；名称可确认由
   HyperOS 原生支持的小米/REDMI 耳机也明确排除，保留官方完整路径。
 
-身份级回退不会创建 RFCOMM、启动 Reader、安排重连或覆盖电量/降噪方法，
-因此其后台开销仅限 A2DP 生命周期开始和结束时的状态同步。
+身份级回退不会创建 RFCOMM、启动 Reader、安排重连或覆盖降噪方法。它只在
+A2DP 会话建立时读取一次 Android 蓝牙电量缓存，并监听系统已有的电量变化
+广播，不轮询设备。
 
 Registry 只选择 Adapter，不包含蓝牙连接或全局状态。新增型号不修改 Hook
 分发代码，也不依赖“当前只有一个型号”的默认兜底。
@@ -107,14 +118,32 @@ Adapter 与有状态协议组件采用组合关系。每个 RFCOMM 会话从选�
 - 给出连接后的只读初始化命令。
 - 把统一控制请求翻译成厂商字节帧。
 - 增量消费任意分片/粘包并产生统一领域事件。
+- 在权威型号事件后给出该型号才允许执行的后续只读命令。
+- 给出控制成功后需要执行的权威只读回查。
+
+厂商原始帧由 `VivoTwsProtocol`、`StarRingWireCodec`、
+`BoseBmapWireCodec` 等纯字节组件负责。`EarbudProtocol` 不拥有 Socket，
+WireCodec 不认识 Adapter、MiLink 或生命周期。
+
+具体型号拥有自己的不可变协议画像。例如
+`BoseQuietComfortHeadphonesAdapter.bmapProfile` 声明产品 ID、Quiet/Aware
+槽位和模式解释阈值；Bose 家族协议在产品 ID 未确认前只读型号与电量，不发送
+AudioModes 查询，也不暴露具体型号能力。产品画像 Registry 是唯一组合根，
+通用协议中没有具体产品常量。
+
+控制确认策略由 Adapter 声明为
+`DEVICE_REPORT / PUBLISH_AFTER_WRITE / PUBLISH_AFTER_WRITE_THEN_REFRESH`。
+会话在同一个事务锁内统一执行“写入 → 可选发布 → 可选回查”，协议实现不再
+通过把查询命令混进设置命令来隐式修补 UI 状态。
 
 统一控制请求首版包含 `Refresh` 与 `SetNoiseMode`。统一领域事件明确区分
 系统 Profile 会话和私有通道：
 
 - `SessionStarted/SessionEnded`：目标设备进入或离开系统 Profile 生命周期。
 - `ChannelConnected/ChannelDisconnected`：厂商控制通道可用或丢失。
-- `Handshake`、`BatteryChanged`、`NoiseModeChanged` 和 `UnknownFrame`：
-  私有协议产生的状态事件。
+- `BatteryChanged`：由标准系统电量源或具体型号私有协议产生。
+- `Handshake`、`NoiseModeChanged` 和 `UnknownFrame`：私有协议产生的
+  状态事件。
 
 ### 4.3 EarbudStateReducer
 
@@ -127,7 +156,7 @@ Reducer 是纯函数，接收旧状态和协议事件，输出新状态：
 - 新 Profile 会话开始或结束时清除易失状态。
 - 同一 Profile 会话内的私有通道重连保留最近一次设备状态。
 
-系统桥只读取统一状态，不直接理解 vivo payload。连接、重连、Socket 和
+系统桥只读取统一状态，不直接理解任何厂商 payload。连接、重连、Socket 和
 Reader 始终由运行时统一管理，不进入 Adapter 继承层。
 
 ## 5. 运行时与进程边界
@@ -166,9 +195,10 @@ EarbudSessionService
 1. Hook `A2dpService.handleConnectionStateChanged`。
 2. A2DP 进入 connected 且 Registry 解析到允许接入的 Adapter 时，向
    连接管理器注册设备并创建一个设备会话。
-3. 若具体 Adapter 要求私有协议，会话使用继承得到的首选 UUID 建立 RFCOMM，
-   通道成功后向 MiLink 发布 MMA connected，并发送握手、降噪和电量查询；
-   身份级回退则立即就绪，不创建任何私有通道。
+3. 若具体 Adapter 要求私有协议，会话使用继承得到的候选端点建立 RFCOMM，
+   通道成功后向 MiLink 发布 MMA connected，并发送家族安全的初始只读查询；
+   权威型号事件可在同一串行事务中解锁具体型号后续查询。身份级回退则立即
+   就绪，不创建任何私有通道。
 4. Reader 在单独 IO 协程中持续解码，Reducer 更新状态。
 5. 只有发生实际变化的新状态才通过显式、定向广播同步给
    `com.milink.service`；模块 App 仅在前台打开时按需请求快照。
@@ -189,15 +219,59 @@ MiLink 桥按蓝牙地址缓存 Bluetooth 进程同步的状态，并为方法�
 设备提供：
 
 - `checkIsMiTWS = 1`、`isMiTWS = true`。
-- `getDeviceId = Adapter.miLinkIdentity.deviceId`。
+- `getDeviceId = MiLinkCarrierIdentity.deviceId(Adapter.formFactor)`。
 - `getBatteryLevel` 与运行时电量列表。
 - `getAncState` 及开/关降噪、通透命令桥接。
 - `isSupportAudioSwitch = 1`。
 
-电量、降噪和佩戴接口严格按 Adapter 能力覆盖。身份级回退不覆盖这些方法，
-`getSwitchState` 返回无降噪控制，使融合卡片退化为系统音量与流转入口。
+电量、降噪和佩戴接口严格按 Adapter 能力覆盖。身份级回退提供系统整机
+电量，但 `getSwitchState` 返回无降噪控制，使融合卡片保留电量、系统音量
+与流转入口。
+
+MiLink 的设备 ID 只承担“进入官方耳机路径并选择物理形态”的职责，不再承担
+具体第三方型号编码：
+
+- `HeadsetFormFactor.TWS` 统一映射到官方已知 TWS 载体 ID `01010607`。
+- `HeadsetFormFactor.HEADPHONES` 统一映射到官方已知头戴载体 ID
+  `01013A04`。
+- Adapter 只声明平台无关的物理形态；载体映射集中在 system-module，
+  integration 层不依赖任何 Xiaomi 常量。
+- MiLink 原有注册表和类型恢复函数据此自然得到原生 TWS 或头戴类型。模块
+  不再 Hook 混淆分类器，不修改官方查找表，也不伪造一套型号 ID 表。
+- 载体 ID 不能、也不用于反查具体型号。具体型号能力始终来自连接设备上的
+  Adapter 与统一状态；可选的远端卡片扩展由独立元数据传递。
+
+本地身份入口只保留 Mx Bluetooth SDK 的 `getDeviceId` 和支持能力查询。
+`ProfileContext`、`AncBatteryController` 继续沿官方调用链读取 Mx 返回值；
+官方的型号支持判断、蓝牙耳机去重、`HeadsetInfo → HeadsetDeviceInfo` 转换
+和远端类型恢复均不再单独 Hook。
+
+### 5.3 型号化卡片呈现
+
+具体型号可声明一个不含品牌语义的 `MiLinkCardPresentationId`。系统模块通过
+独立 `MiLinkCardAdapterRegistry` 将该 ID 绑定到具体的
+`MiLinkCardAdapter`：
+
+- 通用协调器只按地址、根 View 和呈现 ID 管理生命周期，不包含型号名称、
+  View ID 或布局规则。
+- 呈现 ID 优先来自本机权威状态；发布端在
+  `HeadsetDeviceManager.convertToBluetoothService` 完成后，将版本化的
+  呈现 ID 写入 `CirculateServiceInfo.serviceProperties`。该 `ExtraBundle`
+  随官方 Parcelable 链路传输，接收端无需本地蓝牙历史即可读取。
+- 具体卡片 Adapter 独占 MiLink View ID、一次性结构调整和该型号附加控件。
+- 每个根 View 只安装一个 attach 监听；状态变化只调用现有 Binding 的
+  `render`，不扫描布局、不轮询。
+- detach 或根 View 改绑时调用 `unbind` 恢复原生 View，避免重复监听、残留
+  布局和跨型号污染。
+
+Bose QuietComfort 的具体卡片 Adapter 一次性把不受支持的“关闭”按钮替换为
+同 ID 占位 View；MiLink 后续异步更新仍只持有已脱离布局的原按钮，因此不会
+把第三个按钮重新显示。StarRing Ultra 的抗风噪开关也只由其具体卡片 Adapter
+创建和维护。通用 MiLink Hook 不包含这两种型号的 UI 分支。
 
 Hook 只在实机确认使用耳机桥的 MiLink `:audio`、`:core` 和 `:ui` 进程安装。
+通用卡片扩展仅结构匹配 `HeadSetsDetail` 的稳定四参数绑定签名；不依赖其
+混淆方法名。若版本不包含该签名，扩展安全失效，官方通用耳机卡片仍可工作。
 状态通知按
 身份、连接、电量、降噪字段做差量分发；未变化的协议报告不会产生广播或
 MiLink 回调。
@@ -234,6 +308,12 @@ MiLink 电量列表顺序：
 [case, left, right, caseCharging, leftCharging, rightCharging]
 ```
 
+标准 Adapter 的权威来源为 Android `BluetoothDevice` 电量缓存。系统通常只
+提供一个整机百分比，因此映射为 `left = right = aggregate`，充电盒及充电
+状态保持未知。具体型号可把 `batterySource` 覆盖为 `PRIVATE_PROTOCOL`；
+Air3 Pro 即使用 vivo 上报的真实左耳、右耳和充电盒数据，系统电量广播不会
+覆盖它。
+
 ### 7.2 降噪
 
 统一模式与 vivo wire：
@@ -248,14 +328,22 @@ Air3 Pro 设置帧固定使用 GAIA v3 载荷 `mode 04 00`。
 
 ### 7.3 兼容身份
 
-首版使用参考项目已验证可进入 HyperOS 耳机运行时的兼容 ID
-`01010607`。该兼容身份由标准 Adapter 提供并被 vivo 和具体型号继承；未来
-若某型号需要不同面板能力，只覆盖该 Adapter。
+兼容身份只按物理形态选择两个官方载体：
+
+| Adapter 形态 | 官方载体 ID | MiLink 原生类型 |
+|---|---|---:|
+| `TWS` | `01010607`（K73） | 0 |
+| `HEADPHONES` | `01013A04`（O70C） | 7 |
+
+具体型号不再生成 MiLink ID。新增型号只需继承正确的父 Adapter；TWS 沿用
+默认形态，头戴型号覆盖 `formFactor = HEADPHONES`。可选的型号化卡片能力以
+版本化 `serviceProperties` 元数据传递，不能改变官方形态分类。
 
 ## 8. 可靠性约束
 
 - RFCOMM 连接、读、写均在 IO dispatcher；系统 Binder 主线程不阻塞。
 - 写操作串行化，禁止查询和设置帧交叉写入。
+- 一次控制请求及其回查构成完整串行事务；并发请求不能在帧级交叉。
 - 一个设备周期只执行一次初始连接及最多三次有限恢复；耗尽后不设定时器，
   A2DP 断开立即取消当前建连和 Reader。
 - 物理建连使用全局 Mutex 串行，活动 socket、协议 adapter 和 Reader 按
@@ -264,7 +352,8 @@ Air3 Pro 设置帧固定使用 GAIA v3 载荷 `mode 04 00`。
   独立协议测试项目中。
 - socket 关闭、任务取消、Receiver 注册和服务销毁必须幂等。
 - Hook 安装逐项 `runCatching`；单个 ROM 类名变化不能阻止其余桥接加载。
-- 反射方法按明确签名优先，混淆别名只作为受测试的兼容表。
+- 反射方法按稳定类名和明确签名定位；卡片绑定按参数类型结构匹配，不保存
+  混淆方法名兼容表。
 - 日志不输出完整蓝牙地址；仅显示脱敏后四位。
 
 ## 9. 安全边界
@@ -310,7 +399,7 @@ Air3 Pro 设置帧固定使用 GAIA v3 载荷 `mode 04 00`。
 新增 vivo 型号只需要：
 
 1. 从对应家族 Adapter 继承新的具体型号 Adapter。
-2. 只覆盖型号名称、能力与 MiLink 身份。
+2. 只覆盖型号名称、能力、物理形态及可选卡片呈现 ID。
 3. 若协议差异可由参数表达，复用协议组件；否则实现新的 `EarbudProtocol`。
 4. 按具体型号优先级在 Registry 注册。
 5. 增加继承、匹配、抓包与能力回归测试。
