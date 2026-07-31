@@ -1,104 +1,161 @@
 # HyperEars
 
-HyperEars 用于把非小米耳机接入 HyperOS 耳机体验。当前包含
-vivo/iQOO TWS 家族、`StarRing Ultra`、Bose BMAP 和 OPPO Enco 家族适配，
-并为其余标准蓝牙耳机提供流转、音量和系统整机电量回退。vivo TWS Air3 Pro
-使用实机验证的完整协议；vivo TWS 3e 使用公开实现对应的独立协议画像。
+[English](README_EN.md) · [安装指南](docs/installation.md) · [兼容性](docs/compatibility.md) · [问题排查](docs/troubleshooting.md)
 
-## 当前结论
+[![CI](https://github.com/silverpoetry/HyperEars/actions/workflows/ci.yml/badge.svg)](https://github.com/silverpoetry/HyperEars/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/silverpoetry/HyperEars?display_name=tag)](https://github.com/silverpoetry/HyperEars/releases)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
-2026-07-29 已在小米 `23116PN5BC` 与 vivo TWS Air3 Pro 上完成实机验证：
+HyperEars 是面向 Xiaomi HyperOS 的第三方蓝牙耳机系统集成模块。它让受支持的
+vivo/iQOO、OPPO Enco、Bose 和 StarRing 耳机进入 MiLink 融合设备中心，并在不接管
+Android 音频路由的前提下补充电量、降噪状态和设备流转所需的兼容信息。
 
-- RFCOMM 可通过 vivo GAIA UUID `00000837-d102-11e1-9b23-00025b00a5a5`
-  直接连接，不依赖 vivo 官方 App。
-- 握手、当前降噪模式、左右耳与充电盒电量均可读取。
-- 降噪、关闭、通透三种模式均可设置，并收到耳机确认及状态上报。
-- 耳机实际以 GAIA v3 返回核心状态；公开资料里的 v4 查询也能得到响应，
-  正式适配默认采用已抓包确认的 Air3 Pro v3 写入格式。
-- Bose QuietComfort Headphones (`prince/0x4075`) 已确认可通过 BMAP
-  `[0.3]` 读取产品 ID，并通过 `[2.2]` 读取整机/组件电量；改名不影响
-  OUI 初筛和协议内判型。
+> [!WARNING]
+> HyperEars 依赖 root、LSPosed 和 HyperOS 私有接口。安装前请确认能够恢复系统；ROM
+> 更新可能暂时破坏兼容性。本项目与 Xiaomi、vivo、iQOO、OPPO、Bose 及相关品牌无关。
 
-详细帧、字段和未解析事件见
-[`docs/vivo-tws-air3-pro-protocol.md`](docs/vivo-tws-air3-pro-protocol.md)。
-vivo/iQOO 型号目录、家族默认画像与型号覆盖边界见
-[`docs/vivo-family-support.md`](docs/vivo-family-support.md)。
-Bose 型号与电量帧见
-[`docs/bose-bmap-protocol.md`](docs/bose-bmap-protocol.md)。
-OPPO 家族的盲适配依据、协议帧与型号 Profile 见
-[`docs/oppo-enco-protocol.md`](docs/oppo-enco-protocol.md)。
+## 能做什么
 
-## 模块
+- 把符合条件的第三方耳机发布为 MiLink 耳机设备，复用系统原生流转与音量控制。
+- 为已验证型号读取左右耳/充电盒或头戴式整机电量。
+- 把耳机私有降噪协议映射为系统卡片支持的降噪、关闭、通透和型号专属模式。
+- 在“更多设置”中打开真实蓝牙设备详情，而不是借用载体型号的厂商页面。
+- 为没有私有适配的标准 A2DP/HFP 耳机提供流转、音量和系统整机电量回退。
+- 在应用内按设备会话展示识别、通道、协议和 MiLink 发布状态，便于诊断生命周期。
 
-- `protocol`：纯 WireCodec 编解码库，不依赖蓝牙连接和界面。
-- `integration`：厂商无关的耳机状态、`Standard → 厂商 → 具体型号`
-  Adapter 继承链、每会话 EarbudProtocol 与 HyperOS 数据映射。
-- `system-module`：正式 LSPosed 模块。按“服务生命周期—设备连接管理—
-  每设备控制通道”管理 Bluetooth RFCOMM 会话，并提供 MiLink 融合设备
-  中心兼容桥和 Material 3 运行看板。连接管理按蓝牙地址支持多个会话，
-  仅串行化物理建连动作；模块不注入系统设置页。
-- `protocol-test`：实机协议实验室。列出已配对耳机，按 vivo、StarRing、
-  Bose 探测各自 RFCOMM 端点，验证只读状态与电量并显示完整原始日志。
+HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频流经过模块，也不会
+持续扫描蓝牙。私有 RFCOMM 通道只对需要协议遥测的适配器建立，并按设备会话管理。
 
-系统模块的详细分层、进程边界、状态协议、安全约束与扩展流程见
-[`docs/system-module-architecture.md`](docs/system-module-architecture.md)。
-运行看板的产品定位、生命周期语义与性能边界见
-[`docs/dashboard-ui-architecture.md`](docs/dashboard-ui-architecture.md)。
-`VivoEarbudAdapter` 统一提供 vivo/iQOO 家族已有多份资料相互印证的
-`0x0207/0x8207` 私有电量和 `0x0130/0x0230` 三态降噪能力。未知具体型号
-采用公开 v4 画像作为家族默认值；`vivo-tws-air3-pro` 和 `vivo-tws-3e`
-Adapter 只覆盖各自已经明确的 GAIA 版本与设置参数，TWS 3e 另保留
-RFCOMM channel 13 回退。其他可确认是耳机的 A2DP 设备落到标准 Adapter，
-仅提供流转、音量和 Android 已缓存的整机电量。音箱、车机、无法判断为耳机
-的设备以及名称可确认由 HyperOS 原生支持的小米/REDMI 耳机不会被接管。
+## 兼容性概览
 
-OPPO/Enco 名称会进入 OPPO 家族 Adapter，通过固定 RFCOMM UUID 读取真实
-左右耳/充电盒电量和三态降噪，并一次性协商耳机主动通知。Air2 Pro 使用独立
-Profile 处理其相反的关闭/降噪编码；Free4、X3、Air5 已保留具体型号 Adapter，
-其余型号复用参考项目的标准 OPPO 编码。本项尚属基于公开实现的盲适配，不把
-游戏模式、均衡器、空间音频等未接入统一领域的能力暴露给 MiLink。
+| 设备或家族 | 状态 | 电量 | 噪声控制 | MiLink 流转 |
+|---|---|---|---|---|
+| vivo TWS Air3 Pro | 实机验证 | 左/右/盒 | 降噪/关闭/通透 | 是 |
+| vivo TWS 3e | 公开实现画像 | 左/右/盒 | 降噪/关闭/通透 | 是 |
+| 其他 vivo/iQOO TWS | 实验性家族画像 | 视协议响应 | 三态，视协议响应 | 是 |
+| StarRing Ultra | 实机验证 | 左/右 | 降噪/正常/通透/风噪 | 是 |
+| Bose QuietComfort Headphones (`prince/0x4075`) | 实机验证 | 整机 | 安静/感知/含风噪预设 | 是 |
+| 其他 Bose BMAP 耳机 | 保守回退 | 视 BMAP 响应 | 不声明未验证模式 | 是 |
+| OPPO Enco 家族 | 参考协议盲适配 | 左/右/盒 | 降噪/关闭/通透 | 是 |
+| 其他标准蓝牙耳机 | 通用回退 | 系统整机电量 | 无私有控制 | 是 |
 
-Adapter 只声明 `TWS` 或 `HEADPHONES` 物理形态。MiLink 桥分别复用一个
-官方已知载体 ID，让系统原生完成耳机支持判断、去重、跨端类型恢复和卡片
-形态选择；具体第三方型号不再伪造成设备 ID，也不 Hook 混淆型号分类器。
-仅型号专属的可选卡片扩展通过 `CirculateServiceInfo.serviceProperties`
-中的版本化命名空间元数据传递。
+“公开实现画像”和“盲适配”不等于实机验证。完整型号、证据级别和已知限制见
+[兼容性文档](docs/compatibility.md)。
 
-## 已记录的 vivo 协议变体
+## 系统要求
 
-| 变体 | GAIA 版本 | 降噪查询载荷 | 降噪设置载荷 |
-|---|---:|---|---|
-| Air3 Pro 实机抓包 | 3 | 空 | `mode 04 00` |
-| 手工逆向公开资料（未绑定型号） | 4 | `00` | `mode 03 01` |
-| vivo TWS 3e 公开实现 | 3 | 空 | `mode 03` |
+- Xiaomi HyperOS，Android 15 或更高版本；
+- 已安装并正常工作的 LSPosed，API 版本不低于 101；
+- LSPosed 作用域：`com.android.bluetooth`、`com.milink.service`；
+- 耳机已通过系统蓝牙完成配对。
 
-三种变体共同使用 vivo vendor `0x001B`、降噪命令 `0x0130/0x0230`
-以及模式编号 `0=降噪、1=关闭、2=通透`。电量实验使用公开资料中的
-`0x0207/0x8207`，并已在 Air3 Pro 上得到相同响应。正式模块把公开 v4
-Profile 作为 vivo 家族默认画像；发现具体型号差异时只增加或覆盖 Profile。
+目前公开测试基线来自 HyperOS 设备。AOSP、MIUI、非小米 ROM 和低于 Android 15 的
+系统不在支持范围内。
 
-## 构建
+## 安装
 
-```powershell
-./gradlew.bat testDebugUnitTest :protocol-test:assembleDebug :system-module:assembleDebug
+1. 从 [Releases](https://github.com/silverpoetry/HyperEars/releases) 下载 APK 和同名
+   `.sha256` 文件，不要安装来源不明的重打包版本。
+2. 校验 SHA-256：
+
+   ```powershell
+   Get-FileHash .\HyperEars-v0.10.2.apk -Algorithm SHA256
+   ```
+
+3. 安装 APK，在 LSPosed 中启用 HyperEars，并确认两个静态作用域均已选中。
+4. 重启设备。仅强停 MiLink 不一定会让两个目标进程同时重新加载模块。
+5. 连接耳机后打开 HyperEars，确认对应会话依次达到识别、通道、协议和发布状态。
+
+从早期开发测试包迁移到首个公开 Release 时，若 Android 提示签名不一致，需要先在
+LSPosed 禁用旧模块、卸载旧 APK，再安装公开版并重新启用。详细升级和卸载步骤见
+[安装指南](docs/installation.md)。
+
+## 设计边界
+
+```text
+Android 蓝牙事件
+        │
+        ▼
+EarbudConnectionManager ── 每个蓝牙地址一个逻辑会话
+        │
+        ▼
+EarbudAdapter             ── Standard → 厂商家族 → 具体型号
+        │
+        ▼
+EarbudProtocol            ── 每会话独立的私有协议状态机
+        │
+        ▼
+DeviceStateRegistry       ── 带 token/revision 的进程内状态
+        │
+        ▼
+MiLinkServiceHook         ── 最小身份、状态与控制映射
 ```
 
-Debug APK 输出到
-`protocol-test/build/outputs/apk/debug/protocol-test-debug.apk` 和
-`system-module/build/outputs/apk/debug/system-module-debug.apk`。
+- `protocol`：纯帧编解码，不创建连接、不依赖界面。
+- `integration`：设备识别、能力、Adapter 层级和每会话 Protocol。
+- `system-module`：LSPosed 入口、蓝牙生命周期、MiLink 桥和运行看板。
+- `protocol-test`：开发者使用的只读/显式控制协议实验工具，不随正式 Release 发布。
 
-Android 12 及以上需要同时授予 `BLUETOOTH_CONNECT` 和 `BLUETOOTH_SCAN`；
-应用首次启动会统一请求。连接按钮会自动完成只读探测。锁屏下做 ADB
-回归时，Debug 包还支持：
+系统模块不注入 HyperOS 设置页，不轮询 UI，也不替换系统蓝牙音频服务。型号专属卡片
+扩展只在 MiLink 卡片绑定时执行，并由具体 Adapter 声明。完整架构见
+[系统模块架构](docs/system-module-architecture.md)。
+
+## 隐私与安全
+
+- 正式模块未声明 `INTERNET` 权限，不包含分析、遥测、广告或崩溃上报 SDK。
+- 蓝牙地址只用于本机会话关联；正式日志默认对地址脱敏。
+- 协议测试工具会显示目标地址和原始帧，分享日志前必须手动脱敏。
+- 应用数据禁止系统备份；禁用并卸载模块即可移除其应用侧数据。
+
+详见 [隐私说明](PRIVACY.md) 和 [安全策略](SECURITY.md)。
+
+## 构建与验证
+
+需要 JDK 17 和 Android SDK 36：
 
 ```powershell
-adb shell am start -n dev.hyperears.protocoltest/.MainActivity --ez auto_probe true
-adb logcat -s HyperEarsProtocol:D "*:S"
+.\gradlew.bat --no-daemon clean testDebugUnitTest `
+  :protocol-test:assembleDebug `
+  :system-module:lintRelease `
+  :system-module:assembleRelease
 ```
 
-## 资料来源
+没有提供 Release 签名环境变量时，Gradle 只生成未签名 Release APK。正式发布使用：
 
-- 当前 `AndroidBluetoothHelper` 的 Air3 Pro 实机抓包实现。
-- https://github.com/Star-ZER0/Pods-Protocol-Reverse-Engineering
-- https://github.com/moculll/ScrewVivoTWS
-- https://github.com/1812z/OppoPods
+- `HYPEREARS_KEYSTORE_PATH`
+- `HYPEREARS_KEYSTORE_PASSWORD`
+- `HYPEREARS_KEY_ALIAS`
+- `HYPEREARS_KEY_PASSWORD`
+
+CI 会验证单元测试、Lint 和 Release 编译；带 `v*` 标签的发布工作流使用仓库 Secrets
+签名、验证 APK，并同时生成 SHA-256 文件。
+
+## 文档
+
+- [安装、升级与卸载](docs/installation.md)
+- [设备兼容性与证据等级](docs/compatibility.md)
+- [常见问题与日志采集](docs/troubleshooting.md)
+- [发布签名与产物验证](docs/release-signing.md)
+- [系统模块架构](docs/system-module-architecture.md)
+- [运行看板语义](docs/dashboard-ui-architecture.md)
+- [vivo TWS Air3 Pro 协议](docs/vivo-tws-air3-pro-protocol.md)
+- [vivo/iQOO 家族画像](docs/vivo-family-support.md)
+- [OPPO Enco 协议](docs/oppo-enco-protocol.md)
+- [Bose BMAP 协议](docs/bose-bmap-protocol.md)
+- [StarRing Ultra 协议](docs/starring-ultra-protocol.md)
+
+## 贡献
+
+新增型号应提供可复现证据，并遵循“具体型号 → 厂商家族 → 标准耳机”的回退顺序。
+请不要在 Issue、提交或日志中公开完整个人设备 MAC、账号信息、密钥或厂商专有资源。
+开发流程和证据要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 许可与致谢
+
+HyperEars 以 [GNU GPL-3.0-only](LICENSE) 发布。协议研究参考了
+[1812z/OppoPods](https://github.com/1812z/OppoPods)、
+[Star-ZER0/Pods-Protocol-Reverse-Engineering](https://github.com/Star-ZER0/Pods-Protocol-Reverse-Engineering)
+和 [moculll/ScrewVivoTWS](https://github.com/moculll/ScrewVivoTWS)，并包含本项目的实机
+抓包与验证结果。具体来源及许可说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+商标和产品名称仅用于兼容性描述，归各自权利人所有。

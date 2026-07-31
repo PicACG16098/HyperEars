@@ -9,3 +9,9 @@ captures/
 .externalNativeBuild/
 .cxx/
 .analysis/
+*.jks
+*.keystore
+signing.properties
+*.apk
+*.apk.idsig
+*.sha256

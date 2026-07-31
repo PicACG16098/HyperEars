@@ -1,0 +1,53 @@
+name: Device support evidence
+description: Propose or validate a headset model with reproducible protocol evidence.
+title: "[Device]: "
+labels: [device-support]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Exact retail Bluetooth name
+    validations:
+      required: true
+
+  - type: dropdown
+    id: form
+    attributes:
+      label: Physical form
+      options: [TWS earbuds, Headphones, Other]
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Test environment
+      description: HyperOS device/version, Android API, LSPosed, MiLink and HyperEars versions.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Protocol evidence
+      description: Redacted UUIDs, channels, request/response frames and authoritative state changes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: result
+    attributes:
+      label: Verified behavior
+      description: Battery components, modes, readback, failure behavior and MiLink presentation.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Submission checks
+      options:
+        - label: Complete personal Bluetooth addresses have been replaced or redacted.
+          required: true
+        - label: No proprietary APK, decompiled archive, credential or copyrighted product asset is attached.
+          required: true

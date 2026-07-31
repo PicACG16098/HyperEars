@@ -1,0 +1,81 @@
+name: Bug report
+description: Report a reproducible HyperOS, MiLink or headset integration defect.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not post full Bluetooth MAC addresses, WLAN/ADB pairing details, accounts or credentials.
+
+  - type: input
+    id: version
+    attributes:
+      label: HyperEars version
+      placeholder: v0.10.2, official GitHub Release
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Device and system
+      description: Phone/tablet model, full HyperOS version and Android API level.
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: LSPosed and MiLink versions
+    validations:
+      required: true
+
+  - type: input
+    id: headset
+    attributes:
+      label: Headset retail name
+      description: Do not include the complete Bluetooth address.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Numbered steps starting from a known Bluetooth connection state.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs or screenshots
+      description: Paste only the relevant time window and remove personal identifiers.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I installed the APK from this repository's Releases page.
+          required: true
+        - label: I reproduced the issue after a full device reboot.
+          required: true
+        - label: I removed complete MAC addresses, pairing codes and account data.
+          required: true

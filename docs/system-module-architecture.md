@@ -298,10 +298,14 @@ Hook 只在实机确认使用耳机桥的 MiLink `:audio`、`:core` 和 `:ui` �
 MiLink 回调。
 
 设备流转仍由系统的 A2DP/MiLink 原生路径执行。HyperEars 不直接调用隐藏
-的“切走/切回”实现；只让系统把 vivo 耳机视为可流转耳机。
+的“切走/切回”实现；只让系统把目标第三方耳机视为可流转耳机。
 
-系统设置页和 Xiaomi Bluetooth 耳机服务明确不在作用域内；普通蓝牙详情
-保持 ROM 原行为。
+系统设置页和 Xiaomi Bluetooth 耳机服务明确不在作用域内，HyperEars 不修改
+Settings 的 Fragment 或控件。第三方卡片点击“更多设置”时，仅在 MiLink 稳定的
+`HeadsetServiceController.switchToHeadsetActivity(CirculateServiceInfo)` 语义边界
+读取 `deviceId` 中的真实蓝牙地址，并启动 ROM 原生蓝牙设备详情 Activity；官方
+Xiaomi 耳机和非 HyperEars 卡片继续执行原方法。若具体详情 Intent 不可用，则回退
+到系统蓝牙列表。
 
 ## 6. 跨进程状态协议
 
@@ -369,8 +373,8 @@ Air3 Pro 设置帧固定使用 GAIA v3 载荷 `mode 04 00`。
   A2DP 断开立即取消当前建连和 Reader。
 - 物理建连使用全局 Mutex 串行，活动 socket、协议 adapter 和 Reader 按
   地址完全独立。
-- 正式会话只尝试 Air3 Pro 已实机确认的 `0837` UUID；候选端点扫描留在
-  独立协议测试项目中。
+- 正式会话只尝试当前 Adapter 明确声明的有限端点，例如 vivo `0837`、OPPO
+  `079a` 或 Bose BMAP；候选 UUID/通道枚举留在独立协议测试项目中。
 - socket 关闭、任务取消、Receiver 注册和服务销毁必须幂等。
 - Hook 安装逐项 `runCatching`；单个 ROM 类名变化不能阻止其余桥接加载。
 - 反射方法按稳定类名和明确签名定位；卡片绑定按参数类型结构匹配，不保存

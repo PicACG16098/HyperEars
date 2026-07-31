@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import dev.hyperears.bridge.BridgeStage
 import dev.hyperears.bridge.ModuleContract
@@ -24,6 +25,7 @@ import dev.hyperears.runtime.toEarbudIdentity
 import java.lang.reflect.Method
 import java.util.Collections
 import java.util.WeakHashMap
+import java.util.concurrent.CompletableFuture
 
 /**
  * Supplies the minimum truthful Xiaomi identity required for native audio handoff.
@@ -103,6 +105,7 @@ internal class MiLinkServiceHook : HookContext() {
         hookHeadsetRuntime()
         hookSupportedAncModes()
         hookHeadsetPresentationMetadata()
+        hookHeadsetSettingsNavigation()
         hookHeadsetDetailExtension()
     }
 
@@ -213,6 +216,69 @@ internal class MiLinkServiceHook : HookContext() {
         runCatching {
             getObjectField(serviceInfo, "deviceId") as? String
         }.getOrNull()?.takeIf(::isBluetoothAddress)
+
+    /**
+     * Routes HyperEars cards to Android's real Bluetooth-device details.
+     *
+     * Xiaomi's stock action resolves the borrowed carrier ID and therefore opens that carrier's
+     * private headset page. The semantic controller boundary already receives the real Bluetooth
+     * address in [CirculateServiceInfo.deviceId], so redirecting here avoids replacing card views
+     * or participating in their lifecycle. Stock Xiaomi headsets continue through untouched.
+     */
+    private fun hookHeadsetSettingsNavigation() {
+        runCatching {
+            val serviceInfoClass =
+                findClass("com.miui.circulate.api.service.CirculateServiceInfo")
+            val method = findClass(
+                "com.miui.circulate.api.protocol.headset.HeadsetServiceController",
+            ).declaredMethods.single { candidate ->
+                candidate.name == "switchToHeadsetActivity" &&
+                    candidate.parameterTypes.contentEquals(arrayOf(serviceInfoClass)) &&
+                    CompletableFuture::class.java.isAssignableFrom(candidate.returnType)
+            }.apply { isAccessible = true }
+
+            hookBefore(method) {
+                val serviceInfo = args.singleOrNull() ?: return@hookBefore
+                val address = serviceInfoAddress(serviceInfo) ?: return@hookBefore
+                val isHyperEarsCard =
+                    presentationIdFrom(serviceInfo) != null || isTargetAddress(address)
+                if (!isHyperEarsCard || !openBluetoothDeviceSettings(address)) {
+                    return@hookBefore
+                }
+
+                result = CompletableFuture.completedFuture(HEADSET_OPERATION_SUCCESS)
+                ModuleLog.debug(
+                    "MiLink",
+                    "opened system Bluetooth details for ${maskBluetoothAddress(address)}",
+                )
+            }
+            ModuleLog.debug("MiLink", "headset settings navigation installed")
+        }.onFailure {
+            ModuleLog.warn("MiLink", "headset settings navigation unavailable", it)
+        }
+    }
+
+    private fun openBluetoothDeviceSettings(address: String): Boolean {
+        val appContext = context ?: return false
+        val fragmentArguments = Bundle().apply {
+            putString(EXTRA_DEVICE_ADDRESS, address)
+        }
+        val deviceDetails = Intent(ACTION_BLUETOOTH_DEVICE_DETAIL_SETTINGS)
+            .setPackage(SETTINGS_PACKAGE)
+            .putExtra(EXTRA_DEVICE_ADDRESS, address)
+            .putExtra(EXTRA_SHOW_FRAGMENT_ARGUMENTS, fragmentArguments)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        if (runCatching { appContext.startActivity(deviceDetails) }.isSuccess) return true
+
+        val bluetoothSettings = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+            .setPackage(SETTINGS_PACKAGE)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        return runCatching { appContext.startActivity(bluetoothSettings) }
+            .onFailure {
+                ModuleLog.warn("MiLink", "unable to open Bluetooth settings", it)
+            }
+            .isSuccess
+    }
 
     /**
      * Finds HeadSetsDetail's semantic bind entry without depending on its obfuscated name.
@@ -999,6 +1065,11 @@ internal class MiLinkServiceHook : HookContext() {
     }
 
     private companion object {
+        const val ACTION_BLUETOOTH_DEVICE_DETAIL_SETTINGS =
+            "com.android.settings.BLUETOOTH_DEVICE_DETAIL_SETTINGS"
+        const val EXTRA_DEVICE_ADDRESS = "device_address"
+        const val EXTRA_SHOW_FRAGMENT_ARGUMENTS = ":settings:show_fragment_args"
+        const val SETTINGS_PACKAGE = "com.android.settings"
         const val MILINK_RAW_ANC_NO_TRANSPARENCY = 3
         const val MILINK_RAW_ANC_ALL_MODES = 7
         const val HEADSET_OPERATION_SUCCESS = 100

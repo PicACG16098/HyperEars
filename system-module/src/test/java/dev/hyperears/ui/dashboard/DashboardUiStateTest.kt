@@ -9,7 +9,7 @@ import org.junit.Test
 class DashboardUiStateTest {
     @Test
     fun `two addresses remain as two independent sessions`() {
-        val left = activeState("44:FB:76:3D:E3:C3", "vivo TWS Air3 Pro")
+        val left = activeState("02:00:00:00:00:01", "vivo TWS Air3 Pro")
         val right = activeState("AA:BB:CC:DD:EE:FF", "Second TWS")
 
         val afterFirst = DeviceSessionReducer.reduce(
@@ -22,7 +22,7 @@ class DashboardUiStateTest {
         assertEquals(2, afterSecond.sessions.size)
         assertEquals(
             "token-1",
-            afterSecond.sessions["44:FB:76:3D:E3:C3"]?.sessionToken,
+            afterSecond.sessions["02:00:00:00:00:01"]?.sessionToken,
         )
         assertEquals(
             "token-2",
@@ -32,7 +32,7 @@ class DashboardUiStateTest {
 
     @Test
     fun `new state replaces only the matching address`() {
-        val first = activeState("44:FB:76:3D:E3:C3", "vivo TWS Air3 Pro")
+        val first = activeState("02:00:00:00:00:01", "vivo TWS Air3 Pro")
         val second = activeState("AA:BB:CC:DD:EE:FF", "Second TWS")
         val initial = DeviceSessionReducer.reduce(
             DeviceSessionReducer.reduce(
@@ -50,7 +50,7 @@ class DashboardUiStateTest {
         assertEquals(2, updated.sessions.size)
         assertEquals(
             true,
-            updated.sessions["44:FB:76:3D:E3:C3"]?.state?.connected,
+            updated.sessions["02:00:00:00:00:01"]?.state?.connected,
         )
         assertEquals(
             false,
@@ -60,7 +60,7 @@ class DashboardUiStateTest {
 
     @Test
     fun `session end removes only the matching address`() {
-        val first = activeState("44:FB:76:3D:E3:C3", "vivo TWS Air3 Pro")
+        val first = activeState("02:00:00:00:00:01", "vivo TWS Air3 Pro")
         val second = activeState("AA:BB:CC:DD:EE:FF", "Second TWS")
         val initial = DeviceSessionReducer.reduce(
             DeviceSessionReducer.reduce(
@@ -83,7 +83,7 @@ class DashboardUiStateTest {
 
     @Test
     fun `matching MiLink receipt is observed for the exact revision`() {
-        val state = activeState("44:FB:76:3D:E3:C3", "First").copy(
+        val state = activeState("02:00:00:00:00:01", "First").copy(
             connected = true,
             handshakeAccepted = true,
             revision = 8,
@@ -99,14 +99,14 @@ class DashboardUiStateTest {
             receipt(state, token = "token-1", revision = 8),
         )
 
-        val session = updated.sessions.getValue("44:FB:76:3D:E3:C3")
+        val session = updated.sessions.getValue("02:00:00:00:00:01")
         assertEquals(true, session.bridgeObserved)
         assertEquals(DevicePhase.STATE_ACCEPTED, session.phase)
     }
 
     @Test
     fun `old MiLink receipt does not mark a newer state observed`() {
-        val state = activeState("44:FB:76:3D:E3:C3", "First").copy(
+        val state = activeState("02:00:00:00:00:01", "First").copy(
             connected = true,
             handshakeAccepted = true,
             revision = 9,
@@ -122,14 +122,14 @@ class DashboardUiStateTest {
             receipt(state, token = "token-1", revision = 8),
         )
 
-        val session = updated.sessions.getValue("44:FB:76:3D:E3:C3")
+        val session = updated.sessions.getValue("02:00:00:00:00:01")
         assertEquals(false, session.bridgeObserved)
         assertEquals(DevicePhase.WAITING_FOR_MILINK, session.phase)
     }
 
     @Test
     fun `receipt arriving before state is attached when revision catches up`() {
-        val state = activeState("44:FB:76:3D:E3:C3", "First").copy(revision = 4)
+        val state = activeState("02:00:00:00:00:01", "First").copy(revision = 4)
         val receiptFirst = DeviceSessionReducer.acceptBridgeReceipt(
             DeviceSessionCollection(),
             receipt(state, token = "token-1", revision = 4),
@@ -139,13 +139,13 @@ class DashboardUiStateTest {
 
         assertEquals(
             true,
-            updated.sessions.getValue("44:FB:76:3D:E3:C3").bridgeObserved,
+            updated.sessions.getValue("02:00:00:00:00:01").bridgeObserved,
         )
     }
 
     @Test
     fun `dashboard reports independently observed counters`() {
-        val readyState = activeState("44:FB:76:3D:E3:C3", "First").copy(
+        val readyState = activeState("02:00:00:00:00:01", "First").copy(
             connected = true,
             handshakeAccepted = true,
             revision = 3,
@@ -189,7 +189,7 @@ class DashboardUiStateTest {
 
     @Test
     fun `session scoped MiLink calls survive a later state revision`() {
-        val initialState = activeState("44:FB:76:3D:E3:C3", "First").copy(
+        val initialState = activeState("02:00:00:00:00:01", "First").copy(
             connected = true,
             handshakeAccepted = true,
             revision = 3,
@@ -215,7 +215,7 @@ class DashboardUiStateTest {
             "token-1",
         )
 
-        val session = updated.sessions.getValue("44:FB:76:3D:E3:C3")
+        val session = updated.sessions.getValue("02:00:00:00:00:01")
         assertEquals(true, session.capabilitiesQueried)
         assertEquals(false, session.bridgeObserved)
     }

@@ -3,6 +3,17 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val releaseStorePath = providers.environmentVariable("HYPEREARS_KEYSTORE_PATH").orNull
+val releaseStorePassword = providers.environmentVariable("HYPEREARS_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("HYPEREARS_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("HYPEREARS_KEY_PASSWORD").orNull
+val releaseSigningConfigured = listOf(
+    releaseStorePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "dev.hyperears"
     compileSdk = 36
@@ -11,8 +22,23 @@ android {
         applicationId = "dev.hyperears"
         minSdk = 35
         targetSdk = 36
-        versionCode = 28
-        versionName = "0.10.0"
+        versionCode = 30
+        versionName = "0.10.2"
+    }
+
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(requireNotNull(releaseStorePath))
+                storePassword = requireNotNull(releaseStorePassword)
+                keyAlias = requireNotNull(releaseKeyAlias)
+                keyPassword = requireNotNull(releaseKeyPassword)
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
     }
 
     buildTypes {
@@ -24,9 +50,9 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
-            // Preserve the certificate used by the currently enabled test deployment so
-            // Release can replace it without uninstalling the LSPosed module.
-            signingConfig = signingConfigs.getByName("debug")
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

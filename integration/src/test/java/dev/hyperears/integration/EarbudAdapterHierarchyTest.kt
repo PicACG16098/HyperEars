@@ -98,7 +98,7 @@ class EarbudAdapterHierarchyTest {
                 identity(
                     name = "电音耳罩",
                     standardHeadset = true,
-                    deviceAddress = "BC:87:FA:1E:07:8E",
+                    deviceAddress = "BC:87:FA:00:00:01",
                     bluetoothDeviceClass =
                         BoseHeadphonesAdapter.BLUETOOTH_DEVICE_CLASS_HEADPHONES,
                 ),
@@ -468,7 +468,7 @@ class EarbudAdapterHierarchyTest {
             identity(
                 name = "电音耳罩",
                 standardHeadset = true,
-                deviceAddress = "BC:87:FA:1E:07:8E",
+                deviceAddress = "BC:87:FA:00:00:01",
                 bluetoothDeviceClass =
                     BoseHeadphonesAdapter.BLUETOOTH_DEVICE_CLASS_HEADPHONES,
             ),
