@@ -41,8 +41,12 @@ abstract class EarbudAdapter {
 
     open val capabilities: EarbudCapabilities = EarbudCapabilities()
     open val miLinkCardPresentationId: MiLinkCardPresentationId? = null
+
     /** Ordered transport candidates owned by this model adapter. */
     open val transports: List<EarbudTransportSpec> = emptyList()
+
+    /** Minimum ms between ANC switch commands; 0 = no cooldown. */
+    open val ancSwitchCooldownMs: Long = 0L
 
     abstract fun matches(identity: EarbudIdentity): Boolean
 
@@ -84,6 +88,8 @@ object EarbudAdapterRegistry {
     private val oppoFamilyAdapter = OppoEarbudAdapter()
     private val boseFamilyAdapter = BoseEarbudAdapter()
     private val boseHeadphonesAdapter = BoseHeadphonesAdapter()
+    private val edifierFamilyAdapter = EdifierEarbudAdapter()
+    private val edifierHeadphonesAdapter = EdifierHeadphonesAdapter()
     private val standardAdapter = StandardEarbudAdapter()
 
     val adapters: List<EarbudAdapter> = listOf(
@@ -100,6 +106,9 @@ object EarbudAdapterRegistry {
         BoseQuietComfortHeadphonesAdapter,
         boseHeadphonesAdapter,
         boseFamilyAdapter,
+        EdifierW860NBProAdapter,
+        edifierHeadphonesAdapter,
+        edifierFamilyAdapter,
         standardAdapter,
     )
 

@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
 import dev.hyperears.bridge.BridgeStage
@@ -24,6 +25,7 @@ import dev.hyperears.integration.NoiseMode
 import dev.hyperears.runtime.toEarbudIdentity
 import java.lang.reflect.Method
 import java.util.Collections
+import java.util.Locale
 import java.util.WeakHashMap
 import java.util.concurrent.CompletableFuture
 
@@ -49,6 +51,7 @@ internal class MiLinkServiceHook : HookContext() {
     private val observationLock = Any()
     private val sessionStages = mutableMapOf<String, SessionStages>()
     private val pendingStages = mutableMapOf<String, MutableSet<BridgeStage>>()
+    private val ancSwitchCooldownGate = AncSwitchCooldownGate()
 
     @Volatile
     private var context: Context? = null
@@ -1059,14 +1062,30 @@ internal class MiLinkServiceHook : HookContext() {
         val snapshot = ProcessStateStore.find(address) ?: return
         if (!snapshot.sessionActive) return
         val token = ProcessStateStore.sessionToken(address) ?: return
-        context?.sendBroadcast(
-            ModuleContract.control(request, address, token)
-                .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
-        )
+        val targetContext = context ?: return
+        val send = {
+            targetContext.sendBroadcast(
+                ModuleContract.control(request, address, token)
+                    .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
+            )
+        }
+        if (request is ControlRequest.SetNoiseMode) {
+            val cooldown = adapterForAddress(address)?.ancSwitchCooldownMs ?: 0L
+            if (!ancSwitchCooldownGate.runIfReady(address, cooldown, send)) {
+                ModuleLog.debug(
+                    "MiLink",
+                    "suppressed ANC command during ${cooldown}ms cooldown " +
+                        "address=${maskBluetoothAddress(address)}",
+                )
+                return
+            }
+        } else {
+            send()
+        }
         ModuleLog.debug("MiLink", "forwarded ${request.javaClass.simpleName}")
     }
 
-    private fun normalizeAddress(address: String): String = address.uppercase()
+    private fun normalizeAddress(address: String): String = address.uppercase(Locale.ROOT)
 
     private fun String.bridgeStage(): BridgeStage = when (this) {
         "checkIsMiTWS",
@@ -1089,5 +1108,33 @@ internal class MiLinkServiceHook : HookContext() {
         const val HEADSET_PROPERTY_CHANGED = 4
         val BLUETOOTH_ADDRESS_PATTERN =
             Regex("^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+    }
+}
+
+/** Per-device command gate used only by adapters that declare an ANC prompt window. */
+internal class AncSwitchCooldownGate(
+    private val clockMillis: () -> Long = SystemClock::elapsedRealtime,
+) {
+    private val lock = Any()
+    private val lastCommandAt = mutableMapOf<String, Long>()
+
+    fun runIfReady(
+        address: String,
+        cooldownMs: Long,
+        action: () -> Unit,
+    ): Boolean = synchronized(lock) {
+        if (cooldownMs <= 0L) {
+            action()
+            return@synchronized true
+        }
+        val key = address.uppercase(Locale.ROOT)
+        val now = clockMillis()
+        val last = lastCommandAt[key]
+        if (last != null && now - last < cooldownMs) {
+            return@synchronized false
+        }
+        action()
+        lastCommandAt[key] = clockMillis()
+        true
     }
 }

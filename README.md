@@ -14,7 +14,8 @@ Android 音频路由的前提下补充电量、降噪状态和设备流转所需
 
 > [!WARNING]
 > HyperEars 依赖 root、LSPosed 和 HyperOS 私有接口。安装前请确认能够恢复系统；ROM
-> 更新可能暂时破坏兼容性。本项目与 Xiaomi、vivo、iQOO、OPPO、Bose 及相关品牌无关。
+> 更新可能暂时破坏兼容性。本项目与 Xiaomi、vivo、iQOO、OPPO、Bose、Edifier
+> 及相关品牌无关。
 
 ## 能做什么
 
@@ -40,6 +41,7 @@ HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频�
 | Bose QuietComfort Headphones (`prince/0x4075`) | 实机验证 | 整机 | 安静/感知/含风噪预设 | 是 |
 | 其他 Bose BMAP 耳机 | 保守回退 | 视 BMAP 响应 | 不声明未验证模式 | 是 |
 | OPPO Enco 家族 | 参考协议盲适配 | 左/右/盒 | 降噪/关闭/通透 | 是 |
+| Edifier W860NB PRO | 实机验证 | 整机 | 深度/舒适降噪、风噪、环境声、关闭 | 是 |
 | 其他标准蓝牙耳机 | 通用回退 | 系统整机电量 | 无私有控制 | 是 |
 
 “公开实现画像”和“盲适配”不等于实机验证。完整型号、证据级别和已知限制见
@@ -62,7 +64,7 @@ HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频�
 2. 校验 SHA-256：
 
    ```powershell
-   Get-FileHash .\HyperEars-v0.10.4.apk -Algorithm SHA256
+    Get-FileHash .\HyperEars-v0.11.0.apk -Algorithm SHA256
    ```
 
 3. 安装 APK，在 LSPosed 中启用 HyperEars，并确认两个静态作用域均已选中。
@@ -146,6 +148,7 @@ CI 会验证单元测试、Lint 和 Release 编译；带 `v*` 标签的发布工
 - [OPPO Enco 协议](docs/oppo-enco-protocol.md)
 - [Bose BMAP 协议](docs/bose-bmap-protocol.md)
 - [StarRing Ultra 协议](docs/starring-ultra-protocol.md)
+- [Edifier (BES) 协议](docs/edifier-bes-protocol.md)
 
 ## 贡献
 

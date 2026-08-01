@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.hyperears.protocol.bose.BoseBmapWireCodec
+import dev.hyperears.protocol.edifier.EdifierWireCodec
 import dev.hyperears.protocol.starring.StarRingWireCodec
 import dev.hyperears.protocol.vivo.VivoTwsProtocol
 import dev.hyperears.protocol.vivo.VivoTwsProtocol.NoiseMode
@@ -116,6 +117,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     private val vivoDecoder = VivoTwsProtocol.Decoder()
     private val starRingDecoder = StarRingWireCodec.Decoder()
     private val boseDecoder = BoseBmapWireCodec.Decoder()
+    private val edifierDecoder = EdifierWireCodec.Decoder()
     private val mutableState = MutableStateFlow(ProtocolUiState())
     val state: StateFlow<ProtocolUiState> = mutableState.asStateFlow()
     private val logId = AtomicLong()
@@ -123,6 +125,17 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     private var connectionJob: Job? = null
     private var identityScanTimeoutJob: Job? = null
     private var activeTransport = ActiveTransport.NONE
+
+    /** File log writer — mirrors every UI log line to the app's private storage for external reading. */
+    private val fileLog: java.io.FileWriter? by lazy {
+        runCatching {
+            val file = java.io.File(application.filesDir, "probe.log")
+            java.io.FileWriter(file, true).also { writer ->
+                writer.write("\n=== HyperEars Protocol Lab Session ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())} ===\n")
+                writer.flush()
+            }
+        }.getOrNull()
+    }
 
     init {
         viewModelScope.launch {
@@ -261,6 +274,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
             vivoDecoder.reset()
             starRingDecoder.reset()
             boseDecoder.reset()
+            edifierDecoder.reset()
             val target = mutableState.value.selectedTarget
             mutableState.value = mutableState.value.copy(
                 phase = ConnectionPhase.CONNECTING,
@@ -350,6 +364,18 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                     delay(PROBE_GAP_MS)
                     send(BoseBmapWireCodec.queryBattery, "Bose 查询组件电量")
                 }
+                ProtocolTarget.EDIFIER_BES -> {
+                    mutableState.value = mutableState.value.copy(
+                        handshakeStatus = "等待设备功能响应",
+                        noiseApiStatus = "等待响应",
+                        batteryApiStatus = "等待响应",
+                    )
+                    send(EdifierWireCodec.queryBattery, "Edifier 查询电量")
+                    delay(PROBE_GAP_MS)
+                    send(EdifierWireCodec.queryAnc, "Edifier 查询降噪状态")
+                    delay(PROBE_GAP_MS)
+                    send(EdifierWireCodec.queryFunction, "Edifier 查询设备功能")
+                }
             }
             markTimeoutsLater()
         }
@@ -410,6 +436,9 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
 
                 ProtocolTarget.BOSE_BMAP ->
                     send(BoseBmapWireCodec.queryBattery, "Bose 查询组件电量")
+
+                ProtocolTarget.EDIFIER_BES ->
+                    send(EdifierWireCodec.queryBattery, "Edifier 查询电量")
             }
             markTimeoutsLater()
         }
@@ -579,6 +608,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
             ProtocolTarget.VIVO_TWS -> handleVivoIncoming(bytes)
             ProtocolTarget.STARRING_ULTRA -> handleStarRingIncoming(bytes)
             ProtocolTarget.BOSE_BMAP -> handleBoseIncoming(bytes)
+            ProtocolTarget.EDIFIER_BES -> handleEdifierIncoming(bytes)
         }
     }
 
@@ -696,6 +726,52 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                         "右=${battery.rightPercent ?: "—"}% 盒=${battery.casePercent ?: "—"}%",
                     BoseBmapWireCodec.run { battery.rawPayload.hex() },
                 )
+            }
+        }
+    }
+
+    private fun handleEdifierIncoming(bytes: ByteArray) {
+        edifierDecoder.offer(bytes).forEach { frame ->
+            addLog(
+                "FRAME",
+                "Edifier header=0x${frame.header.hex2()} appCode=0x${frame.appCode.hex2()} " +
+                    "cmd=0x${frame.commandIndex.hex2()} payload=${frame.payload.size}",
+                EdifierWireCodec.run { frame.bytes.hex() },
+            )
+            EdifierWireCodec.parseBatteryState(frame)?.let { battery ->
+                mutableState.value = mutableState.value.copy(
+                    battery = BatteryObservation(
+                        leftPercent = battery.wholeUnit,
+                        rightPercent = battery.wholeUnit,
+                        casePercent = null,
+                    ),
+                    batteryApiStatus = "可用 · Edifier 响应",
+                )
+                addLog("BAT", "电量=${battery.wholeUnit ?: "—"}%")
+            }
+            EdifierWireCodec.parseAncState(frame)?.let { anc ->
+                val modeLabel = when (anc.mode) {
+                    EdifierWireCodec.ANC_INDEX -> when (anc.level) {
+                        EdifierWireCodec.ANC_VALUE_DEEP -> "深度降噪"
+                        EdifierWireCodec.ANC_VALUE_COMFORT -> "舒适降噪"
+                        EdifierWireCodec.ANC_VALUE_WIND -> "防风噪"
+                        EdifierWireCodec.ANC_VALUE_AMBIENT -> "环境声"
+                        EdifierWireCodec.ANC_VALUE_OFF -> "降噪关"
+                        else -> "未知值(${anc.level})"
+                    }
+                    else -> "未知index(${anc.mode})"
+                }
+                mutableState.value = mutableState.value.copy(
+                    noiseApiStatus = "可用 · $modeLabel",
+                )
+                addLog("ANC", "ancIndex=${anc.mode} ancValue=${anc.level} → $modeLabel")
+            }
+            // D8 function query response
+            if (frame.commandIndex == EdifierWireCodec.CMD_FUNCTION_QUERY && frame.payload.isNotEmpty()) {
+                mutableState.value = mutableState.value.copy(
+                    handshakeStatus = "可用 · D8 功能响应 ${frame.payload.size} 字节",
+                )
+                addLog("FUNC", "设备功能响应: ${frame.payload.size} 字节", EdifierWireCodec.run { frame.payload.hex() })
             }
         }
     }
@@ -841,7 +917,13 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
             message = message,
             hex = hex,
         )
-        Log.d(TAG, "[$direction] $message${hex?.let { " | $it" }.orEmpty()}")
+        val line = "[$direction] $message${hex?.let { " | $it" }.orEmpty()}"
+        Log.d(TAG, line)
+        // Mirror to private file for external reading via run-as
+        runCatching {
+            fileLog?.appendLine("${entry.time} $line")
+            fileLog?.flush()
+        }
         mutableState.value = mutableState.value.copy(
             logs = (listOf(entry) + mutableState.value.logs).take(MAX_LOGS),
         )

@@ -39,6 +39,8 @@ HyperEars 的当前目标是 Android 15+ 的 Xiaomi HyperOS 和 LSPosed API 101�
 | OPPO Enco Air2 Pro | 规范化零售名称 | 参考协议盲适配 | 左/右/盒 | 反向 ANC/OFF 编码 |
 | OPPO Enco Free4/X3/Air5 | 规范化零售名称 | 预留具体 Profile | 左/右/盒 | 当前只暴露通用三态 |
 | 其他 OPPO/Enco | 家族名称 | 参考协议盲适配 | 左/右/盒 | ANC/OFF/通透 |
+| Edifier W860NB PRO | 规范化名称 + 头戴类 | 实机验证 | 单整机 | 深度/舒适降噪、风噪、环境声、关闭 |
+| 其他 Edifier 头戴 | 家族名称 + 头戴类 | 推测性家族回退 | 协议响应可用时发布整机电量 | 不开放未验证控制 |
 | 标准 A2DP/HFP 耳机 | Android 设备类别、Profile 和保守名称 | 通用回退 | 系统整机电量复制为左右 | 无私有模式 |
 
 ## 4. vivo/iQOO 型号目录
