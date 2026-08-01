@@ -166,32 +166,12 @@ internal class MiLinkServiceHook : HookContext() {
 
     private fun hookHeadsetDetailExtension() {
         runCatching {
-            val nativeSelectionController = MiLinkNativeAncSelectionController()
-            hookBefore(
-                findMethod(
-                    HOST_ANC_ITEM_CLASS,
-                    "setSelected",
-                    Boolean::class.javaPrimitiveType!!,
-                ),
-            ) {
-                val view = instance as? View ?: return@hookBefore
-                val requestedSelected = args.firstOrNull() as? Boolean ?: return@hookBefore
-                if (nativeSelectionController.shouldSuppress(view, requestedSelected)) {
-                    result = null
-                }
-            }
-            runCatching {
-                hookNativeNoiseControlResult(nativeSelectionController)
-            }.onFailure {
-                ModuleLog.debug("MiLink", "optional native ANC acknowledgement unavailable")
-            }
             val extension = MiLinkHeadsetDetailExtension(
                 hostClassLoader = appClassLoader,
                 stateProvider = ::stateForAddress,
                 controlSender = { address, mode ->
                     sendControl(ControlRequest.SetNoiseMode(mode), address)
                 },
-                nativeSelectionController = nativeSelectionController,
             )
             hookAfter(
                 findHeadsetDetailBindMethod(),
@@ -216,43 +196,6 @@ internal class MiLinkServiceHook : HookContext() {
             ModuleLog.debug("MiLink", "headset detail extension installed")
         }.onFailure {
             ModuleLog.warn("MiLink", "optional headset detail extension unavailable", it)
-        }
-    }
-
-    /**
-     * Uses MiLink's public headset-controller boundary as the command acknowledgement source.
-     * This keeps native buttons responsive while the later device callback remains the final
-     * source of truth. Model adapters opt in only by registering their concrete card items.
-     */
-    private fun hookNativeNoiseControlResult(
-        nativeSelectionController: MiLinkNativeAncSelectionController,
-    ) {
-        val serviceInfoClass = findClass(
-            "com.miui.circulate.api.service.CirculateServiceInfo",
-        )
-        val method = findMethod(
-            "com.miui.circulate.api.protocol.headset.HeadsetServiceController",
-            "setNoiseCancelling",
-            serviceInfoClass,
-            Int::class.javaPrimitiveType!!,
-        )
-        hookAfter(method) {
-            val serviceInfo = args.firstOrNull() ?: return@hookAfter
-            val address = serviceInfoAddress(serviceInfo) ?: return@hookAfter
-            val isHyperEarsCard =
-                presentationIdFrom(serviceInfo) != null || isTargetAddress(address)
-            if (!isHyperEarsCard) return@hookAfter
-            val mode = (args.getOrNull(1) as? Int)
-                ?.let(MiLinkNativeAncModeCodec::decode)
-                ?: return@hookAfter
-            val future = result as? CompletableFuture<*> ?: return@hookAfter
-            future.whenComplete { operationResult, error ->
-                if (error == null && (operationResult as? Number)?.toInt() ==
-                    HEADSET_OPERATION_SUCCESS
-                ) {
-                    nativeSelectionController.onControlAccepted(address, mode)
-                }
-            }
         }
     }
 
@@ -397,7 +340,7 @@ internal class MiLinkServiceHook : HookContext() {
             "com.miui.headset.runtime.AncBatteryController",
             "getAncState",
         ) { device, adapter ->
-            MiLinkStateCodec.ancState(stateFor(device))
+            nativeAncState(stateFor(device))
                 .takeIf { adapter.capabilities.noiseControl }
         }
         hookBluetoothDeviceResult(
@@ -461,13 +404,13 @@ internal class MiLinkServiceHook : HookContext() {
             val state = activeStateForHeadsetInfo(info) ?: return@hookHeadsetInfo null
             adapterIdentity(state)
                 ?.takeIf { it.capabilities.noiseControl }
-                ?.let { MiLinkStateCodec.ancState(state) }
+                ?.let { nativeAncState(state) }
         }
         hookHeadsetInfo("component5") { info ->
             val state = activeStateForHeadsetInfo(info) ?: return@hookHeadsetInfo null
             adapterIdentity(state)
                 ?.takeIf { it.capabilities.noiseControl }
-                ?.let { MiLinkStateCodec.ancState(state) }
+                ?.let { nativeAncState(state) }
         }
         hookHeadsetInfo("getSwitchState") { info ->
             adapterForHeadsetInfo(info)
@@ -1084,6 +1027,18 @@ internal class MiLinkServiceHook : HookContext() {
         return MiLinkStateCodec.batteryLevels(
             state = state,
             formFactor = adapter.formFactor,
+        )
+    }
+
+    private fun nativeAncState(state: EarbudState): Int {
+        val presentation = adapterIdentity(state)
+            ?.miLinkCardPresentationId
+            ?.let(MiLinkCardAdapterRegistry::resolve)
+        return MiLinkStateCodec.ancState(
+            state.copy(
+                noiseMode = presentation?.projectNativeNoiseMode(state.noiseMode)
+                    ?: state.noiseMode,
+            ),
         )
     }
 

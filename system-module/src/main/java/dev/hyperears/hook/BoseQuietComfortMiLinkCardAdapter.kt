@@ -21,6 +21,12 @@ import java.lang.ref.WeakReference
 internal object BoseQuietComfortMiLinkCardAdapter : MiLinkCardAdapter {
     override val presentationId = BoseQuietComfortHeadphonesAdapter.PRESENTATION_ID
 
+    /** WIND occupies the third native slot that would otherwise represent Off. */
+    override fun projectNativeNoiseMode(mode: NoiseMode?): NoiseMode? = when (mode) {
+        NoiseMode.WIND -> NoiseMode.OFF
+        else -> mode
+    }
+
     override fun bind(
         root: View,
         address: String,
@@ -101,20 +107,6 @@ internal object BoseQuietComfortMiLinkCardAdapter : MiLinkCardAdapter {
         private val noiseCancellation = WeakReference(noiseCancellation)
         private val wind = WeakReference(wind)
 
-        init {
-            environment.nativeSelectionController.register(
-                transparency,
-                address,
-                NoiseMode.TRANSPARENCY,
-            )
-            environment.nativeSelectionController.register(
-                noiseCancellation,
-                address,
-                NoiseMode.ANC,
-            )
-            environment.nativeSelectionController.register(wind, address, NoiseMode.WIND)
-        }
-
         override fun render(state: EarbudState) {
             wind.get()?.apply {
                 isEnabled =
@@ -124,12 +116,15 @@ internal object BoseQuietComfortMiLinkCardAdapter : MiLinkCardAdapter {
                 alpha = if (isEnabled) ENABLED_ALPHA else DISABLED_ALPHA
             }
             val mode = state.noiseMode ?: return
-            transparency.get()?.isSelected =
-                isModeSelected(NoiseMode.TRANSPARENCY, mode)
-            noiseCancellation.get()?.isSelected =
-                isModeSelected(NoiseMode.ANC, mode)
-            wind.get()?.isSelected =
-                isModeSelected(NoiseMode.WIND, mode)
+            transparency.get()?.setSelectedTree(
+                isModeSelected(NoiseMode.TRANSPARENCY, mode),
+            )
+            noiseCancellation.get()?.setSelectedTree(
+                isModeSelected(NoiseMode.ANC, mode),
+            )
+            wind.get()?.setSelectedTree(
+                isModeSelected(NoiseMode.WIND, mode),
+            )
         }
 
         fun onWindClick() {
@@ -145,9 +140,6 @@ internal object BoseQuietComfortMiLinkCardAdapter : MiLinkCardAdapter {
         }
 
         override fun unbind() {
-            listOf(transparency, noiseCancellation, wind).forEach { reference ->
-                reference.get()?.let(environment.nativeSelectionController::unregister)
-            }
             val parent = parent.get() ?: return
             val wind = wind.get() ?: return
             val unsupportedOff = unsupportedOff.get() ?: return
@@ -170,6 +162,14 @@ internal object BoseQuietComfortMiLinkCardAdapter : MiLinkCardAdapter {
         itemMode: NoiseMode,
         currentMode: NoiseMode?,
     ): Boolean = itemMode == currentMode
+
+    private fun View.setSelectedTree(selected: Boolean) {
+        isSelected = selected
+        if (this !is ViewGroup) return
+        for (index in 0 until childCount) {
+            getChildAt(index).setSelectedTree(selected)
+        }
+    }
 
     private const val ANC_CARD_ID = "anc_card"
     private const val ANC_TRANSPARENCY_ID = "anc_clear"
