@@ -21,6 +21,12 @@ import java.lang.ref.WeakReference
 internal object BoseQuietComfortMiLinkCardAdapter : MiLinkCardAdapter {
     override val presentationId = BoseQuietComfortHeadphonesAdapter.PRESENTATION_ID
 
+    /** WIND occupies the third native slot that would otherwise represent Off. */
+    override fun projectNativeNoiseMode(mode: NoiseMode?): NoiseMode? = when (mode) {
+        NoiseMode.WIND -> NoiseMode.OFF
+        else -> mode
+    }
+
     override fun bind(
         root: View,
         address: String,

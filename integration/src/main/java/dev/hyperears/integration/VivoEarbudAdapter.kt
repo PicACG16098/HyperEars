@@ -12,7 +12,7 @@ import dev.hyperears.protocol.vivo.VivoTwsProtocol
 open class VivoEarbudAdapter : StandardEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "vivo / iQOO TWS"
-    override val endpoints: List<RfcommEndpointSpec> = listOf(
+    override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.ServiceUuid(
             uuid = VIVO_GAIA_UUID,
             id = "vivo-gaia-0837",
@@ -73,8 +73,8 @@ object VivoTws3eAdapter : VivoEarbudAdapter() {
     override val displayName: String = "vivo TWS 3e"
     override val protocolProfile: VivoTwsProtocol.Profile =
         VivoTwsProtocol.Profile.TWS_3E_V3
-    override val endpoints: List<RfcommEndpointSpec> =
-        super.endpoints + RfcommEndpointSpec.Channel(number = 13)
+    override val transports: List<EarbudTransportSpec> =
+        super.transports + RfcommEndpointSpec.Channel(number = 13)
 
     override fun matches(identity: EarbudIdentity): Boolean =
         normalizeDeviceName(identity.deviceName.orEmpty()) == "vivotws3e"

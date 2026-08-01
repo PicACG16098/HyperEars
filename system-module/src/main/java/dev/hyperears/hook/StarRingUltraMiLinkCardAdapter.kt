@@ -1,20 +1,28 @@
 package dev.hyperears.hook
 
+import android.content.Context
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
-import android.widget.ImageView
+import android.view.ViewGroup
+import android.widget.CompoundButton
+import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.Switch
 import android.widget.TextView
+import androidx.core.view.isVisible
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.NoiseMode
 import dev.hyperears.integration.StarRingUltraAdapter
 import java.lang.ref.WeakReference
 
 /**
- * Adds StarRing Ultra's fourth, device-native wind-noise mode to MiLink's ANC card.
+ * Adds StarRing Ultra's wind-noise option to MiLink's stock three-state ANC card.
  *
- * The added item is MiLink's own [HOST_ANC_ITEM_CLASS]: the host remains responsible for layout,
- * typography, icon sizing and selected-state animation. This adapter only supplies the additional
- * model capability, routes its click, and renders the four mutually-exclusive device states.
+ * Transparency, ANC and Off remain entirely native MiLink actions. WIND is a device-specific
+ * variant of the ANC branch and is therefore exposed as a switch beside the native ANC title,
+ * not as a fourth peer mode. The switch is enabled only while the authoritative device state is
+ * ANC or WIND; its checked state is always rendered from [EarbudState].
  */
 internal object StarRingUltraMiLinkCardAdapter : MiLinkCardAdapter {
     override val presentationId = StarRingUltraAdapter.PRESENTATION_ID
@@ -24,116 +32,196 @@ internal object StarRingUltraMiLinkCardAdapter : MiLinkCardAdapter {
         address: String,
         environment: MiLinkCardEnvironment,
     ): MiLinkCardBinding? {
-        val ancCard = root.findMiLinkView(ANC_CARD_ID) as? LinearLayout ?: return null
-        val transparency = root.findMiLinkView(ANC_TRANSPARENCY_ID) ?: return null
-        val noiseCancellation = root.findMiLinkView(ANC_NOISE_CANCELLATION_ID) ?: return null
-        val off = root.findMiLinkView(ANC_OFF_ID) ?: return null
-        if (
-            transparency.parent !== ancCard ||
-            noiseCancellation.parent !== ancCard ||
-            off.parent !== ancCard
-        ) {
-            return null
+        val title = root.findMiLinkView(ANC_CARD_TITLE_ID) as? TextView ?: return null
+        val ancCard = root.findMiLinkView(ANC_CARD_ID) ?: return null
+        val parent = title.parent as? ViewGroup ?: return null
+        val index = parent.indexOfChild(title).takeIf { it >= 0 } ?: return null
+        val originalParams = title.layoutParams
+        val originalWidth = originalParams.width
+
+        parent.removeViewAt(index)
+        val wrapper = FrameLayout(root.context).apply {
+            layoutParams = originalParams.apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+            }
         }
-
-        val wind = createNativeMiLinkAncItem(
-            context = root.context,
-            hostClassLoader = environment.hostClassLoader,
-            layoutTemplate = noiseCancellation,
-        ) ?: return null
-        val windTitle = wind.findMiLinkView(ANC_TITLE_ID) as? TextView ?: return null
-        val windIcon = wind.findMiLinkView(ANC_ICON_ID) as? ImageView ?: return null
-        val noiseIcon =
-            noiseCancellation.findMiLinkView(ANC_ICON_ID) as? ImageView ?: return null
-
-        windTitle.text = WIND_LABEL
-        windIcon.setImageDrawable(
-            noiseIcon.drawable?.constantState
-                ?.newDrawable(root.resources)
-                ?.mutate()
-                ?: noiseIcon.drawable,
+        title.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
         )
-        wind.contentDescription = WIND_LABEL
-        wind.visibility = View.VISIBLE
-        wind.isSaveEnabled = false
-        ancCard.addView(wind)
+        wrapper.addView(title)
 
-        val binding = Binding(
-            parent = ancCard,
-            transparency = transparency,
-            noiseCancellation = noiseCancellation,
-            off = off,
-            wind = wind,
+        val accessory = LinearLayout(root.context).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        }
+        val label = TextView(root.context).apply {
+            text = WIND_LABEL
+            setTextColor(title.currentTextColor)
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, title.textSize)
+            typeface = title.typeface
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            setPadding(0, 0, root.context.dp(LABEL_END_PADDING_DP), 0)
+        }
+        val toggle = createHostToggle(root.context, environment.hostClassLoader).apply {
+            contentDescription = WIND_LABEL
+            isSaveEnabled = false
+        }
+        accessory.addView(label)
+        accessory.addView(toggle)
+        wrapper.addView(
+            accessory,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.END or Gravity.CENTER_VERTICAL,
+            ),
+        )
+        parent.addView(wrapper, index)
+
+        return Binding(
+            parent = parent,
+            originalIndex = index,
+            originalLayoutParams = originalParams,
+            originalWidth = originalWidth,
+            wrapper = wrapper,
+            title = title,
+            ancCard = ancCard,
+            accessory = accessory,
+            toggle = toggle,
             address = address,
             environment = environment,
-        )
-        wind.setOnClickListener { binding.onWindClick() }
-        ModuleLog.debug("MiLinkUi", "bound StarRing Ultra fourth ANC mode")
-        return binding
+        ).also { binding ->
+            toggle.setOnCheckedChangeListener(binding::onToggleChanged)
+            ModuleLog.debug("MiLinkUi", "bound StarRing Ultra wind-noise switch")
+        }
     }
 
     private class Binding(
-        parent: LinearLayout,
-        transparency: View,
-        noiseCancellation: View,
-        off: View,
-        wind: View,
+        parent: ViewGroup,
+        private val originalIndex: Int,
+        private val originalLayoutParams: ViewGroup.LayoutParams,
+        private val originalWidth: Int,
+        wrapper: View,
+        title: View,
+        ancCard: View,
+        accessory: View,
+        toggle: CompoundButton,
         private val address: String,
         private val environment: MiLinkCardEnvironment,
     ) : MiLinkCardBinding {
         private val parent = WeakReference(parent)
-        private val transparency = WeakReference(transparency)
-        private val noiseCancellation = WeakReference(noiseCancellation)
-        private val off = WeakReference(off)
-        private val wind = WeakReference(wind)
+        private val wrapper = WeakReference(wrapper)
+        private val title = WeakReference(title)
+        private val ancCard = WeakReference(ancCard)
+        private val accessory = WeakReference(accessory)
+        private val toggle = WeakReference(toggle)
+        private var rendering = false
 
         override fun render(state: EarbudState) {
-            val mode = state.noiseMode ?: return
-            transparency.get()?.isSelected =
-                isModeSelected(NoiseMode.TRANSPARENCY, mode)
-            noiseCancellation.get()?.isSelected =
-                isModeSelected(NoiseMode.ANC, mode)
-            off.get()?.isSelected =
-                isModeSelected(NoiseMode.OFF, mode)
-            wind.get()?.apply {
-                isSelected = isModeSelected(NoiseMode.WIND, mode)
-                isEnabled = state.sessionActive && state.connected
-                alpha = if (isEnabled) ENABLED_ALPHA else DISABLED_ALPHA
+            val wrapper = wrapper.get() ?: return
+            val title = title.get() ?: return
+            val ancCard = ancCard.get() ?: return
+            val accessory = accessory.get() ?: return
+            val toggle = toggle.get() ?: return
+
+            wrapper.visibility = ancCard.visibility
+            accessory.visibility =
+                if (ancCard.isVisible && title.isVisible) View.VISIBLE else View.GONE
+
+            val toggleState = StarRingWindControlPolicy.render(state)
+            rendering = true
+            try {
+                toggle.isChecked = toggleState.checked
+                toggle.isEnabled = toggleState.enabled
+                toggle.alpha = if (toggle.isEnabled) ENABLED_ALPHA else DISABLED_ALPHA
+                accessory.alpha = if (toggle.isEnabled) ENABLED_ALPHA else DISABLED_ALPHA
+            } finally {
+                rendering = false
             }
         }
 
-        fun onWindClick() {
+        fun onToggleChanged(button: CompoundButton, checked: Boolean) {
+            if (rendering) return
             val current = environment.stateProvider(address)
-            if (
-                !current.sessionActive ||
-                !current.connected ||
-                current.noiseMode == NoiseMode.WIND
-            ) {
-                return
+            val currentToggleState = StarRingWindControlPolicy.render(current)
+
+            // A UI gesture is only a request. Restore the authoritative value until the device
+            // reports the new mode through the normal protocol state pipeline.
+            rendering = true
+            try {
+                button.isChecked = currentToggleState.checked
+            } finally {
+                rendering = false
             }
-            environment.controlSender(address, NoiseMode.WIND)
+
+            val requestedMode = StarRingWindControlPolicy.request(current, checked) ?: return
+            environment.controlSender(address, requestedMode)
         }
 
         override fun unbind() {
             val parent = parent.get() ?: return
-            val wind = wind.get() ?: return
-            wind.setOnClickListener(null)
-            if (wind.parent === parent) parent.removeView(wind)
+            val wrapper = wrapper.get() ?: return
+            val title = title.get() ?: return
+            val toggle = toggle.get()
+            toggle?.setOnCheckedChangeListener(null)
+            if (wrapper.parent !== parent) return
+
+            (title.parent as? ViewGroup)?.removeView(title)
+            parent.removeView(wrapper)
+            originalLayoutParams.width = originalWidth
+            title.layoutParams = originalLayoutParams
+            parent.addView(title, originalIndex.coerceAtMost(parent.childCount))
         }
     }
 
-    internal fun isModeSelected(
-        itemMode: NoiseMode,
-        currentMode: NoiseMode?,
-    ): Boolean = itemMode == currentMode
+    private fun createHostToggle(
+        context: Context,
+        hostClassLoader: ClassLoader,
+    ): CompoundButton = runCatching {
+        Class.forName(MIUIX_SLIDING_BUTTON, true, hostClassLoader)
+            .asSubclass(CompoundButton::class.java)
+            .getConstructor(Context::class.java)
+            .newInstance(context)
+    }.getOrElse {
+        @Suppress("DEPRECATION")
+        Switch(context)
+    }
 
+    private fun Context.dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    private const val ANC_CARD_TITLE_ID = "anc_card_title"
     private const val ANC_CARD_ID = "anc_card"
-    private const val ANC_TRANSPARENCY_ID = "anc_clear"
-    private const val ANC_NOISE_CANCELLATION_ID = "anc_noise_cancel"
-    private const val ANC_OFF_ID = "anc_off"
-    private const val ANC_TITLE_ID = "anc_title"
-    private const val ANC_ICON_ID = "anc_icon"
+    private const val MIUIX_SLIDING_BUTTON = "miuix.slidingwidget.widget.SlidingButton"
     private const val WIND_LABEL = "抗风噪"
+    private const val LABEL_END_PADDING_DP = 8
     private const val ENABLED_ALPHA = 1.0f
     private const val DISABLED_ALPHA = 0.45f
+}
+
+/** Pure four-state-to-switch policy; UI code contains no independent mode state. */
+internal object StarRingWindControlPolicy {
+    data class ToggleState(
+        val checked: Boolean,
+        val enabled: Boolean,
+    )
+
+    fun render(state: EarbudState): ToggleState {
+        val inAncBranch = state.noiseMode == NoiseMode.ANC || state.noiseMode == NoiseMode.WIND
+        return ToggleState(
+            checked = state.noiseMode == NoiseMode.WIND,
+            enabled = state.sessionActive && state.connected && inAncBranch,
+        )
+    }
+
+    fun request(state: EarbudState, checked: Boolean): NoiseMode? {
+        if (!render(state).enabled) return null
+        return when {
+            checked && state.noiseMode == NoiseMode.ANC -> NoiseMode.WIND
+            !checked && state.noiseMode == NoiseMode.WIND -> NoiseMode.ANC
+            else -> null
+        }
+    }
 }

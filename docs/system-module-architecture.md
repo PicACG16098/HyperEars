@@ -4,7 +4,8 @@
 
 当前版本在 HyperOS 3 / Android 16 上提供：
 
-- 跟随系统 A2DP 连接，为需要私有协议的具体 Adapter 建立 RFCOMM 控制链路。
+- 跟随系统 A2DP 连接，为需要私有协议的具体 Adapter 建立其声明的 GATT 或
+  RFCOMM 控制链路。
 - 向 MiLink 暴露最小兼容身份，使融合设备中心识别目标耳机。
 - 在融合卡片读取左右耳/充电盒电量和当前降噪状态。
 - 将融合卡片的控制操作交给具体型号 Adapter，翻译为已实机验证的厂商命令。
@@ -118,7 +119,7 @@ Registry 固定按“具体型号 → 厂商家族 → 标准耳机”解析：
 - 音箱、车机和无法确认是耳机的设备不匹配任何 Adapter；名称可确认由
   HyperOS 原生支持的小米/REDMI 耳机也明确排除，保留官方完整路径。
 
-标准耳机身份级回退不会创建 RFCOMM、启动 Reader、安排重连或覆盖降噪方法。
+标准耳机身份级回退不会创建私有通道、启动 Reader、安排重连或覆盖降噪方法。
 它只在 A2DP 会话建立时读取一次 Android 蓝牙电量缓存，并监听系统已有的
 电量变化广播，不轮询设备。
 
@@ -127,7 +128,7 @@ Registry 只选择 Adapter，不包含蓝牙连接或全局状态。新增型号
 
 ### 4.2 EarbudProtocol
 
-Adapter 与有状态协议组件采用组合关系。每个 RFCOMM 会话从选中的 Adapter
+Adapter 与有状态协议组件采用组合关系。每个私有通道会话从选中的 Adapter
 创建独立 `EarbudProtocol` 实例，其职责为：
 
 - 给出连接后的只读初始化命令。
@@ -193,6 +194,7 @@ EarbudSessionService
        ├─ ConnectionAttemptCoordinator
        └─ Map<address, EarbudDeviceSession>
             └─ EarbudChannel
+                 ├─ Android BLE GATT
                  └─ Android RFCOMM BluetoothSocket
 ```
 
@@ -207,29 +209,30 @@ EarbudSessionService
 - `EarbudDeviceSession` 每台设备一个实例，拥有协议 adapter、连接循环、
   串行写入和接收循环；通道故障只在有限恢复周期内重建通道，不重建设备
   会话。
-- `EarbudChannel` 隔离传输实现。当前只有 RFCOMM；后续 BLE 型号可增加
-  GATT 实现而不改服务和会话生命周期。
+- `EarbudChannel` 把 BLE GATT 通知和 RFCOMM 流统一为有序字节通道；
+  Adapter 通过 `EarbudTransportSpec` 声明候选顺序，服务、会话与协议不包含
+  型号传输分支。
 
 完整流程：
 
 1. Hook `A2dpService.handleConnectionStateChanged`。
 2. A2DP 进入 connected 且 Registry 解析到允许接入的 Adapter 时，向
    连接管理器注册设备并创建一个设备会话。
-3. 若 Adapter 要求私有协议，会话使用继承得到的候选端点建立 RFCOMM，
+3. 若 Adapter 要求私有协议，会话按 Adapter 声明的候选传输建立 GATT 或 RFCOMM，
    通道成功后向 MiLink 发布 MMA connected，并发送家族安全的初始只读查询；
    权威型号事件可在同一串行事务中解锁具体型号后续查询。身份级回退则立即
    就绪，不创建任何私有通道。
 4. Reader 在单独 IO 协程中持续解码，Reducer 更新状态。
 5. 只有发生实际变化的新状态才通过显式、定向广播同步给
    `com.milink.service`；模块 App 仅在前台打开时按需请求快照。
-6. RFCOMM 异常时发布 channel disconnected，在原设备会话内按
+6. 私有通道异常时发布 channel disconnected，在原设备会话内按
    `2 s / 10 s / 60 s` 最多恢复三次；仍失败则进入休眠，不再产生周期
    唤醒。新的 A2DP 注册事件或显式 Refresh 可启动下一轮有限恢复。
 7. A2DP 断开时注销设备；AdapterService 销毁时执行统一 teardown，取消
    连接、Reader、重连任务，关闭 socket 并注销 Receiver。
 
 连接管理器允许同时存在多个活动设备会话，与小米
-`BluetoothDeviceManager.mConnectedList` 的形态一致；只有 SPP 建连任务
+`BluetoothDeviceManager.mConnectedList` 的形态一致；只有物理建连任务
 串行。每个地址具有独立状态和 session token，旧 token 的延迟广播或旧会话
 回调不能覆盖同地址的新生命周期。
 
@@ -286,8 +289,8 @@ MiLink 的设备 ID 只承担“进入官方耳机路径并选择物理形态”
 
 Bose QuietComfort 的具体卡片 Adapter 一次性把不受支持的“关闭”按钮替换为
 同 ID、同布局参数的原生 `HeadsetControlAncItemView`，用于切换协议动态发现的
-“抗风噪”模式槽。StarRing Ultra 的具体卡片 Adapter 则用同一原生控件工厂，
-在原生降噪卡中加入等权的第四个“抗风噪”模式项；布局、字体、图标尺寸和选中
+“抗风噪”模式槽。StarRing Ultra 保留 MiLink 的通透、降噪、关闭三态卡片，
+具体卡片 Adapter 只在降噪分支旁加入“抗风噪”开关；布局、字体、开关尺寸和选中
 动画继续由宿主控件负责。通用 MiLink Hook 不包含这两种型号的 UI 分支。
 
 Hook 只在实机确认使用耳机桥的 MiLink `:audio`、`:core` 和 `:ui` 进程安装。

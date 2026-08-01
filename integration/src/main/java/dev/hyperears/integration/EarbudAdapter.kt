@@ -41,7 +41,8 @@ abstract class EarbudAdapter {
 
     open val capabilities: EarbudCapabilities = EarbudCapabilities()
     open val miLinkCardPresentationId: MiLinkCardPresentationId? = null
-    open val endpoints: List<RfcommEndpointSpec> = emptyList()
+    /** Ordered transport candidates owned by this model adapter. */
+    open val transports: List<EarbudTransportSpec> = emptyList()
 
     abstract fun matches(identity: EarbudIdentity): Boolean
 

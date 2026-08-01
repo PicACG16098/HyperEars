@@ -64,6 +64,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.hyperears.protocol.starring.StarRingWireCodec
+import dev.hyperears.protocol.starring.StarRingWireCodec.NoiseMode as StarRingNoiseMode
 import dev.hyperears.protocol.vivo.VivoEarbudModelCatalog
 import dev.hyperears.protocol.vivo.VivoTwsProtocol
 import dev.hyperears.protocol.vivo.VivoTwsProtocol.NoiseMode
@@ -113,6 +115,7 @@ class MainActivity : ComponentActivity() {
                     onQueryNoise = model::queryNoise,
                     onQueryBattery = model::queryBattery,
                     onSetNoise = model::setNoiseMode,
+                    onSetStarRingNoise = model::setStarRingNoiseMode,
                     onRawChange = model::updateRawCommand,
                     onSendRaw = model::sendRaw,
                     onClearLogs = model::clearLogs,
@@ -175,6 +178,7 @@ private fun ProtocolLabScreen(
     onQueryNoise: () -> Unit,
     onQueryBattery: () -> Unit,
     onSetNoise: (NoiseMode) -> Unit,
+    onSetStarRingNoise: (StarRingNoiseMode) -> Unit,
     onRawChange: (String) -> Unit,
     onSendRaw: () -> Unit,
     onClearLogs: () -> Unit,
@@ -320,6 +324,16 @@ private fun ProtocolLabScreen(
                             enabled = state.phase == ConnectionPhase.CONNECTED,
                             current = state.noise?.mode,
                             onSetNoise = onSetNoise,
+                        )
+                    }
+                }
+
+                if (state.selectedTarget == ProtocolTarget.STARRING_ULTRA) {
+                    item {
+                        StarRingNoiseControlCard(
+                            enabled = state.phase == ConnectionPhase.CONNECTED,
+                            current = state.starRingNoise,
+                            onSetNoise = onSetStarRingNoise,
                         )
                     }
                 }
@@ -499,8 +513,8 @@ private fun ProtocolTargetCard(
 @Composable
 private fun StarRingEvidenceCard() {
     LabCard(
-        title = "StarRing 电量候选协议",
-        subtitle = "来自官方 App 的 RFCOMM 抓包；本页只发送查询，不改变耳机设置。",
+        title = "StarRing 抓包协议",
+        subtitle = "业务帧来自官方 App；本版按最新实测使用 BLE GATT 写入。",
     ) {
         Text(
             "查询帧",
@@ -517,6 +531,42 @@ private fun StarRingEvidenceCard() {
         Text(
             "预期回报：group 0x01 / command 0x01；左右耳取 payload[2]/[3]，" +
                 "充电盒取 payload[6]，0xFF 表示不可用。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun StarRingNoiseControlCard(
+    enabled: Boolean,
+    current: StarRingNoiseMode?,
+    onSetNoise: (StarRingNoiseMode) -> Unit,
+) {
+    LabCard(
+        title = "StarRing 官方 GATT 模式测试",
+        subtitle = "每次点击只发一条 GATT Write Request；不追加查询，不经过 MiLink。",
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            StarRingWireCodec.NoiseMode.entries.forEach { mode ->
+                if (mode == current) {
+                    Button(onClick = { onSetNoise(mode) }, enabled = enabled) {
+                        Text("${mode.label} · 当前")
+                    }
+                } else {
+                    OutlinedButton(onClick = { onSetNoise(mode) }, enabled = enabled) {
+                        Text(mode.label)
+                    }
+                }
+            }
+        }
+        Text(
+            "日志中同一编号应只有一条 TX 和一条 GATT TX_OK；MODE 仅来自耳机通知。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -974,7 +1024,8 @@ private fun LogRow(log: ProtocolLog) {
                     fontWeight = FontWeight.Bold,
                     color = when (log.direction) {
                         "TX" -> Color(0xFF2563EB)
-                        "RX", "FRAME" -> Color(0xFF059669)
+                        "TX_OK" -> Color(0xFF7C3AED)
+                        "RX", "FRAME", "MODE" -> Color(0xFF059669)
                         "ERR" -> MaterialTheme.colorScheme.error
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     },

@@ -97,9 +97,9 @@ internal class MiLinkServiceHook : HookContext() {
             hookAddressResult(className, "isSupportAudioSwitch") { 1 }
             hookAddressResult(className, "getRingFindState") { false }
 
-            hookNoiseCommand(className, "openAnc", NoiseMode.ANC, 1)
-            hookNoiseCommand(className, "closeAnc", NoiseMode.OFF, 0)
-            hookNoiseCommand(className, "openTransparent", NoiseMode.TRANSPARENCY, 2)
+            hookNoiseCommand(className, "openAnc", NoiseMode.ANC)
+            hookNoiseCommand(className, "closeAnc", NoiseMode.OFF)
+            hookNoiseCommand(className, "openTransparent", NoiseMode.TRANSPARENCY)
         }
 
         hookHeadsetRuntime()
@@ -340,7 +340,7 @@ internal class MiLinkServiceHook : HookContext() {
             "com.miui.headset.runtime.AncBatteryController",
             "getAncState",
         ) { device, adapter ->
-            MiLinkStateCodec.ancState(stateFor(device))
+            nativeAncState(stateFor(device))
                 .takeIf { adapter.capabilities.noiseControl }
         }
         hookBluetoothDeviceResult(
@@ -388,7 +388,7 @@ internal class MiLinkServiceHook : HookContext() {
                     ControlRequest.SetNoiseMode(requestedMode),
                     device,
                 )
-                result = mode.coerceIn(0, 2)
+                result = HEADSET_OPERATION_SUCCESS
             }
         }.onFailure {
             ModuleLog.debug("MiLink", "optional setAncStateBlock unavailable")
@@ -404,13 +404,13 @@ internal class MiLinkServiceHook : HookContext() {
             val state = activeStateForHeadsetInfo(info) ?: return@hookHeadsetInfo null
             adapterIdentity(state)
                 ?.takeIf { it.capabilities.noiseControl }
-                ?.let { MiLinkStateCodec.ancState(state) }
+                ?.let { nativeAncState(state) }
         }
         hookHeadsetInfo("component5") { info ->
             val state = activeStateForHeadsetInfo(info) ?: return@hookHeadsetInfo null
             adapterIdentity(state)
                 ?.takeIf { it.capabilities.noiseControl }
-                ?.let { MiLinkStateCodec.ancState(state) }
+                ?.let { nativeAncState(state) }
         }
         hookHeadsetInfo("getSwitchState") { info ->
             adapterForHeadsetInfo(info)
@@ -513,7 +513,6 @@ internal class MiLinkServiceHook : HookContext() {
         className: String,
         methodName: String,
         mode: NoiseMode,
-        returnValue: Int,
     ) {
         runCatching {
             hookBefore(findMethod(className, methodName, BluetoothDevice::class.java)) {
@@ -528,7 +527,7 @@ internal class MiLinkServiceHook : HookContext() {
                 rememberRuntimeOwner(className, instance)
                 captureContext(instance)
                 sendControl(ControlRequest.SetNoiseMode(mode), device)
-                result = returnValue
+                result = HEADSET_OPERATION_SUCCESS
             }
         }.onFailure {
             ModuleLog.debug("MiLink", "optional $className.$methodName command unavailable")
@@ -1011,21 +1010,35 @@ internal class MiLinkServiceHook : HookContext() {
         return listeners.size
     }
 
+    /** MiLink exposes the same downstream listener through multiple runtime facades. */
     private fun propertyChangeListeners(additionalOwner: Any? = null): List<Any> =
         listOf(additionalOwner, lastAncBatteryController, lastProfileContext)
             .filterNotNull()
-            .mapNotNull { owner ->
+            .firstNotNullOfOrNull { owner ->
                 runCatching {
                     getObjectField(owner, "headsetPropertyChangeListener")
                 }.getOrNull()
             }
-            .distinctBy(System::identityHashCode)
+            ?.let(::listOf)
+            .orEmpty()
 
     private fun batteryLevelsFor(state: EarbudState): List<Int>? {
         val adapter = adapterIdentity(state)?.takeIf { it.capabilities.battery } ?: return null
         return MiLinkStateCodec.batteryLevels(
             state = state,
             formFactor = adapter.formFactor,
+        )
+    }
+
+    private fun nativeAncState(state: EarbudState): Int {
+        val presentation = adapterIdentity(state)
+            ?.miLinkCardPresentationId
+            ?.let(MiLinkCardAdapterRegistry::resolve)
+        return MiLinkStateCodec.ancState(
+            state.copy(
+                noiseMode = presentation?.projectNativeNoiseMode(state.noiseMode)
+                    ?: state.noiseMode,
+            ),
         )
     }
 

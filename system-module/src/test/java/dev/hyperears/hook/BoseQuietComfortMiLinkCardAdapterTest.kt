@@ -1,11 +1,24 @@
 package dev.hyperears.hook
 
 import dev.hyperears.integration.NoiseMode
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BoseQuietComfortMiLinkCardAdapterTest {
+    @Test
+    fun windOccupiesTheThirdNativeSlotInsteadOfTheAncSlot() {
+        assertEquals(
+            NoiseMode.OFF,
+            BoseQuietComfortMiLinkCardAdapter.projectNativeNoiseMode(NoiseMode.WIND),
+        )
+        assertEquals(
+            NoiseMode.ANC,
+            BoseQuietComfortMiLinkCardAdapter.projectNativeNoiseMode(NoiseMode.ANC),
+        )
+    }
+
     @Test
     fun quietAwareAndWindKeepMutuallyExclusiveNativeSelections() {
         val presentedModes = listOf(

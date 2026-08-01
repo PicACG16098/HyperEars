@@ -49,7 +49,7 @@ private data class ProjectLink(
 
 private val verifiedDevices = listOf(
     SupportEntry("vivo TWS Air3 Pro", "左右耳及充电盒电量、三态降噪、设备流转"),
-    SupportEntry("StarRing Ultra", "左右耳电量、四态噪声控制、设备流转"),
+    SupportEntry("StarRing Ultra", "左右耳电量、三态噪声控制、抗风噪开关、设备流转"),
     SupportEntry("Bose QuietComfort Headphones", "整机电量、BMAP 模式切换、设备流转"),
 )
 

@@ -17,6 +17,18 @@ import dev.hyperears.integration.NoiseMode
 internal interface MiLinkCardAdapter {
     val presentationId: MiLinkCardPresentationId
 
+    /**
+     * Projects a model-specific mode onto MiLink's native three-state controller.
+     *
+     * The projection is presentation behavior, not protocol behavior: adapters that render an
+     * extra mode in a native slot own that slot mapping. The default keeps ANC-branch extensions
+     * such as StarRing WIND compatible with MiLink's stock state machine.
+     */
+    fun projectNativeNoiseMode(mode: NoiseMode?): NoiseMode? = when (mode) {
+        NoiseMode.WIND -> NoiseMode.ANC
+        else -> mode
+    }
+
     fun bind(
         root: View,
         address: String,
@@ -95,6 +107,7 @@ internal fun createNativeMiLinkAncItem(
     ModuleLog.warn("MiLinkUi", "native ANC item unavailable", it)
 }.getOrNull()
 
-private const val HOST_ANC_ITEM_CLASS =
+/** Stable, non-obfuscated native item boundary shared by construction and selection guarding. */
+internal const val HOST_ANC_ITEM_CLASS =
     "com.miui.circulate.world.headset.ui.HeadsetControlAncItemView"
 private const val MILINK_PACKAGE = "com.milink.service"
