@@ -2,6 +2,21 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/)。公开版本变化记录在此文件中。
 
+## [0.10.4] - 2026-08-01
+
+### Fixed
+
+- StarRing Ultra 改用官方应用采用的 GATT 特征传输控制帧，并以耳机主动上报作为模式
+  状态来源，避免重复控制和界面状态滞后。
+- 修正 Bose QuietComfort Headphones 抗风噪预设的 MiLink 原生槽位映射，使其能够正常
+  切回安静模式且三个模式保持互斥选中。
+
+### Architecture
+
+- 私有传输候选统一抽象为 GATT/RFCOMM，由具体型号 Adapter 声明优先级和特征。
+- 扩展噪声模式到 MiLink 原生三态的投影由具体卡片 Adapter 定义；移除全局选中态拦截，
+  保留耳机上报状态作为界面唯一事实来源。
+
 ## [0.10.3] - 2026-07-31
 
 ### Added
@@ -41,5 +56,6 @@
 - Release 构建改用独立环境变量签名，不再使用 debug 证书。
 - 增加 CI、标签发布、APK 签名验证和 SHA-256 产物。
 
+[0.10.4]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.10.4
 [0.10.3]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.10.3
 [0.10.2]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.10.2

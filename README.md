@@ -62,7 +62,7 @@ HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频�
 2. 校验 SHA-256：
 
    ```powershell
-   Get-FileHash .\HyperEars-v0.10.3.apk -Algorithm SHA256
+   Get-FileHash .\HyperEars-v0.10.4.apk -Algorithm SHA256
    ```
 
 3. 安装 APK，在 LSPosed 中启用 HyperEars，并确认两个静态作用域均已选中。
