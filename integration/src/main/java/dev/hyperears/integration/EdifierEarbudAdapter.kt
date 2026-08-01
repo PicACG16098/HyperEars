@@ -14,7 +14,7 @@ open class EdifierEarbudAdapter : StandardEarbudAdapter() {
     override val displayName: String = "Edifier headset"
     override val privateProtocolRequired: Boolean = true
     override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
-    override val endpoints: List<RfcommEndpointSpec> = listOf(
+    override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.ServiceUuid(
             uuid = EDF_SPP_UUID,
             id = "edifier-spp-uuid",
@@ -86,9 +86,11 @@ open class EdifierHeadphonesAdapter : EdifierEarbudAdapter() {
  */
 object EdifierW860NBProAdapter : EdifierHeadphonesAdapter() {
     const val ID = "edifier-w860nb-pro"
+    val PRESENTATION_ID = MiLinkCardPresentationId(ID)
 
     override val id: String = ID
     override val displayName: String = "Edifier W860NB PRO"
+    override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
     override val capabilities: EarbudCapabilities = EarbudCapabilities(
         battery = true,
         noiseControl = true,
@@ -104,10 +106,16 @@ object EdifierW860NBProAdapter : EdifierHeadphonesAdapter() {
     override val noiseControlConfirmation: ControlConfirmationPolicy =
         ControlConfirmationPolicy.PUBLISH_AFTER_WRITE
 
-    override fun matches(identity: EarbudIdentity): Boolean {
-        val name = normalizeDeviceName(identity.deviceName.orEmpty())
-        return name.contains("w860nbpro") || name.contains("w860nb")
-    }
+    /**
+     * The W860NB PRO plays a voice prompt for ~1.9 s after an ANC switch and ignores commands
+     * during the prompt. Refuse new switches in the MiLink hook so the UI stays on the current
+     * mode instead of jumping to one the headset never applied.
+     */
+    override val ancSwitchCooldownMs: Long = 1_800L
+
+    override fun matches(identity: EarbudIdentity): Boolean =
+        super.matches(identity) &&
+            normalizeDeviceName(identity.deviceName.orEmpty()) == "edifierw860nbpro"
 }
 
 /**

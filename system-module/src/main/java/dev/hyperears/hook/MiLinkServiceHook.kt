@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
 import dev.hyperears.bridge.BridgeStage
@@ -1055,7 +1056,13 @@ internal class MiLinkServiceHook : HookContext() {
         sendControl(request, address)
     }
 
+    /** Last ANC switch time per address, for [EarbudAdapter.ancSwitchCooldownMs]. */
+    private val lastAncCommandAt = Collections.synchronizedMap(mutableMapOf<String, Long>())
+
     private fun sendControl(request: ControlRequest, address: String) {
+        if (request is ControlRequest.SetNoiseMode && isAncSwitchCoolingDown(address)) {
+            return
+        }
         val snapshot = ProcessStateStore.find(address) ?: return
         if (!snapshot.sessionActive) return
         val token = ProcessStateStore.sessionToken(address) ?: return
@@ -1063,7 +1070,23 @@ internal class MiLinkServiceHook : HookContext() {
             ModuleContract.control(request, address, token)
                 .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
         )
+        if (request is ControlRequest.SetNoiseMode) {
+            lastAncCommandAt[address] = SystemClock.elapsedRealtime()
+        }
         ModuleLog.debug("MiLink", "forwarded ${request.javaClass.simpleName}")
+    }
+
+    private fun isAncSwitchCoolingDown(address: String): Boolean {
+        val cooldown = adapterForAddress(address)?.ancSwitchCooldownMs ?: 0L
+        if (cooldown <= 0L) return false
+        val last = lastAncCommandAt[address] ?: 0L
+        val elapsed = SystemClock.elapsedRealtime() - last
+        val cooling = elapsed < cooldown
+        ModuleLog.debug(
+            "MiLink",
+            "anc cmd cooldown addr=${maskBluetoothAddress(address)} cooldown=${cooldown}ms elapsed=${elapsed}ms cooling=$cooling",
+        )
+        return cooling
     }
 
     private fun normalizeAddress(address: String): String = address.uppercase()

@@ -59,6 +59,7 @@ internal object MiLinkCardAdapterRegistry {
     private val adapters = listOf(
         StarRingUltraMiLinkCardAdapter,
         BoseQuietComfortMiLinkCardAdapter,
+        EdifierW860NBProMiLinkCardAdapter,
     )
     private val byId = adapters.associateBy(MiLinkCardAdapter::presentationId)
 
