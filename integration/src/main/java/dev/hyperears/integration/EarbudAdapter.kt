@@ -84,6 +84,8 @@ object EarbudAdapterRegistry {
     private val oppoFamilyAdapter = OppoEarbudAdapter()
     private val boseFamilyAdapter = BoseEarbudAdapter()
     private val boseHeadphonesAdapter = BoseHeadphonesAdapter()
+    private val edifierFamilyAdapter = EdifierEarbudAdapter()
+    private val edifierHeadphonesAdapter = EdifierHeadphonesAdapter()
     private val standardAdapter = StandardEarbudAdapter()
 
     val adapters: List<EarbudAdapter> = listOf(
@@ -100,6 +102,9 @@ object EarbudAdapterRegistry {
         BoseQuietComfortHeadphonesAdapter,
         boseHeadphonesAdapter,
         boseFamilyAdapter,
+        EdifierW860NBProAdapter,
+        edifierHeadphonesAdapter,
+        edifierFamilyAdapter,
         standardAdapter,
     )
 

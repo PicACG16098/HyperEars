@@ -24,6 +24,12 @@ class EarbudAdapterHierarchyTest {
             HeadsetFormFactor.HEADPHONES,
             BoseQuietComfortHeadphonesAdapter.formFactor,
         )
+        assertEquals(HeadsetFormFactor.TWS, EdifierEarbudAdapter().formFactor)
+        assertEquals(HeadsetFormFactor.HEADPHONES, EdifierHeadphonesAdapter().formFactor)
+        assertEquals(
+            HeadsetFormFactor.HEADPHONES,
+            EdifierW860NBProAdapter.formFactor,
+        )
     }
 
     @Test
@@ -108,6 +114,34 @@ class EarbudAdapterHierarchyTest {
             EarbudAdapterRegistry.resolve(
                 identity("LE-Headset", standardHeadset = true),
             ) is StandardEarbudAdapter,
+        )
+        // Edifier W860NB PRO resolves to the concrete model when the Bluetooth class is headphones.
+        assertEquals(
+            EdifierW860NBProAdapter,
+            EarbudAdapterRegistry.resolve(
+                identity(
+                    name = "EDIFIER W860NB Pro",
+                    standardHeadset = true,
+                    bluetoothDeviceClass =
+                        EdifierHeadphonesAdapter.BLUETOOTH_DEVICE_CLASS_HEADPHONES,
+                ),
+            ),
+        )
+        assertTrue(
+            EarbudAdapterRegistry.resolve(
+                identity(
+                    name = "EDIFIER W860NB Pro",
+                    standardHeadset = true,
+                    bluetoothDeviceClass =
+                        EdifierHeadphonesAdapter.BLUETOOTH_DEVICE_CLASS_HEADPHONES,
+                ),
+            ) is EdifierHeadphonesAdapter,
+        )
+        // A generic Edifier name without the headphones class stays on the family adapter.
+        assertTrue(
+            EarbudAdapterRegistry.resolve(
+                identity("EDIFIER STAX SPIRIT", standardHeadset = true),
+            ) is EdifierEarbudAdapter,
         )
         assertNull(EarbudAdapterRegistry.resolve(identity("Living Room Speaker")))
         assertNull(EarbudAdapterRegistry.resolve(identity(null)))
@@ -665,6 +699,100 @@ class EarbudAdapterHierarchyTest {
         assertEquals("FF 03 00 03 00 1B 01 30 00 04 00", anc.hex())
         assertEquals("FF 03 00 03 00 1B 01 30 01 04 00", off.hex())
         assertEquals("FF 03 00 03 00 1B 01 30 02 04 00", transparency.hex())
+    }
+
+    @Test
+    fun edifierW860NBProInheritsHeadphonesFamilyAndPublishesVerifiedCapabilities() {
+        assertEquals(
+            EdifierHeadphonesAdapter::class.java,
+            EdifierW860NBProAdapter.javaClass.superclass,
+        )
+        assertEquals(
+            EdifierEarbudAdapter::class.java,
+            EdifierHeadphonesAdapter::class.java.superclass,
+        )
+        assertEquals(
+            StandardEarbudAdapter::class.java,
+            EdifierEarbudAdapter::class.java.superclass,
+        )
+        assertEquals(
+            listOf("edifier-spp-uuid", "rfcomm-1"),
+            EdifierW860NBProAdapter.endpoints.map(RfcommEndpointSpec::id),
+        )
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, EdifierW860NBProAdapter.batterySource)
+        assertTrue(EdifierW860NBProAdapter.privateProtocolRequired)
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.TRANSPARENCY, NoiseMode.WIND, NoiseMode.OFF),
+            EdifierW860NBProAdapter.supportedNoiseModes,
+        )
+        assertEquals(
+            ControlConfirmationPolicy.PUBLISH_AFTER_WRITE,
+            EdifierW860NBProAdapter.noiseControlConfirmation,
+        )
+        assertTrue(EdifierW860NBProAdapter.capabilities.battery)
+        assertTrue(EdifierW860NBProAdapter.capabilities.noiseControl)
+        assertTrue(EdifierW860NBProAdapter.capabilities.windNoiseControl)
+        assertTrue(EdifierW860NBProAdapter.capabilities.audioHandoff)
+        assertNull(EdifierW860NBProAdapter.miLinkCardPresentationId)
+        assertNull(EdifierEarbudAdapter().miLinkCardPresentationId)
+    }
+
+    @Test
+    fun edifierProtocolUsesEncryptedAncWritesAndDecryptsResponses() {
+        val protocol = requireNotNull(EdifierW860NBProAdapter.createProtocol())
+
+        // Initial reads: battery, ANC state, device capabilities.
+        assertEquals(
+            listOf(
+                "AA EC D0 00 00 66",
+                "AA EC CC 00 00 62",
+                "AA EC D8 00 00 6E",
+            ),
+            protocol.initialReadCommands().map { it.hex() },
+        )
+
+        // ANC writes carry XOR-0xA5-encrypted payloads (verified on W860NB PRO).
+        assertEquals(
+            "AA EC C1 00 02 B5 A4 B2", // deep NC (10 01 -> B5 A4)
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.ANC)).single().hex(),
+        )
+        assertEquals(
+            "AA EC C1 00 02 B5 A1 AF", // ambient (10 04 -> B5 A1)
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY)).single().hex(),
+        )
+        assertEquals(
+            "AA EC C1 00 02 B5 A0 AE", // NC off (10 05 -> B5 A0)
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.OFF)).single().hex(),
+        )
+
+        // No readback: the W860NB PRO executes writes immediately.
+        assertTrue(protocol.readback(ControlRequest.SetNoiseMode(NoiseMode.ANC)).isEmpty())
+
+        // Battery response: BB EC D0 00 01 9C 14 -> 0x9C ^ 0xA5 = 0x39 = 57%.
+        assertEquals(
+            listOf(
+                EarbudEvent.BatteryChanged(
+                    EarbudBattery(overall = BatteryReading(57, false)),
+                ),
+            ),
+            protocol.offer(hex("BB EC D0 00 01 9C 14")),
+        )
+
+        // ANC response: BB EC CC 00 02 B5 A0 CA -> 10 05 (NC off).
+        assertEquals(
+            listOf(EarbudEvent.NoiseModeChanged(NoiseMode.OFF, acknowledged = true)),
+            protocol.offer(hex("BB EC CC 00 02 B5 A0 CA")),
+        )
+        // ANC response for deep NC: BB EC CC 00 02 B5 A4 CE -> 10 01.
+        assertEquals(
+            listOf(EarbudEvent.NoiseModeChanged(NoiseMode.ANC, acknowledged = true)),
+            protocol.offer(hex("BB EC CC 00 02 B5 A4 CE")),
+        )
+        // ANC response for ambient: BB EC CC 00 02 B5 A1 CB -> 10 04.
+        assertEquals(
+            listOf(EarbudEvent.NoiseModeChanged(NoiseMode.TRANSPARENCY, acknowledged = true)),
+            protocol.offer(hex("BB EC CC 00 02 B5 A1 CB")),
+        )
     }
 
     private fun hex(value: String): ByteArray {

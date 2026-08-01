@@ -421,6 +421,9 @@ private fun ConnectionCard(
 
                             ProtocolTarget.BOSE_BMAP ->
                                 "将依次探测通道 8、SPP、BMAP UUID、兼容通道 2"
+
+                            ProtocolTarget.EDIFIER_BES ->
+                                "将依次探测 Edifier SPP UUID、通道 1、标准 SPP"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -873,15 +876,23 @@ private fun ApiTestCard(
 
             ProtocolTarget.BOSE_BMAP ->
                 "先读取 BMAP 产品 ID，再读取 [2.2] 组件电量；两条命令均为只读。"
+
+            ProtocolTarget.EDIFIER_BES ->
+                "发送 Edifier 电量、降噪状态和设备功能查询，不改变耳机设置。"
         },
     ) {
-        if (target == ProtocolTarget.VIVO_TWS || target == ProtocolTarget.BOSE_BMAP) {
+        if (target == ProtocolTarget.VIVO_TWS || target == ProtocolTarget.BOSE_BMAP ||
+            target == ProtocolTarget.EDIFIER_BES) {
             ApiStatusRow(
-                if (target == ProtocolTarget.BOSE_BMAP) "产品判型" else "握手",
+                when (target) {
+                    ProtocolTarget.BOSE_BMAP -> "产品判型"
+                    ProtocolTarget.EDIFIER_BES -> "设备功能"
+                    else -> "握手"
+                },
                 handshakeStatus,
             )
         }
-        if (target == ProtocolTarget.VIVO_TWS) {
+        if (target == ProtocolTarget.VIVO_TWS || target == ProtocolTarget.EDIFIER_BES) {
             ApiStatusRow("降噪查询", noiseStatus)
         }
         ApiStatusRow("电量查询", batteryStatus)
@@ -895,6 +906,7 @@ private fun ApiTestCard(
                     ProtocolTarget.VIVO_TWS -> "运行完整只读探测"
                     ProtocolTarget.STARRING_ULTRA -> "查询 StarRing 电量"
                     ProtocolTarget.BOSE_BMAP -> "读取 Bose 型号与电量"
+                    ProtocolTarget.EDIFIER_BES -> "运行 Edifier 只读探测"
                 },
             )
         }
@@ -986,6 +998,9 @@ private fun RawCommandCard(
 
             ProtocolTarget.BOSE_BMAP ->
                 "高级诊断入口；输入完整 BMAP 帧，例如电量只读请求 02 02 01 00。"
+
+            ProtocolTarget.EDIFIER_BES ->
+                "高级诊断入口；输入完整 Edifier BES 帧，例如电量查询 BB EC D0 00 00 xx。"
         },
     ) {
         OutlinedTextField(
