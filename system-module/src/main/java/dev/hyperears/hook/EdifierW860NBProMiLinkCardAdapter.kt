@@ -94,7 +94,7 @@ internal object EdifierW860NBProMiLinkCardAdapter : MiLinkCardAdapter {
         private val wind = WeakReference(wind)
 
         override fun render(state: EarbudState) {
-            val mode = state.noiseMode ?: return
+            val mode = state.noiseMode
             val projected = projectNativeNoiseMode(mode)
             transparency.get()?.isSelected =
                 isModeSelected(NoiseMode.TRANSPARENCY, projected)
@@ -111,15 +111,7 @@ internal object EdifierW860NBProMiLinkCardAdapter : MiLinkCardAdapter {
 
         fun onWindClick() {
             val current = environment.stateProvider(address)
-            if (!current.sessionActive || !current.connected) {
-                return
-            }
-            // Toggle: wind → ANC, other → wind
-            val target = if (current.noiseMode == NoiseMode.WIND) {
-                NoiseMode.ANC
-            } else {
-                NoiseMode.WIND
-            }
+            val target = EdifierWindControlPolicy.request(current) ?: return
             environment.controlSender(address, target)
         }
 
@@ -145,4 +137,12 @@ internal object EdifierW860NBProMiLinkCardAdapter : MiLinkCardAdapter {
     private const val WIND_LABEL = "抗风噪"
     private const val ENABLED_ALPHA = 1.0f
     private const val DISABLED_ALPHA = 0.45f
+}
+
+/** Pure toggle policy for W860NB PRO's fourth native mode item. */
+internal object EdifierWindControlPolicy {
+    fun request(state: EarbudState): NoiseMode? {
+        if (!state.sessionActive || !state.connected) return null
+        return if (state.noiseMode == NoiseMode.WIND) NoiseMode.ANC else NoiseMode.WIND
+    }
 }

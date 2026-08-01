@@ -14,7 +14,8 @@ Android 音频路由的前提下补充电量、降噪状态和设备流转所需
 
 > [!WARNING]
 > HyperEars 依赖 root、LSPosed 和 HyperOS 私有接口。安装前请确认能够恢复系统；ROM
-> 更新可能暂时破坏兼容性。本项目与 Xiaomi、vivo、iQOO、OPPO、Bose 及相关品牌无关。
+> 更新可能暂时破坏兼容性。本项目与 Xiaomi、vivo、iQOO、OPPO、Bose、Edifier
+> 及相关品牌无关。
 
 ## 能做什么
 
@@ -63,7 +64,7 @@ HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频�
 2. 校验 SHA-256：
 
    ```powershell
-   Get-FileHash .\HyperEars-v0.10.4.apk -Algorithm SHA256
+    Get-FileHash .\HyperEars-v0.11.0.apk -Algorithm SHA256
    ```
 
 3. 安装 APK，在 LSPosed 中启用 HyperEars，并确认两个静态作用域均已选中。

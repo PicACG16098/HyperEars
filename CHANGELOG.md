@@ -2,6 +2,20 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/)。公开版本变化记录在此文件中。
 
+## [0.11.0] - 2026-08-01
+
+### Added
+
+- 增加 Edifier W860NB PRO 实机协议适配，支持整机电量、深度降噪、环境声、关闭和
+  防风噪控制。
+- 增加 W860NB PRO 专属 MiLink 四模式卡片，以及 Edifier BES 协议实验室只读探测。
+
+### Architecture
+
+- Edifier 采用“标准耳机 → 厂商家族 → 具体型号”适配器层级；未实机验证的家族
+  型号只提供保守回退，不开放推测性控制能力。
+- W860NB PRO 的模式切换遵循设备语音播报窗口限流，并按设备地址隔离控制状态。
+
 ## [0.10.4] - 2026-08-01
 
 ### Fixed
@@ -56,6 +70,7 @@
 - Release 构建改用独立环境变量签名，不再使用 debug 证书。
 - 增加 CI、标签发布、APK 签名验证和 SHA-256 产物。
 
+[0.11.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.11.0
 [0.10.4]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.10.4
 [0.10.3]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.10.3
 [0.10.2]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.10.2

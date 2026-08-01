@@ -51,6 +51,7 @@ private val verifiedDevices = listOf(
     SupportEntry("vivo TWS Air3 Pro", "左右耳及充电盒电量、三态降噪、设备流转"),
     SupportEntry("StarRing Ultra", "左右耳电量、三态噪声控制、抗风噪开关、设备流转"),
     SupportEntry("Bose QuietComfort Headphones", "整机电量、BMAP 模式切换、设备流转"),
+    SupportEntry("Edifier W860NB PRO", "整机电量、降噪及防风噪控制、设备流转"),
 )
 
 private val familyDevices = listOf(
@@ -61,6 +62,7 @@ private val familyDevices = listOf(
     ),
     SupportEntry("OPPO Enco", "Air2 Pro、Free4、X3、Air5 及其他 Enco 家族设备"),
     SupportEntry("Bose BMAP", "具体产品确认后启用对应能力"),
+    SupportEntry("其他 Edifier 头戴", "BES 家族协议推测性回退；不开放未验证控制"),
 )
 
 private val projectLinks = listOf(
@@ -196,7 +198,7 @@ fun AboutScreen(onBack: () -> Unit) {
                     }
 
                     Text(
-                        text = "© 2026 HyperEars contributors\nHyperEars 与 Xiaomi、vivo、iQOO、OPPO、Bose 及相关品牌无关。产品名称仅用于兼容性说明。",
+                        text = "© 2026 HyperEars contributors\nHyperEars 与 Xiaomi、vivo、iQOO、OPPO、Bose、Edifier 及相关品牌无关。产品名称仅用于兼容性说明。",
                         modifier = Modifier.padding(horizontal = 4.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -1,6 +1,7 @@
 package dev.hyperears.hook
 
 import dev.hyperears.integration.BoseQuietComfortHeadphonesAdapter
+import dev.hyperears.integration.EdifierW860NBProAdapter
 import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.NoiseMode
 import dev.hyperears.integration.StarRingUltraAdapter
@@ -28,6 +29,12 @@ class MiLinkCardAdapterRegistryTest {
             BoseQuietComfortMiLinkCardAdapter,
             MiLinkCardAdapterRegistry.resolve(
                 BoseQuietComfortHeadphonesAdapter.PRESENTATION_ID,
+            ),
+        )
+        assertSame(
+            EdifierW860NBProMiLinkCardAdapter,
+            MiLinkCardAdapterRegistry.resolve(
+                EdifierW860NBProAdapter.PRESENTATION_ID,
             ),
         )
         assertNull(

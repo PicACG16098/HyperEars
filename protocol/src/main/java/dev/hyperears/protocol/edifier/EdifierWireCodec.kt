@@ -10,7 +10,7 @@ package dev.hyperears.protocol.edifier
  * - Receive: [0xBB][APP_CODE][CMD_INDEX][LEN_H][LEN_L][PAYLOAD...][CRC8]  (older: 0xCC)
  *
  * CRC: sum of all preceding bytes & 0xFF (verified: AA+EC+D8+00+00 = 0x26E -> &0xFF = 0x6E)
- * Payload is plaintext on SEND. ANC set payload is [ancIndex][ancValue].
+ * Payloads in both directions use XOR `0xA5`. ANC set plaintext is [ancIndex][ancValue].
  */
 object EdifierWireCodec {
     const val SEND_HEADER = 0xAA
