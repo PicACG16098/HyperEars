@@ -12,7 +12,7 @@ object StateBroadcaster {
                     state = state,
                     sessionToken = sessionToken,
                     targetPackage = targetPackage,
-                ),
+                ).addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
             )
         }
     }

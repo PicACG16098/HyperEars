@@ -85,9 +85,12 @@ EarbudAdapter
        │    ├─ OppoEncoFree4Adapter
        │    ├─ OppoEncoX3Adapter
        │    └─ OppoEncoAir5Adapter
-       └─ BoseEarbudAdapter
-            └─ BoseHeadphonesAdapter
-                └─ BoseQuietComfortHeadphonesAdapter
+       ├─ BoseEarbudAdapter
+       │    └─ BoseHeadphonesAdapter
+       │        └─ BoseQuietComfortHeadphonesAdapter
+       └─ EdifierEarbudAdapter
+            └─ EdifierHeadphonesAdapter
+                └─ EdifierW860NBProAdapter
 ```
 
 子类继承父类的通用能力，只覆盖经实机确认的差异：
@@ -107,6 +110,10 @@ EarbudAdapter
 - `BoseEarbudAdapter` 使用已连接耳机的名称/Bose OUI 做无扫描初筛，创建
   BMAP 会话后以 `[0.3]` 确认产品 ID，以 `[2.2]` 读取组件电量。名称只允许
   进入家族层；只有协议内产品 ID 才能升级到具体 Bose 型号。
+- `EdifierEarbudAdapter` 使用名称命中 Edifier/漫步者系标志，连接 SPP
+  `EDF00000-...` 或 channel 1，读取电量、ANC 状态和设备能力。头戴家族按
+  Bluetooth Class 区分形态；W860NB PRO 具体型号使用经实机确认的
+  XOR `0xA5` 加密 ANC 写入，一次设置即生效（不额外回查）。
 
 Registry 固定按“具体型号 → 厂商家族 → 标准耳机”解析：
 

@@ -132,6 +132,7 @@ class EarbudAdapterHierarchyTest {
             setOf(
                 StarRingUltraAdapter.PRESENTATION_ID,
                 BoseQuietComfortHeadphonesAdapter.PRESENTATION_ID,
+                EdifierW860NBProAdapter.PRESENTATION_ID,
             ),
             presentationIds.toSet(),
         )
@@ -141,6 +142,8 @@ class EarbudAdapterHierarchyTest {
         assertNull(OppoEncoAir2ProAdapter.miLinkCardPresentationId)
         assertNull(BoseEarbudAdapter().miLinkCardPresentationId)
         assertNull(BoseHeadphonesAdapter().miLinkCardPresentationId)
+        assertNull(EdifierEarbudAdapter().miLinkCardPresentationId)
+        assertNull(EdifierHeadphonesAdapter().miLinkCardPresentationId)
         assertEquals(
             BoseQuietComfortHeadphonesAdapter.PRESENTATION_ID,
             BoseQuietComfortHeadphonesAdapter.miLinkCardPresentationId,

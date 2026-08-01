@@ -152,6 +152,27 @@ internal enum class ProtocolTarget(
             ),
         ),
     ),
+    EDIFIER_BES(
+        label = "Edifier BES",
+        endpoints = listOf(
+            RfcommEndpoint.ServiceUuid(
+                uuid = UUID.fromString("EDF00000-EDFE-DFED-FEDF-EDFEDFEDFEDF"),
+                id = "edifier-spp",
+                label = "Edifier SPP UUID",
+            ),
+            RfcommEndpoint.Channel(
+                number = 1,
+                secure = true,
+                id = "rfcomm-1",
+                label = "RFCOMM 通道 1（Edifier 回退）",
+            ),
+            RfcommEndpoint.ServiceUuid(
+                uuid = STANDARD_SPP_UUID,
+                id = "standard-spp",
+                label = "标准 SPP UUID",
+            ),
+        ),
+    ),
     ;
 
     companion object {
@@ -169,6 +190,11 @@ internal enum class ProtocolTarget(
 
                 (normalized.contains("vivo") || normalized.contains("iqoo")) &&
                     (normalized.contains("tws") || normalized.contains("air")) -> VIVO_TWS
+
+                normalized.contains("edifier") ||
+                    normalized.contains("w860nb") ||
+                    normalized.contains("w820nb") ||
+                    normalized.contains("w830nb") -> EDIFIER_BES
 
                 else -> null
             }
