@@ -1,11 +1,22 @@
 package dev.hyperears.bridge
 
 import android.content.Intent
+import dev.hyperears.integration.AdapterResolution
+import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.BatteryReading
+import dev.hyperears.integration.BatterySource
 import dev.hyperears.integration.ControlRequest
+import dev.hyperears.integration.EarbudCapabilities
 import dev.hyperears.integration.EarbudBattery
 import dev.hyperears.integration.EarbudState
+import dev.hyperears.integration.DeviceLifecycle
+import dev.hyperears.integration.HeadsetFormFactor
+import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.NoiseMode
+import dev.hyperears.integration.TransportKind
+import dev.hyperears.integration.PrivateTransportState
+import dev.hyperears.integration.ProtocolHandshakeState
+import dev.hyperears.integration.SystemProfileState
 
 object ModuleContract {
     const val ACTION_REQUEST_STATE = "dev.hyperears.action.REQUEST_STATE"
@@ -26,6 +37,21 @@ object ModuleContract {
     private const val EXTRA_CONTROL = "control"
     private const val EXTRA_NOISE_MODE = "noise_mode"
     private const val EXTRA_MODEL_ID = "model_id"
+    private const val EXTRA_ADAPTER_DISPLAY_NAME = "adapter_display_name"
+    private const val EXTRA_ADAPTER_RESOLUTION = "adapter_resolution"
+    private const val EXTRA_ADAPTER_BATTERY_SOURCE = "adapter_battery_source"
+    private const val EXTRA_ADAPTER_FORM_FACTOR = "adapter_form_factor"
+    private const val EXTRA_ADAPTER_PRESENTATION = "adapter_presentation"
+    private const val EXTRA_ADAPTER_NOISE_MODES = "adapter_noise_modes"
+    private const val EXTRA_ADAPTER_TRANSPORT_KINDS = "adapter_transport_kinds"
+    private const val EXTRA_ADAPTER_ANC_COOLDOWN = "adapter_anc_cooldown"
+    private const val EXTRA_CAP_BATTERY = "cap_battery"
+    private const val EXTRA_CAP_NOISE = "cap_noise"
+    private const val EXTRA_CAP_WIND = "cap_wind"
+    private const val EXTRA_CAP_HANDOFF = "cap_handoff"
+    private const val EXTRA_CAP_SPATIAL = "cap_spatial"
+    private const val EXTRA_CAP_WEAR = "cap_wear"
+    private const val EXTRA_CAP_FIND = "cap_find"
     private const val EXTRA_DEVICE_NAME = "device_name"
     private const val EXTRA_ADDRESS = "address"
     private const val EXTRA_SESSION_ACTIVE = "session_active"
@@ -33,6 +59,9 @@ object ModuleContract {
     private const val EXTRA_CONNECTED = "connected"
     private const val EXTRA_PRIVATE_CHANNEL_CONNECTED = "private_channel_connected"
     private const val EXTRA_HANDSHAKE = "handshake"
+    private const val EXTRA_SYSTEM_PROFILE_STATE = "system_profile_state"
+    private const val EXTRA_PRIVATE_TRANSPORT_STATE = "private_transport_state"
+    private const val EXTRA_PROTOCOL_HANDSHAKE_STATE = "protocol_handshake_state"
     private const val EXTRA_REVISION = "revision"
     private const val EXTRA_CONSUMER_PROCESS = "consumer_process"
     private const val EXTRA_BRIDGE_STAGE = "bridge_stage"
@@ -158,6 +187,23 @@ object ModuleContract {
 
     fun Intent.putState(state: EarbudState): Intent = apply {
         putExtra(EXTRA_MODEL_ID, state.modelId)
+        state.adapter?.let { adapter ->
+            putExtra(EXTRA_ADAPTER_DISPLAY_NAME, adapter.displayName)
+            putExtra(EXTRA_ADAPTER_RESOLUTION, adapter.resolution.name)
+            putExtra(EXTRA_ADAPTER_BATTERY_SOURCE, adapter.batterySource.name)
+            putExtra(EXTRA_ADAPTER_FORM_FACTOR, adapter.formFactor.name)
+            putExtra(EXTRA_ADAPTER_PRESENTATION, adapter.presentationId?.value)
+            putExtra(EXTRA_ADAPTER_NOISE_MODES, adapter.supportedNoiseModes.map(NoiseMode::name).toTypedArray())
+            putExtra(EXTRA_ADAPTER_TRANSPORT_KINDS, adapter.transportKinds.map(TransportKind::name).toTypedArray())
+            putExtra(EXTRA_ADAPTER_ANC_COOLDOWN, adapter.ancSwitchCooldownMs)
+            putExtra(EXTRA_CAP_BATTERY, adapter.capabilities.battery)
+            putExtra(EXTRA_CAP_NOISE, adapter.capabilities.noiseControl)
+            putExtra(EXTRA_CAP_WIND, adapter.capabilities.windNoiseControl)
+            putExtra(EXTRA_CAP_HANDOFF, adapter.capabilities.audioHandoff)
+            putExtra(EXTRA_CAP_SPATIAL, adapter.capabilities.spatialAudio)
+            putExtra(EXTRA_CAP_WEAR, adapter.capabilities.wearDetection)
+            putExtra(EXTRA_CAP_FIND, adapter.capabilities.findDevice)
+        }
         putExtra(EXTRA_DEVICE_NAME, state.deviceName)
         putExtra(EXTRA_ADDRESS, state.address)
         putExtra(EXTRA_SESSION_ACTIVE, state.sessionActive)
@@ -165,6 +211,9 @@ object ModuleContract {
         putExtra(EXTRA_CONNECTED, state.connected)
         putExtra(EXTRA_PRIVATE_CHANNEL_CONNECTED, state.privateChannelConnected)
         putExtra(EXTRA_HANDSHAKE, state.handshakeAccepted)
+        putExtra(EXTRA_SYSTEM_PROFILE_STATE, state.lifecycle.systemProfile.name)
+        putExtra(EXTRA_PRIVATE_TRANSPORT_STATE, state.lifecycle.privateTransport.name)
+        putExtra(EXTRA_PROTOCOL_HANDSHAKE_STATE, state.lifecycle.protocolHandshake.name)
         putExtra(EXTRA_REVISION, state.revision)
         putExtra(EXTRA_NOISE_MODE, state.noiseMode?.name)
         putExtra(EXTRA_LEFT, state.battery.left.percent ?: -1)
@@ -180,16 +229,10 @@ object ModuleContract {
     fun Intent.readState(): EarbudState? {
         if (action != ACTION_STATE_CHANGED || !hasExtra(EXTRA_REVISION)) return null
         return EarbudState(
-            modelId = getStringExtra(EXTRA_MODEL_ID),
+            adapter = readAdapterSnapshot(),
             deviceName = getStringExtra(EXTRA_DEVICE_NAME),
             address = getStringExtra(EXTRA_ADDRESS),
-            sessionActive = getBooleanExtra(EXTRA_SESSION_ACTIVE, false),
-            privateProtocolRequired =
-                getBooleanExtra(EXTRA_PRIVATE_PROTOCOL_REQUIRED, false),
-            connected = getBooleanExtra(EXTRA_CONNECTED, false),
-            privateChannelConnected =
-                getBooleanExtra(EXTRA_PRIVATE_CHANNEL_CONNECTED, false),
-            handshakeAccepted = getBooleanExtra(EXTRA_HANDSHAKE, false),
+            lifecycle = readLifecycle(),
             battery = EarbudBattery(
                 left = batteryReading(EXTRA_LEFT, EXTRA_LEFT_CHARGING),
                 right = batteryReading(EXTRA_RIGHT, EXTRA_RIGHT_CHARGING),
@@ -199,6 +242,84 @@ object ModuleContract {
             noiseMode = getStringExtra(EXTRA_NOISE_MODE)
                 ?.let { runCatching { NoiseMode.valueOf(it) }.getOrNull() },
             revision = getLongExtra(EXTRA_REVISION, 0),
+        )
+    }
+
+    private fun Intent.readLifecycle(): DeviceLifecycle {
+        val system = getStringExtra(EXTRA_SYSTEM_PROFILE_STATE)
+            ?.let { runCatching { SystemProfileState.valueOf(it) }.getOrNull() }
+        val transport = getStringExtra(EXTRA_PRIVATE_TRANSPORT_STATE)
+            ?.let { runCatching { PrivateTransportState.valueOf(it) }.getOrNull() }
+        val handshake = getStringExtra(EXTRA_PROTOCOL_HANDSHAKE_STATE)
+            ?.let { runCatching { ProtocolHandshakeState.valueOf(it) }.getOrNull() }
+        if (system != null && transport != null && handshake != null) {
+            return DeviceLifecycle(system, transport, handshake)
+        }
+
+        // Backward-compatible decode for a state broadcast from an older module process.
+        val active = getBooleanExtra(EXTRA_SESSION_ACTIVE, false)
+        val privateRequired = getBooleanExtra(EXTRA_PRIVATE_PROTOCOL_REQUIRED, false)
+        val channelConnected = getBooleanExtra(EXTRA_PRIVATE_CHANNEL_CONNECTED, false)
+        val accepted = getBooleanExtra(EXTRA_HANDSHAKE, false)
+        return DeviceLifecycle(
+            systemProfile = if (active) {
+                SystemProfileState.CONNECTED
+            } else {
+                SystemProfileState.DISCONNECTED
+            },
+            privateTransport = when {
+                !privateRequired -> PrivateTransportState.NOT_REQUIRED
+                channelConnected -> PrivateTransportState.CONNECTED
+                else -> PrivateTransportState.IDLE
+            },
+            protocolHandshake = when {
+                !privateRequired -> ProtocolHandshakeState.NOT_REQUIRED
+                accepted -> ProtocolHandshakeState.CONFIRMED
+                else -> ProtocolHandshakeState.PENDING
+            },
+        )
+    }
+
+    private fun Intent.readAdapterSnapshot(): AdapterSnapshot? {
+        val id = getStringExtra(EXTRA_MODEL_ID)?.takeIf(String::isNotBlank) ?: return null
+        val displayName = getStringExtra(EXTRA_ADAPTER_DISPLAY_NAME) ?: id
+        val resolution = getStringExtra(EXTRA_ADAPTER_RESOLUTION)
+            ?.let { runCatching { AdapterResolution.valueOf(it) }.getOrNull() }
+            ?: AdapterResolution.FAMILY_MATCH
+        val batterySource = getStringExtra(EXTRA_ADAPTER_BATTERY_SOURCE)
+            ?.let { runCatching { BatterySource.valueOf(it) }.getOrNull() }
+            ?: BatterySource.NONE
+        val formFactor = getStringExtra(EXTRA_ADAPTER_FORM_FACTOR)
+            ?.let { runCatching { HeadsetFormFactor.valueOf(it) }.getOrNull() }
+            ?: HeadsetFormFactor.TWS
+        val modes = getStringArrayExtra(EXTRA_ADAPTER_NOISE_MODES)
+            .orEmpty()
+            .mapNotNullTo(linkedSetOf()) { runCatching { NoiseMode.valueOf(it) }.getOrNull() }
+        val transportKinds = getStringArrayExtra(EXTRA_ADAPTER_TRANSPORT_KINDS)
+            .orEmpty()
+            .mapNotNullTo(linkedSetOf()) { runCatching { TransportKind.valueOf(it) }.getOrNull() }
+        return AdapterSnapshot(
+            id = id,
+            displayName = displayName,
+            resolution = resolution,
+            privateProtocolRequired = getBooleanExtra(EXTRA_PRIVATE_PROTOCOL_REQUIRED, false),
+            batterySource = batterySource,
+            formFactor = formFactor,
+            capabilities = EarbudCapabilities(
+                battery = getBooleanExtra(EXTRA_CAP_BATTERY, false),
+                noiseControl = getBooleanExtra(EXTRA_CAP_NOISE, false),
+                windNoiseControl = getBooleanExtra(EXTRA_CAP_WIND, false),
+                audioHandoff = getBooleanExtra(EXTRA_CAP_HANDOFF, false),
+                spatialAudio = getBooleanExtra(EXTRA_CAP_SPATIAL, false),
+                wearDetection = getBooleanExtra(EXTRA_CAP_WEAR, false),
+                findDevice = getBooleanExtra(EXTRA_CAP_FIND, false),
+            ),
+            supportedNoiseModes = modes,
+            presentationId = getStringExtra(EXTRA_ADAPTER_PRESENTATION)
+                ?.takeIf(String::isNotBlank)
+                ?.let(::MiLinkCardPresentationId),
+            transportKinds = transportKinds,
+            ancSwitchCooldownMs = getLongExtra(EXTRA_ADAPTER_ANC_COOLDOWN, 0L),
         )
     }
 

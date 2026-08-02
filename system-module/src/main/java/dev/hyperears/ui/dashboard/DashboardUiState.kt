@@ -3,6 +3,9 @@ package dev.hyperears.ui.dashboard
 import dev.hyperears.bridge.BridgeReceipt
 import dev.hyperears.bridge.BridgeStage
 import dev.hyperears.integration.EarbudState
+import dev.hyperears.integration.PrivateTransportState
+import dev.hyperears.integration.ProtocolHandshakeState
+import dev.hyperears.integration.SystemProfileState
 import java.util.Locale
 
 data class DeviceSessionSnapshot(
@@ -24,9 +27,18 @@ data class DeviceSessionSnapshot(
 
     val phase: DevicePhase
         get() = when {
-            !state.connected && state.privateProtocolRequired ->
-                DevicePhase.PREPARING_PRIVATE_CHANNEL
-            !state.connected -> DevicePhase.CONNECTING
+            state.lifecycle.systemProfile == SystemProfileState.DISCONNECTED ->
+                DevicePhase.SYSTEM_DISCONNECTED
+            state.lifecycle.privateTransport == PrivateTransportState.CONNECTING ->
+                DevicePhase.TRANSPORT_CONNECTING
+            state.lifecycle.privateTransport == PrivateTransportState.RECOVERING ->
+                DevicePhase.TRANSPORT_RECOVERING
+            state.lifecycle.privateTransport == PrivateTransportState.DORMANT ->
+                DevicePhase.TRANSPORT_DORMANT
+            state.lifecycle.protocolHandshake == ProtocolHandshakeState.PENDING ->
+                DevicePhase.PROTOCOL_CONFIRMING
+            state.lifecycle.protocolHandshake == ProtocolHandshakeState.REJECTED ->
+                DevicePhase.PROTOCOL_REJECTED
             !bridgeObserved -> DevicePhase.WAITING_FOR_MILINK
             capabilitiesQueried -> DevicePhase.CAPABILITIES_QUERIED
             identityQueried -> DevicePhase.IDENTITY_QUERIED
@@ -101,8 +113,12 @@ data class DashboardUiState(
 }
 
 enum class DevicePhase(val label: String) {
-    CONNECTING("接入准备中"),
-    PREPARING_PRIVATE_CHANNEL("验证私有通道"),
+    SYSTEM_DISCONNECTED("系统音频未连接"),
+    TRANSPORT_CONNECTING("私有传输连接中"),
+    TRANSPORT_RECOVERING("私有传输恢复中"),
+    TRANSPORT_DORMANT("私有传输已休眠"),
+    PROTOCOL_CONFIRMING("协议确认中"),
+    PROTOCOL_REJECTED("协议确认失败"),
     WAITING_FOR_MILINK("等待 MiLink 接收"),
     STATE_ACCEPTED("MiLink 已接收状态"),
     IDENTITY_QUERIED("MiLink 已查询身份"),

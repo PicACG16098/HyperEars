@@ -16,13 +16,11 @@ import dev.hyperears.bridge.BridgeStage
 import dev.hyperears.bridge.ModuleContract
 import dev.hyperears.bridge.ProcessStateStore
 import dev.hyperears.integration.ControlRequest
-import dev.hyperears.integration.EarbudAdapter
-import dev.hyperears.integration.EarbudAdapterRegistry
+import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.MiLinkStateCodec
 import dev.hyperears.integration.NoiseMode
-import dev.hyperears.runtime.toEarbudIdentity
 import java.lang.reflect.Method
 import java.util.Collections
 import java.util.Locale
@@ -81,12 +79,18 @@ internal class MiLinkServiceHook : HookContext() {
                 MiLinkCarrierIdentity.deviceId(adapter)
             }
             hookBluetoothDeviceResult(className, "getBatteryLevel") { device, adapter ->
-                MiLinkStateCodec.regularBatteryLevel(stateFor(device))
-                    .takeIf { adapter.capabilities.battery }
+                if (adapter.capabilities.battery) {
+                    MiLinkStateCodec.regularBatteryLevel(stateFor(device))
+                } else {
+                    UNKNOWN_BATTERY_LEVEL
+                }
             }
             hookBluetoothDeviceResult(className, "getAncState") { device, adapter ->
-                MiLinkStateCodec.ancState(stateFor(device))
-                    .takeIf { adapter.capabilities.noiseControl }
+                if (adapter.capabilities.noiseControl) {
+                    MiLinkStateCodec.ancState(stateFor(device))
+                } else {
+                    NO_ANC_STATE
+                }
             }
             hookBluetoothDeviceResult(className, "getDeviceRunInfo") { _, _ -> 0 }
             hookBluetoothDeviceResult(className, "getWearStatus") { _, adapter ->
@@ -137,9 +141,9 @@ internal class MiLinkServiceHook : HookContext() {
                 val address = rawHeadsetAddress(headsetInfo) ?: return@hookAfter
                 val state = stateForAddress(address).takeIf(EarbudState::sessionActive)
                     ?: return@hookAfter
-                val adapter = EarbudAdapterRegistry.integratedById(state.modelId)
+                val adapter = state.adapter
                     ?: return@hookAfter
-                val presentationId = adapter.miLinkCardPresentationId ?: return@hookAfter
+                val presentationId = adapter.presentationId ?: return@hookAfter
                 val serviceInfo = result ?: return@hookAfter
                 val properties = runCatching {
                     getObjectField(serviceInfo, "serviceProperties")
@@ -182,13 +186,13 @@ internal class MiLinkServiceHook : HookContext() {
                 val root = instance as? View ?: return@hookAfter
                 val serviceInfo = args.firstOrNull()
                 val publishedPresentationId = presentationIdFrom(serviceInfo)
-                val address = serviceInfo
-                    ?.let(::serviceInfoAddress)
+                val serviceAddress = serviceInfo?.let(::serviceInfoAddress)
+                val address = serviceAddress
                     ?.takeIf {
                         publishedPresentationId != null || isTargetAddress(it)
                     }
                     ?: args.firstNotNullOfOrNull(::headsetAddress)
-                    ?: return@hookAfter
+                if (address == null) return@hookAfter
                 extension.bind(
                     root = root,
                     address = address,
@@ -337,20 +341,23 @@ internal class MiLinkServiceHook : HookContext() {
             "com.miui.headset.runtime.ProfileContext",
             "getBatteryLevel",
         ) { device, _ ->
-            batteryLevelsFor(stateFor(device))
+            batteryLevelsFor(stateFor(device)) ?: UNKNOWN_COMPONENT_BATTERY_LEVELS
         }
         hookBluetoothDeviceResult(
             "com.miui.headset.runtime.AncBatteryController",
             "getAncState",
         ) { device, adapter ->
-            nativeAncState(stateFor(device))
-                .takeIf { adapter.capabilities.noiseControl }
+            if (adapter.capabilities.noiseControl) {
+                nativeAncState(stateFor(device))
+            } else {
+                NO_ANC_STATE
+            }
         }
         hookBluetoothDeviceResult(
             "com.miui.headset.runtime.AncBatteryController",
             "getBatteryLevelCache",
         ) { device, _ ->
-            batteryLevelsFor(stateFor(device))
+            batteryLevelsFor(stateFor(device)) ?: UNKNOWN_COMPONENT_BATTERY_LEVELS
         }
         hookHeadsetPropertyRefresh()
         hookAddressResult(
@@ -377,10 +384,12 @@ internal class MiLinkServiceHook : HookContext() {
                     else -> NoiseMode.OFF
                 }
                 val adapter = adapterFor(device)
+                    ?: return@hookBefore
                 if (
-                    adapter?.capabilities?.noiseControl != true ||
+                    !adapter.capabilities.noiseControl ||
                     requestedMode !in adapter.supportedNoiseModes
                 ) {
+                    result = HEADSET_OPERATION_UNSUPPORTED
                     return@hookBefore
                 }
                 rememberRuntimeOwner(
@@ -398,22 +407,26 @@ internal class MiLinkServiceHook : HookContext() {
         }
 
         hookHeadsetInfo("getPowers") { info ->
-            activeStateForHeadsetInfo(info)?.let(::batteryLevelsFor)
+            activeStateForHeadsetInfo(info)?.let { state ->
+                batteryLevelsFor(state) ?: UNKNOWN_COMPONENT_BATTERY_LEVELS
+            }
         }
         hookHeadsetInfo("component4") { info ->
-            activeStateForHeadsetInfo(info)?.let(::batteryLevelsFor)
+            activeStateForHeadsetInfo(info)?.let { state ->
+                batteryLevelsFor(state) ?: UNKNOWN_COMPONENT_BATTERY_LEVELS
+            }
         }
         hookHeadsetInfo("getMode") { info ->
             val state = activeStateForHeadsetInfo(info) ?: return@hookHeadsetInfo null
-            adapterIdentity(state)
-                ?.takeIf { it.capabilities.noiseControl }
-                ?.let { nativeAncState(state) }
+            adapterIdentity(state)?.let { adapter ->
+                if (adapter.capabilities.noiseControl) nativeAncState(state) else NO_ANC_STATE
+            }
         }
         hookHeadsetInfo("component5") { info ->
             val state = activeStateForHeadsetInfo(info) ?: return@hookHeadsetInfo null
-            adapterIdentity(state)
-                ?.takeIf { it.capabilities.noiseControl }
-                ?.let { nativeAncState(state) }
+            adapterIdentity(state)?.let { adapter ->
+                if (adapter.capabilities.noiseControl) nativeAncState(state) else NO_ANC_STATE
+            }
         }
         hookHeadsetInfo("getSwitchState") { info ->
             adapterForHeadsetInfo(info)
@@ -477,7 +490,7 @@ internal class MiLinkServiceHook : HookContext() {
     private fun hookBluetoothDeviceResult(
         className: String,
         methodName: String,
-        value: (BluetoothDevice, EarbudAdapter) -> Any?,
+        value: (BluetoothDevice, AdapterSnapshot) -> Any?,
     ) {
         runCatching {
             hookAfter(findMethod(className, methodName, BluetoothDevice::class.java)) {
@@ -521,10 +534,12 @@ internal class MiLinkServiceHook : HookContext() {
             hookBefore(findMethod(className, methodName, BluetoothDevice::class.java)) {
                 val device = args[0] as? BluetoothDevice
                 val adapter = adapterFor(device)
+                    ?: return@hookBefore
                 if (
-                    adapter?.capabilities?.noiseControl != true ||
+                    !adapter.capabilities.noiseControl ||
                     mode !in adapter.supportedNoiseModes
                 ) {
+                    result = HEADSET_OPERATION_UNSUPPORTED
                     return@hookBefore
                 }
                 rememberRuntimeOwner(className, instance)
@@ -562,10 +577,9 @@ internal class MiLinkServiceHook : HookContext() {
                     ),
                 ) {
                     val address = args.firstOrNull() as? String ?: return@hookBefore
-                    val adapter = adapterForAddress(address)
-                        ?.takeIf { it.capabilities.noiseControl }
-                        ?: return@hookBefore
+                    val adapter = adapterForAddress(address) ?: return@hookBefore
                     result = when {
+                        !adapter.capabilities.noiseControl -> NO_ANC_CAPABILITY
                         NoiseMode.TRANSPARENCY in adapter.supportedNoiseModes ->
                             MILINK_RAW_ANC_ALL_MODES
 
@@ -782,34 +796,20 @@ internal class MiLinkServiceHook : HookContext() {
     private fun adapterFor(device: BluetoothDevice?) =
         device?.let { target ->
             val address = runCatching { target.address }.getOrNull()
-            val stateAdapter = address
+            val adapter = address
                 ?.let(::stateForAddress)
-                ?.modelId
-                ?.let(EarbudAdapterRegistry::integratedById)
-            val earbudAdapter = stateAdapter
-                ?: EarbudAdapterRegistry
-                    .forIntegration(target.toEarbudIdentity())
-                    ?.takeIf { it.privateProtocolRequired }
-            if (earbudAdapter != null && address != null) {
+                ?.adapter
+            if (adapter != null) {
                 knownAddresses += normalizeAddress(address)
             }
-            earbudAdapter
+            adapter
         }
 
-    @SuppressLint("MissingPermission")
     private fun adapterForAddress(address: String) =
-        EarbudAdapterRegistry.integratedById(stateForAddress(address).modelId)
-            ?: runCatching {
-                context
-                    ?.getSystemService(BluetoothManager::class.java)
-                    ?.adapter
-                    ?.getRemoteDevice(address)
-            }.getOrNull()?.let { device ->
-                EarbudAdapterRegistry.forIntegration(device.toEarbudIdentity())
-            }?.takeIf { it.privateProtocolRequired }
+        stateForAddress(address).adapter
 
     private fun adapterIdentity(state: EarbudState) =
-        EarbudAdapterRegistry.integratedById(state.modelId)
+        state.adapter
 
     @SuppressLint("MissingPermission")
     private fun stateFor(device: BluetoothDevice?): EarbudState {
@@ -817,34 +817,18 @@ internal class MiLinkServiceHook : HookContext() {
         return address?.let(::stateForAddress) ?: EarbudState()
     }
 
-    @SuppressLint("MissingPermission")
     private fun isTargetAddress(address: String): Boolean {
         val normalized = normalizeAddress(address)
-        if (normalized in knownAddresses ||
-            ProcessStateStore.containsKnown(normalized)
-        ) {
-            return true
-        }
-        val device = runCatching {
-            context
-                ?.getSystemService(BluetoothManager::class.java)
-                ?.adapter
-                ?.getRemoteDevice(address)
-        }.getOrNull() ?: return false
-        val supported = EarbudAdapterRegistry
-            .forIntegration(device.toEarbudIdentity())
-            ?.privateProtocolRequired == true
-        if (supported) knownAddresses += normalized
-        return supported
+        return normalized in knownAddresses || ProcessStateStore.containsKnown(normalized)
     }
 
     private fun isTargetHeadsetInfo(info: Any?): Boolean {
         return adapterForHeadsetInfo(info) != null
     }
 
-    private fun adapterForHeadsetInfo(info: Any?): EarbudAdapter? {
+    private fun adapterForHeadsetInfo(info: Any?): AdapterSnapshot? {
         val state = activeStateForHeadsetInfo(info) ?: return null
-        return EarbudAdapterRegistry.integratedById(state.modelId)
+        return state.adapter
     }
 
     private fun isBluetoothAddress(value: String): Boolean =
@@ -921,14 +905,15 @@ internal class MiLinkServiceHook : HookContext() {
         val identityChanged =
             previous.modelId != snapshot.modelId ||
                 previous.address != snapshot.address
+        val adapterChanged = previous.adapter != snapshot.adapter
         val connectionChanged = identityChanged || previous.connected != snapshot.connected
         val batteryChanged =
             capabilities.battery &&
-                (identityChanged || previous.battery != snapshot.battery)
+                (identityChanged || adapterChanged || previous.battery != snapshot.battery)
         val ancChanged =
             capabilities.noiseControl &&
-                (identityChanged || previous.noiseMode != snapshot.noiseMode)
-        if (!connectionChanged && !batteryChanged && !ancChanged) return
+                (identityChanged || adapterChanged || previous.noiseMode != snapshot.noiseMode)
+        if (!adapterChanged && !connectionChanged && !batteryChanged && !ancChanged) return
 
         val address = snapshot.address ?: return
         val device = runCatching {
@@ -939,7 +924,7 @@ internal class MiLinkServiceHook : HookContext() {
         }.getOrNull() ?: return
 
         val updateTypes = buildSet {
-            if (identityChanged || batteryChanged || connectionChanged) {
+            if (adapterChanged || identityChanged || batteryChanged || connectionChanged) {
                 add(HEADSET_PROPERTY_CHANGED)
             }
             if (identityChanged || ancChanged) add(8)
@@ -1035,7 +1020,7 @@ internal class MiLinkServiceHook : HookContext() {
 
     private fun nativeAncState(state: EarbudState): Int {
         val presentation = adapterIdentity(state)
-            ?.miLinkCardPresentationId
+            ?.presentationId
             ?.let(MiLinkCardAdapterRegistry::resolve)
         return MiLinkStateCodec.ancState(
             state.copy(
@@ -1104,6 +1089,11 @@ internal class MiLinkServiceHook : HookContext() {
         const val SETTINGS_PACKAGE = "com.android.settings"
         const val MILINK_RAW_ANC_NO_TRANSPARENCY = 3
         const val MILINK_RAW_ANC_ALL_MODES = 7
+        const val NO_ANC_CAPABILITY = 0
+        const val NO_ANC_STATE = 0
+        const val UNKNOWN_BATTERY_LEVEL = -1
+        const val HEADSET_OPERATION_UNSUPPORTED = 0
+        val UNKNOWN_COMPONENT_BATTERY_LEVELS = listOf(-1, -1, -1, 0, 0, 0)
         const val HEADSET_OPERATION_SUCCESS = 100
         const val HEADSET_PROPERTY_CHANGED = 4
         val BLUETOOTH_ADDRESS_PATTERN =

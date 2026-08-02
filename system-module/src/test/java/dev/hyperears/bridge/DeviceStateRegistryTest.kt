@@ -1,7 +1,12 @@
 package dev.hyperears.bridge
 
 import dev.hyperears.integration.EarbudState
+import dev.hyperears.integration.DeviceLifecycle
 import dev.hyperears.integration.NoiseMode
+import dev.hyperears.integration.PrivateTransportState
+import dev.hyperears.integration.ProtocolHandshakeState
+import dev.hyperears.integration.SystemProfileState
+import dev.hyperears.integration.VivoTwsAir3ProAdapter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -37,8 +42,7 @@ class DeviceStateRegistryTest {
         registry.accept(oldState, "old-token")
         registry.accept(newState, "new-token")
         val staleEnd = oldState.copy(
-            sessionActive = false,
-            connected = false,
+            lifecycle = DeviceLifecycle(),
             revision = 11,
         )
 
@@ -61,8 +65,7 @@ class DeviceStateRegistryTest {
         registry.accept(second, "second-token")
 
         val ended = activeState(FIRST_ADDRESS, 2).copy(
-            sessionActive = false,
-            connected = false,
+            lifecycle = DeviceLifecycle(),
         )
         assertSame(ended, registry.accept(ended, "first-token"))
 
@@ -82,8 +85,7 @@ class DeviceStateRegistryTest {
             noiseMode = NoiseMode.ANC,
         )
         val ended = active.copy(
-            sessionActive = false,
-            connected = false,
+            lifecycle = DeviceLifecycle(),
             revision = 5,
         )
 
@@ -96,7 +98,7 @@ class DeviceStateRegistryTest {
         assertSame(ended, registry.knownState(FIRST_ADDRESS))
 
         val restarted = ended.copy(
-            sessionActive = true,
+            lifecycle = activeLifecycle,
             revision = 6,
         )
         assertSame(restarted, registry.accept(restarted, "new-token"))
@@ -121,11 +123,16 @@ class DeviceStateRegistryTest {
     }
 
     private fun activeState(address: String, revision: Long) = EarbudState(
-        modelId = "vivo-tws-air3-pro",
+        adapter = VivoTwsAir3ProAdapter().snapshot(),
         address = address,
-        sessionActive = true,
-        connected = true,
+        lifecycle = activeLifecycle,
         revision = revision,
+    )
+
+    private val activeLifecycle = DeviceLifecycle(
+        systemProfile = SystemProfileState.CONNECTED,
+        privateTransport = PrivateTransportState.CONNECTED,
+        protocolHandshake = ProtocolHandshakeState.CONFIRMED,
     )
 
     private companion object {

@@ -4,7 +4,10 @@ import dev.hyperears.protocol.rose.RoseBudsFeelMk2WireCodec
 import dev.hyperears.protocol.rose.RoseEarfreeI5WireCodec
 
 /** Standard Bluetooth fallback for ROSESELSA/ROSE headsets outside a known protocol family. */
-open class RoseEarbudAdapter : StandardEarbudAdapter() {
+open class RoseEarbudAdapter(
+    transferredSession: ProtocolSession? = null,
+    initialRuntimeState: AdapterRuntimeState = AdapterRuntimeState(),
+) : StandardEarbudAdapter(transferredSession, initialRuntimeState) {
     override val id: String = ID
     override val displayName: String = "ROSESELSA headset"
 
@@ -29,21 +32,21 @@ open class RoseEarbudAdapter : StandardEarbudAdapter() {
  * models in the same named product line may reuse it, but must return a valid protocol frame
  * before the private channel becomes ready.
  */
-open class RoseEarfreeProtocolFamilyAdapter : RoseEarbudAdapter() {
+open class RoseEarfreeProtocolFamilyAdapter(
+    transferredSession: ProtocolSession? = null,
+    initialRuntimeState: AdapterRuntimeState = AdapterRuntimeState(),
+) : RoseEarbudAdapter(transferredSession, initialRuntimeState) {
     override val id: String = ID
     override val displayName: String = "ROSE EARFREE protocol family"
     override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE
-    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
+    override val batterySource: BatterySource = BatterySource.SYSTEM_AGGREGATE
     override val capabilities: EarbudCapabilities = EarbudCapabilities(
         battery = true,
-        noiseControl = true,
-        windNoiseControl = true,
         audioHandoff = true,
     )
-    override val supportedNoiseModes: Set<NoiseMode> = NoiseMode.entries.toSet()
     override val transports: List<EarbudTransportSpec> = listOf(
         GattTransportSpec(
             serviceUuid = SERVICE_UUID,
@@ -65,7 +68,10 @@ open class RoseEarfreeProtocolFamilyAdapter : RoseEarbudAdapter() {
         return namedProductLine || (super.matches(identity) && advertisedService)
     }
 
-    override fun createProtocol(): EarbudProtocol = RoseEarfreeProtocol()
+    override fun createProtocolSession(): ProtocolSession = RoseEarfreeProtocolSession()
+
+    override fun batterySourceAfterProtocolEvidence(): BatterySource =
+        BatterySource.PRIVATE_PROTOCOL
 
     companion object {
         const val ID = "rose-earfree-protocol-family"
@@ -78,35 +84,13 @@ open class RoseEarfreeProtocolFamilyAdapter : RoseEarbudAdapter() {
     }
 }
 
-object RoseEarfreeI5Adapter : RoseEarfreeProtocolFamilyAdapter() {
-    const val ID = "roseselsa-earfree-i5"
-    val PRESENTATION_ID = RoseEarfreeProtocolFamilyAdapter.PRESENTATION_ID
+class RoseEarfreeI5Adapter : RoseEarfreeProtocolFamilyAdapter() {
 
     override val id: String = ID
     override val displayName: String = "ROSESELSA EARFREE i5"
+    override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
     override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
     override val transportReadiness: TransportReadiness = TransportReadiness.CONNECTED
-
-    override fun matches(identity: EarbudIdentity): Boolean {
-        if (identity.nativeSystemEarbud) return false
-        return normalizeDeviceName(identity.deviceName.orEmpty()) in MODEL_NAMES
-    }
-
-    private val MODEL_NAMES = setOf(
-        "roseselsaearfreei5",
-        "roseearfreei5",
-        "roseearfeeli5",
-    )
-}
-
-/** BudsFeel product-line adapter using the public MK2 RFCOMM service and frame grammar. */
-open class RoseBudsFeelProtocolFamilyAdapter : RoseEarbudAdapter() {
-    override val id: String = ID
-    override val displayName: String = "ROSE BudsFeel protocol family"
-    override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
-    override val privateProtocolRequired: Boolean = true
-    override val transportReadiness: TransportReadiness =
-        TransportReadiness.PROTOCOL_HANDSHAKE
     override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
     override val capabilities: EarbudCapabilities = EarbudCapabilities(
         battery = true,
@@ -115,6 +99,39 @@ open class RoseBudsFeelProtocolFamilyAdapter : RoseEarbudAdapter() {
         audioHandoff = true,
     )
     override val supportedNoiseModes: Set<NoiseMode> = NoiseMode.entries.toSet()
+
+    override fun matches(identity: EarbudIdentity): Boolean {
+        if (identity.nativeSystemEarbud) return false
+        return normalizeDeviceName(identity.deviceName.orEmpty()) in MODEL_NAMES
+    }
+
+    companion object {
+        const val ID = "roseselsa-earfree-i5"
+        val PRESENTATION_ID = RoseEarfreeProtocolFamilyAdapter.PRESENTATION_ID
+        private val MODEL_NAMES = setOf(
+            "roseselsaearfreei5",
+            "roseearfreei5",
+            "roseearfeeli5",
+        )
+    }
+}
+
+/** BudsFeel product-line adapter using the public MK2 RFCOMM service and frame grammar. */
+open class RoseBudsFeelProtocolFamilyAdapter(
+    transferredSession: ProtocolSession? = null,
+    initialRuntimeState: AdapterRuntimeState = AdapterRuntimeState(),
+) : RoseEarbudAdapter(transferredSession, initialRuntimeState) {
+    override val id: String = ID
+    override val displayName: String = "ROSE BudsFeel protocol family"
+    override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
+    override val privateProtocolRequired: Boolean = true
+    override val transportReadiness: TransportReadiness =
+        TransportReadiness.PROTOCOL_HANDSHAKE
+    override val batterySource: BatterySource = BatterySource.SYSTEM_AGGREGATE
+    override val capabilities: EarbudCapabilities = EarbudCapabilities(
+        battery = true,
+        audioHandoff = true,
+    )
     override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.ServiceUuid(
             uuid = DATA_CHANNEL_UUID,
@@ -132,7 +149,10 @@ open class RoseBudsFeelProtocolFamilyAdapter : RoseEarbudAdapter() {
         return namedProductLine || (super.matches(identity) && advertisedService)
     }
 
-    override fun createProtocol(): EarbudProtocol = RoseBudsFeelProtocol()
+    override fun createProtocolSession(): ProtocolSession = RoseBudsFeelProtocolSession()
+
+    override fun batterySourceAfterProtocolEvidence(): BatterySource =
+        BatterySource.PRIVATE_PROTOCOL
 
     companion object {
         const val ID = "rose-budsfeel-protocol-family"
@@ -141,24 +161,35 @@ open class RoseBudsFeelProtocolFamilyAdapter : RoseEarbudAdapter() {
     }
 }
 
-object RoseBudsFeelMk2Adapter : RoseBudsFeelProtocolFamilyAdapter() {
-    const val ID = "rose-budsfeel-mk2"
-    val PRESENTATION_ID = RoseBudsFeelProtocolFamilyAdapter.PRESENTATION_ID
+class RoseBudsFeelMk2Adapter : RoseBudsFeelProtocolFamilyAdapter() {
 
     override val id: String = ID
     override val displayName: String = "ROSE BudsFeel MK2"
+    override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
     override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
     override val transportReadiness: TransportReadiness = TransportReadiness.CONNECTED
+    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
+    override val capabilities: EarbudCapabilities = EarbudCapabilities(
+        battery = true,
+        noiseControl = true,
+        windNoiseControl = true,
+        audioHandoff = true,
+    )
+    override val supportedNoiseModes: Set<NoiseMode> = NoiseMode.entries.toSet()
 
     override fun matches(identity: EarbudIdentity): Boolean {
         if (identity.nativeSystemEarbud) return false
         return normalizeDeviceName(identity.deviceName.orEmpty()) in MODEL_NAMES
     }
 
-    private val MODEL_NAMES = setOf("rosebudsfeelmk2", "budsfeelmk2")
+    companion object {
+        const val ID = "rose-budsfeel-mk2"
+        val PRESENTATION_ID = RoseBudsFeelProtocolFamilyAdapter.PRESENTATION_ID
+        private val MODEL_NAMES = setOf("rosebudsfeelmk2", "budsfeelmk2")
+    }
 }
 
-private class RoseEarfreeProtocol : EarbudProtocol {
+private class RoseEarfreeProtocolSession : ProtocolSession {
     private val decoder = RoseEarfreeI5WireCodec.Decoder()
     private var handshakePublished = false
 
@@ -174,13 +205,14 @@ private class RoseEarfreeProtocol : EarbudProtocol {
         )
     }
 
-    override fun offer(bytes: ByteArray): List<EarbudEvent> = buildList {
+    override fun offer(bytes: ByteArray): List<ProtocolEvent> = buildList {
         var acceptedFrame = false
         decoder.offer(bytes).forEach { frame ->
             RoseEarfreeI5WireCodec.parseBattery(frame)?.let { battery ->
                 acceptedFrame = true
+                add(ProtocolEvent.CapabilitiesIdentified(battery = true))
                 add(
-                    EarbudEvent.BatteryChanged(
+                    ProtocolEvent.BatteryChanged(
                         EarbudBattery(
                             left = BatteryReading(battery.leftPercent, battery.leftCharging),
                             right = BatteryReading(battery.rightPercent, battery.rightCharging),
@@ -191,11 +223,17 @@ private class RoseEarfreeProtocol : EarbudProtocol {
             }
             RoseEarfreeI5WireCodec.parseNoiseMode(frame)?.let { mode ->
                 acceptedFrame = true
-                add(EarbudEvent.NoiseModeChanged(mode.toDomainMode(), acknowledged = true))
+                add(
+                    ProtocolEvent.CapabilitiesIdentified(
+                        battery = false,
+                        noiseModes = NoiseMode.entries.toSet(),
+                    ),
+                )
+                add(ProtocolEvent.NoiseModeChanged(mode.toDomainMode()))
             }
         }
         if (acceptedFrame && !handshakePublished) {
-            add(0, EarbudEvent.Handshake(accepted = true))
+            add(0, ProtocolEvent.HandshakeAccepted)
             handshakePublished = true
         }
     }
@@ -220,7 +258,7 @@ private class RoseEarfreeProtocol : EarbudProtocol {
     }
 }
 
-private class RoseBudsFeelProtocol : EarbudProtocol {
+private class RoseBudsFeelProtocolSession : ProtocolSession {
     private val decoder = RoseBudsFeelMk2WireCodec.Decoder()
     private var sequence = 0
     private var handshakePublished = false
@@ -239,31 +277,39 @@ private class RoseBudsFeelProtocol : EarbudProtocol {
         is ControlRequest.SetNoiseMode -> listOf(queryStatus())
     }
 
-    override fun offer(bytes: ByteArray): List<EarbudEvent> {
+    override fun offer(bytes: ByteArray): List<ProtocolEvent> {
         val states = decoder.offer(bytes)
         if (states.isEmpty()) return emptyList()
         return buildList {
             if (!handshakePublished) {
-                add(EarbudEvent.Handshake(accepted = true))
+                add(ProtocolEvent.HandshakeAccepted)
                 handshakePublished = true
             }
             states.forEach { state ->
                 add(
                     when (state) {
                         is RoseBudsFeelMk2WireCodec.State.Battery ->
-                            EarbudEvent.BatteryChanged(
+                            ProtocolEvent.BatteryChanged(
                                 EarbudBattery(
                                     left = BatteryReading(state.leftPercent, false),
                                     right = BatteryReading(state.rightPercent, false),
                                     case = BatteryReading(state.casePercent, false),
                                 ),
-                            )
+                            ).also {
+                                add(ProtocolEvent.CapabilitiesIdentified(battery = true))
+                            }
 
                         is RoseBudsFeelMk2WireCodec.State.Noise ->
-                            EarbudEvent.NoiseModeChanged(
+                            ProtocolEvent.NoiseModeChanged(
                                 state.mode.toDomainMode(),
-                                acknowledged = true,
-                            )
+                            ).also {
+                                add(
+                                    ProtocolEvent.CapabilitiesIdentified(
+                                        battery = false,
+                                        noiseModes = NoiseMode.entries.toSet(),
+                                    ),
+                                )
+                            }
                     },
                 )
             }

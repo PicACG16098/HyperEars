@@ -14,19 +14,19 @@ class MiLinkCarrierIdentityTest {
     fun mapsAllAdaptersOntoOnlyTheTwoStockFormCarriers() {
         assertEquals(
             MiLinkCarrierIdentity.TWS_DEVICE_ID,
-            MiLinkCarrierIdentity.deviceId(StandardEarbudAdapter()),
+            MiLinkCarrierIdentity.deviceId(StandardEarbudAdapter().snapshot()),
         )
         assertEquals(
             MiLinkCarrierIdentity.TWS_DEVICE_ID,
-            MiLinkCarrierIdentity.deviceId(VivoTwsAir3ProAdapter),
+            MiLinkCarrierIdentity.deviceId(VivoTwsAir3ProAdapter().snapshot()),
         )
         assertEquals(
             MiLinkCarrierIdentity.TWS_DEVICE_ID,
-            MiLinkCarrierIdentity.deviceId(StarRingUltraAdapter),
+            MiLinkCarrierIdentity.deviceId(StarRingUltraAdapter().snapshot()),
         )
         assertEquals(
             MiLinkCarrierIdentity.HEADPHONES_DEVICE_ID,
-            MiLinkCarrierIdentity.deviceId(BoseQuietComfortHeadphonesAdapter),
+            MiLinkCarrierIdentity.deviceId(BoseQuietComfortHeadphonesAdapter().snapshot()),
         )
     }
 

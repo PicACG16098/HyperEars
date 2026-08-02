@@ -3,17 +3,26 @@ package dev.hyperears.integration
 import dev.hyperears.protocol.bose.BoseBmapWireCodec
 
 /** One Bose BMAP codec session; transport and lifecycle remain owned by the system module. */
-internal class BoseBmapEarbudProtocol(
-    private val expectedProfile: BoseBmapProfile? = null,
+internal class BoseBmapProtocolSession(
+    expectedProductId: Int? = null,
     private val fallbackFormFactor: HeadsetFormFactor = HeadsetFormFactor.TWS,
-) : EarbudProtocol {
+) : ProtocolSession {
     private val decoder = BoseBmapWireCodec.Decoder()
     private val modeConfigs = mutableMapOf<Int, BoseBmapWireCodec.ModeConfig>()
     private var identityAccepted: Boolean? = null
-    private var activeProfile: BoseBmapProfile? = null
-    private var pendingBattery: EarbudEvent.BatteryChanged? = null
+    private var activeConfig: BoseWireConfig? = null
+    var discoveredConfig: BoseWireConfig? = null
+        private set
+    private var pendingBattery: ProtocolEvent.BatteryChanged? = null
     private var currentModeIndex: Int? = null
     private var currentCncEnabled: Boolean? = null
+    private var requiredProductId: Int? = expectedProductId
+
+    /** The owning Adapter is the only object allowed to select writable wire behavior. */
+    fun configure(configuration: BoseWireConfig) {
+        activeConfig = configuration
+        configuration.productId?.let { requiredProductId = it }
+    }
 
     override fun initialReadCommands(): List<ByteArray> = listOf(
         // QC35/35 II require this harmless BMAP initialization read before other requests.
@@ -23,53 +32,53 @@ internal class BoseBmapEarbudProtocol(
     )
 
     override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> initialReadCommands() + activeProfile.noiseReadCommands()
-        is ControlRequest.SetNoiseMode -> activeProfile
+        ControlRequest.Refresh -> initialReadCommands() + activeConfig.noiseReadCommands()
+        is ControlRequest.SetNoiseMode -> activeConfig
             ?.noiseControl
             ?.encode(request.mode)
             .orEmpty()
     }
 
-    override fun followUpCommands(event: EarbudEvent): List<ByteArray> = when {
-        event is EarbudEvent.ModelIdentified &&
-            event.modelId == activeProfile?.modelId &&
-            activeProfile?.productId != null -> {
-            activeProfile.noiseReadCommands().ifEmpty(::capabilityProbeCommands)
+    override fun followUpCommands(event: ProtocolEvent): List<ByteArray> = when {
+        event is ProtocolEvent.ProductIdentified &&
+            event.productId == activeConfig?.productId -> {
+            activeConfig.noiseReadCommands().ifEmpty(::capabilityProbeCommands)
         }
 
-        event is EarbudEvent.Handshake &&
-            event.accepted &&
-            activeProfile == null -> capabilityProbeCommands()
+        event === ProtocolEvent.HandshakeAccepted &&
+            activeConfig == null -> capabilityProbeCommands()
 
         else -> emptyList()
     }
 
     override fun readback(request: ControlRequest): List<ByteArray> = when (request) {
         ControlRequest.Refresh -> emptyList()
-        is ControlRequest.SetNoiseMode -> activeProfile.noiseStateReadCommands()
+        is ControlRequest.SetNoiseMode -> activeConfig.noiseStateReadCommands()
     }
 
-    override fun offer(bytes: ByteArray): List<EarbudEvent> = buildList {
+    override fun offer(bytes: ByteArray): List<ProtocolEvent> = buildList {
         decoder.offer(bytes).forEach { frame ->
             if (BoseBmapWireCodec.isFunctionBlockInfo(frame)) return@forEach
 
             BoseBmapWireCodec.parseProductIdentity(frame)?.let { identity ->
-                identityAccepted = expectedProfile?.productId == null ||
-                    identity.productId == expectedProfile.productId
-                activeProfile = BoseBmapModelRegistry
-                    .find(identity.productId)
-                    ?.takeIf { identityAccepted == true }
-                activeProfile?.let { profile ->
-                    add(EarbudEvent.ModelIdentified(profile.modelId))
+                identityAccepted = requiredProductId == null ||
+                    identity.productId == requiredProductId
+                if (identityAccepted == true) {
+                    add(ProtocolEvent.ProductIdentified(identity.productId))
+                    add(ProtocolEvent.HandshakeAccepted)
+                } else {
+                    add(ProtocolEvent.HandshakeRejected)
                 }
-                add(EarbudEvent.Handshake(identityAccepted == true))
-                if (identityAccepted == true) pendingBattery?.let(::add)
+                if (identityAccepted == true) pendingBattery?.let { batteryEvent ->
+                    add(ProtocolEvent.CapabilitiesIdentified(battery = true))
+                    add(batteryEvent)
+                }
                 pendingBattery = null
                 return@forEach
             }
 
             BoseBmapWireCodec.parseBatteryState(frame)?.let { battery ->
-                val event = EarbudEvent.BatteryChanged(
+                val event = ProtocolEvent.BatteryChanged(
                     EarbudBattery(
                         left = BatteryReading(battery.leftPercent, charging = false),
                         right = BatteryReading(battery.rightPercent, charging = false),
@@ -78,22 +87,30 @@ internal class BoseBmapEarbudProtocol(
                     ),
                 )
                 when {
-                    expectedProfile == null || identityAccepted == true -> add(event)
+                    requiredProductId == null || identityAccepted == true -> {
+                        add(ProtocolEvent.CapabilitiesIdentified(battery = true))
+                        add(event)
+                    }
                     identityAccepted == null -> pendingBattery = event
                 }
                 return@forEach
             }
 
-            if (identityAccepted == true && activeProfile?.noiseControl == null) {
-                discoverNoiseProfile(frame)?.let { profile ->
-                    activeProfile = profile
-                    add(EarbudEvent.ModelIdentified(profile.modelId))
+            if (identityAccepted == true && activeConfig?.noiseControl == null) {
+                discoverNoiseConfig(frame)?.let { configuration ->
+                    discoveredConfig = configuration
+                    add(
+                        ProtocolEvent.CapabilitiesIdentified(
+                            battery = true,
+                            noiseModes = configuration.noiseControl?.supportedModes.orEmpty(),
+                        ),
+                    )
                 }
             }
 
-            val noiseControl = activeProfile?.noiseControl
+            val noiseControl = activeConfig?.noiseControl ?: discoveredConfig?.noiseControl
             when (noiseControl) {
-                is BoseNoiseControlProfile.AudioModes -> {
+                is BoseNoiseControlConfig.AudioModes -> {
                     noiseControl.modeConfigLayout?.let { layout ->
                         BoseBmapWireCodec.parseModeConfig(frame, layout)
                     }?.let { config ->
@@ -101,40 +118,39 @@ internal class BoseBmapEarbudProtocol(
                         currentModeIndex
                             ?.takeIf { it == config.index }
                             ?.toNoiseMode(noiseControl)
-                            ?.let { add(EarbudEvent.NoiseModeChanged(it, acknowledged = true)) }
+                            ?.let { add(ProtocolEvent.NoiseModeChanged(it)) }
                         return@forEach
                     }
 
                     BoseBmapWireCodec.parseCurrentMode(frame)?.let { modeIndex ->
                         currentModeIndex = modeIndex
                         modeIndex.toNoiseMode(noiseControl)?.let { mode ->
-                            add(EarbudEvent.NoiseModeChanged(mode, acknowledged = true))
+                            add(ProtocolEvent.NoiseModeChanged(mode))
                         }
                         return@forEach
                     }
                 }
 
-                is BoseNoiseControlProfile.Anr -> {
+                is BoseNoiseControlConfig.Anr -> {
                     BoseBmapWireCodec.parseAnrState(frame)?.let { state ->
                         state.level.toNoiseMode(noiseControl)?.let { mode ->
-                            add(EarbudEvent.NoiseModeChanged(mode, acknowledged = true))
+                            add(ProtocolEvent.NoiseModeChanged(mode))
                         }
                         return@forEach
                     }
                 }
 
-                is BoseNoiseControlProfile.Cnc -> {
+                is BoseNoiseControlConfig.Cnc -> {
                     BoseBmapWireCodec.parseCncState(frame)?.let { state ->
                         currentCncEnabled = state.enabled
                         add(
-                            EarbudEvent.NoiseModeChanged(
+                            ProtocolEvent.NoiseModeChanged(
                                 mode = when {
                                     !state.enabled -> NoiseMode.OFF
                                     state.rawLevel >= state.maximumRawLevel ->
                                         NoiseMode.TRANSPARENCY
                                     else -> NoiseMode.ANC
                                 },
-                                acknowledged = true,
                             ),
                         )
                         return@forEach
@@ -145,7 +161,7 @@ internal class BoseBmapEarbudProtocol(
             }
 
             add(
-                EarbudEvent.UnknownFrame(
+                ProtocolEvent.UnknownFrame(
                     version = 0,
                     vendor = frame.functionBlock,
                     command = frame.function,
@@ -159,14 +175,14 @@ internal class BoseBmapEarbudProtocol(
         decoder.reset()
         modeConfigs.clear()
         identityAccepted = null
-        activeProfile = null
+        discoveredConfig = null
         pendingBattery = null
         currentModeIndex = null
         currentCncEnabled = null
     }
 
-    private fun BoseNoiseControlProfile.encode(mode: NoiseMode): List<ByteArray> = when (this) {
-        is BoseNoiseControlProfile.AudioModes -> when (mode) {
+    private fun BoseNoiseControlConfig.encode(mode: NoiseMode): List<ByteArray> = when (this) {
+        is BoseNoiseControlConfig.AudioModes -> when (mode) {
             NoiseMode.ANC -> listOf(BoseBmapWireCodec.switchMode(quietModeIndex))
             NoiseMode.TRANSPARENCY -> listOf(BoseBmapWireCodec.switchMode(awareModeIndex))
             NoiseMode.WIND -> windModeIndex()
@@ -176,14 +192,14 @@ internal class BoseBmapEarbudProtocol(
             NoiseMode.OFF -> emptyList()
         }
 
-        is BoseNoiseControlProfile.Anr -> when (mode) {
+        is BoseNoiseControlConfig.Anr -> when (mode) {
             NoiseMode.ANC -> listOf(BoseBmapWireCodec.setAnr(highValue))
             NoiseMode.OFF -> listOf(BoseBmapWireCodec.setAnr(offValue))
             NoiseMode.WIND -> listOf(BoseBmapWireCodec.setAnr(windValue))
             NoiseMode.TRANSPARENCY -> emptyList()
         }
 
-        is BoseNoiseControlProfile.Cnc -> when (mode) {
+        is BoseNoiseControlConfig.Cnc -> when (mode) {
             NoiseMode.ANC -> listOf(BoseBmapWireCodec.setCnc(rawLevel = 0, enabled = true))
             NoiseMode.TRANSPARENCY -> {
                 val command = BoseBmapWireCodec.setCnc(
@@ -200,29 +216,29 @@ internal class BoseBmapEarbudProtocol(
         }
     }
 
-    private fun BoseBmapProfile?.noiseReadCommands(): List<ByteArray> =
+    private fun BoseWireConfig?.noiseReadCommands(): List<ByteArray> =
         this?.noiseControl?.let { control ->
             when (control) {
-                is BoseNoiseControlProfile.AudioModes -> buildList {
+                is BoseNoiseControlConfig.AudioModes -> buildList {
                     if (control.modeConfigLayout != null) {
                         add(BoseBmapWireCodec.queryModeConfigs)
                     }
                     add(BoseBmapWireCodec.queryCurrentMode)
                 }
 
-                is BoseNoiseControlProfile.Anr -> listOf(BoseBmapWireCodec.queryAnr)
-                is BoseNoiseControlProfile.Cnc -> listOf(BoseBmapWireCodec.queryCnc)
+                is BoseNoiseControlConfig.Anr -> listOf(BoseBmapWireCodec.queryAnr)
+                is BoseNoiseControlConfig.Cnc -> listOf(BoseBmapWireCodec.queryCnc)
             }
         }.orEmpty()
 
-    private fun BoseBmapProfile?.noiseStateReadCommands(): List<ByteArray> =
+    private fun BoseWireConfig?.noiseStateReadCommands(): List<ByteArray> =
         this?.noiseControl?.let { control ->
             when (control) {
-                is BoseNoiseControlProfile.AudioModes ->
+                is BoseNoiseControlConfig.AudioModes ->
                     listOf(BoseBmapWireCodec.queryCurrentMode)
 
-                is BoseNoiseControlProfile.Anr -> listOf(BoseBmapWireCodec.queryAnr)
-                is BoseNoiseControlProfile.Cnc -> listOf(BoseBmapWireCodec.queryCnc)
+                is BoseNoiseControlConfig.Anr -> listOf(BoseBmapWireCodec.queryAnr)
+                is BoseNoiseControlConfig.Cnc -> listOf(BoseBmapWireCodec.queryCnc)
             }
         }.orEmpty()
 
@@ -238,9 +254,9 @@ internal class BoseBmapEarbudProtocol(
         BoseBmapWireCodec.queryAnr,
     )
 
-    private fun discoverNoiseProfile(
+    private fun discoverNoiseConfig(
         frame: BoseBmapWireCodec.Frame,
-    ): BoseBmapProfile? {
+    ): BoseWireConfig? {
         val cncState = BoseBmapWireCodec.parseCncState(frame)
         val (dialect, cncMaximumRawLevel) = when {
             BoseBmapWireCodec.parseCurrentMode(frame) != null ->
@@ -253,35 +269,35 @@ internal class BoseBmapEarbudProtocol(
 
             else -> return null
         }
-        return BoseCapabilityAdapterRegistry.profile(
+        return BoseCapabilityConfigRegistry.config(
             formFactor = fallbackFormFactor,
             dialect = dialect,
             cncMaximumRawLevel = cncMaximumRawLevel,
         )
     }
 
-    private fun Int.toNoiseMode(profile: BoseNoiseControlProfile.AudioModes): NoiseMode? =
+    private fun Int.toNoiseMode(configuration: BoseNoiseControlConfig.AudioModes): NoiseMode? =
         when (this) {
-            profile.quietModeIndex -> NoiseMode.ANC
-            profile.awareModeIndex -> NoiseMode.TRANSPARENCY
-            in profile.additionalAncModeIndices -> NoiseMode.ANC
+            configuration.quietModeIndex -> NoiseMode.ANC
+            configuration.awareModeIndex -> NoiseMode.TRANSPARENCY
+            in configuration.additionalAncModeIndices -> NoiseMode.ANC
             else -> modeConfigs[this]?.let { config ->
                 when {
-                    profile.windModeFromConfig && config.wind -> NoiseMode.WIND
-                    config.rawCnc >= profile.fullAwareCnc -> NoiseMode.TRANSPARENCY
+                    configuration.windModeFromConfig && config.wind -> NoiseMode.WIND
+                    config.rawCnc >= configuration.fullAwareCnc -> NoiseMode.TRANSPARENCY
                     else -> NoiseMode.ANC
                 }
             }
         }
 
-    private fun Int.toNoiseMode(profile: BoseNoiseControlProfile.Anr): NoiseMode? = when (this) {
-        profile.offValue -> NoiseMode.OFF
-        profile.highValue -> NoiseMode.ANC
-        profile.windValue -> NoiseMode.WIND
+    private fun Int.toNoiseMode(configuration: BoseNoiseControlConfig.Anr): NoiseMode? = when (this) {
+        configuration.offValue -> NoiseMode.OFF
+        configuration.highValue -> NoiseMode.ANC
+        configuration.windValue -> NoiseMode.WIND
         else -> null
     }
 
-    private fun BoseNoiseControlProfile.AudioModes.windModeIndex(): Int? {
+    private fun BoseNoiseControlConfig.AudioModes.windModeIndex(): Int? {
         if (!windModeFromConfig) return null
         return modeConfigs.values
             .asSequence()

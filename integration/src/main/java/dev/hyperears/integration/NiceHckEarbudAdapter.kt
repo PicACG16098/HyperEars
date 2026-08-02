@@ -18,12 +18,11 @@ open class NiceHckEarbudAdapter : StandardEarbudAdapter() {
     }
 }
 
-object NiceHckYuanDaoOrigAdapter : NiceHckEarbudAdapter() {
-    const val ID = "nicehck-yuandao-orig-in"
-    val PRESENTATION_ID = MiLinkCardPresentationId(ID)
+class NiceHckYuanDaoOrigAdapter : NiceHckEarbudAdapter() {
 
     override val id: String = ID
     override val displayName: String = "NiceHCK YuanDao OriG in"
+    override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
     override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness = TransportReadiness.PROTOCOL_HANDSHAKE
@@ -48,18 +47,22 @@ object NiceHckYuanDaoOrigAdapter : NiceHckEarbudAdapter() {
         return name in ORIG_MODEL_NAMES
     }
 
-    override fun createProtocol(): EarbudProtocol = NiceHckOrigProtocol()
+    override fun createProtocolSession(): ProtocolSession = NiceHckOrigProtocolSession()
 
-    private const val SPP_UUID = "0000a100-1000-8000-4e48-434b4354524c"
-    private val ORIG_MODEL_NAMES = setOf(
-        "origin",
-        "yuandaoorigin",
-        "nicehckorigin",
-        "nicehckyuandaoorigin",
-    )
+    companion object {
+        const val ID = "nicehck-yuandao-orig-in"
+        val PRESENTATION_ID = MiLinkCardPresentationId(ID)
+        private const val SPP_UUID = "0000a100-1000-8000-4e48-434b4354524c"
+        private val ORIG_MODEL_NAMES = setOf(
+            "origin",
+            "yuandaoorigin",
+            "nicehckorigin",
+            "nicehckyuandaoorigin",
+        )
+    }
 }
 
-private class NiceHckOrigProtocol : EarbudProtocol {
+private class NiceHckOrigProtocolSession : ProtocolSession {
     private val decoder = NiceHckWireCodec.Decoder()
     private var handshakeAccepted = false
 
@@ -80,17 +83,17 @@ private class NiceHckOrigProtocol : EarbudProtocol {
         is ControlRequest.SetNoiseMode -> listOf(NiceHckWireCodec.queryNoiseMode)
     }
 
-    override fun offer(bytes: ByteArray): List<EarbudEvent> = buildList {
+    override fun offer(bytes: ByteArray): List<ProtocolEvent> = buildList {
         decoder.offer(bytes).forEach { frame ->
             val battery = NiceHckWireCodec.parseBattery(frame)
             val noiseMode = NiceHckWireCodec.parseNoiseMode(frame)
             if (!handshakeAccepted && (battery != null || noiseMode != null)) {
                 handshakeAccepted = true
-                add(EarbudEvent.Handshake(accepted = true))
+                add(ProtocolEvent.HandshakeAccepted)
             }
             battery?.let {
                 add(
-                    EarbudEvent.BatteryChanged(
+                    ProtocolEvent.BatteryChanged(
                         EarbudBattery(
                             left = BatteryReading(it.leftPercent, false),
                             right = BatteryReading(it.rightPercent, false),
@@ -100,7 +103,7 @@ private class NiceHckOrigProtocol : EarbudProtocol {
                 )
             }
             noiseMode?.let { mode ->
-                add(EarbudEvent.NoiseModeChanged(mode.toDomainMode(), acknowledged = true))
+                add(ProtocolEvent.NoiseModeChanged(mode.toDomainMode()))
             }
         }
     }

@@ -5,20 +5,20 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import dev.hyperears.integration.EarbudState
-import dev.hyperears.integration.EdifierW860NBProAdapter
+import dev.hyperears.integration.EdifierMiLinkPresentationIds
 import dev.hyperears.integration.NoiseMode
 import java.lang.ref.WeakReference
 
 /**
- * Adds Edifier W860NB PRO's wind-noise mode to MiLink's ANC card.
+ * Presents a confirmed four-mode Edifier dialect in MiLink's ANC card.
  *
  * The stock three-item row (ANC, transparency, off) is preserved. A fourth wind-noise item is
  * added using MiLink's own [HOST_ANC_ITEM_CLASS] so the host retains layout, typography, icon
- * sizing and selected-state animation. Comfort noise mode (ANC_VALUE_COMFORT) is projected onto
- * the ANC button since MiLink has no native comfort-NC slot.
+ * sizing and selected-state animation. Vendor-specific ANC depths share MiLink's ANC item because
+ * MiLink has no native slot for each depth.
  */
-internal object EdifierW860NBProMiLinkCardAdapter : MiLinkCardAdapter {
-    override val presentationId = EdifierW860NBProAdapter.PRESENTATION_ID
+internal object EdifierFourModeMiLinkCardAdapter : MiLinkCardAdapter {
+    override val presentationId = EdifierMiLinkPresentationIds.FOUR_MODE
 
     /** WIND is its own mode, not projected onto any native slot. */
     override fun projectNativeNoiseMode(mode: NoiseMode?): NoiseMode? = mode
@@ -74,7 +74,7 @@ internal object EdifierW860NBProMiLinkCardAdapter : MiLinkCardAdapter {
             environment = environment,
         )
         wind.setOnClickListener { binding.onWindClick() }
-        ModuleLog.debug("MiLinkUi", "bound Edifier W860NB PRO wind mode")
+        ModuleLog.debug("MiLinkUi", "bound Edifier four-mode presentation")
         return binding
     }
 
@@ -111,7 +111,7 @@ internal object EdifierW860NBProMiLinkCardAdapter : MiLinkCardAdapter {
 
         fun onWindClick() {
             val current = environment.stateProvider(address)
-            val target = EdifierWindControlPolicy.request(current) ?: return
+            val target = EdifierFourModeControlPolicy.request(current) ?: return
             environment.controlSender(address, target)
         }
 
@@ -139,8 +139,8 @@ internal object EdifierW860NBProMiLinkCardAdapter : MiLinkCardAdapter {
     private const val DISABLED_ALPHA = 0.45f
 }
 
-/** Pure toggle policy for W860NB PRO's fourth native mode item. */
-internal object EdifierWindControlPolicy {
+/** Pure toggle policy for the fourth native Edifier mode item. */
+internal object EdifierFourModeControlPolicy {
     fun request(state: EarbudState): NoiseMode? {
         if (!state.sessionActive || !state.connected) return null
         return if (state.noiseMode == NoiseMode.WIND) NoiseMode.ANC else NoiseMode.WIND

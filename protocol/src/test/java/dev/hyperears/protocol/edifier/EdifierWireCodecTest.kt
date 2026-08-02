@@ -51,6 +51,29 @@ class EdifierWireCodecTest {
         assertEquals(2, anc!!.level)
     }
 
+    /** Evo Pro device-state response: first decrypted byte A6^A5 = 3%. */
+    @Test
+    fun `parse Evo Pro F2 response gives aggregate battery`() {
+        val frame = EdifierWireCodec.Decoder().offer(
+            hex("BB EC F2 00 06 A6 C1 C7 A5 A6 B4 CC"),
+        ).single()
+
+        assertEquals(EdifierWireCodec.CMD_DEVICE_STATE_QUERY, frame.commandIndex)
+        assertEquals(3, EdifierWireCodec.parseBatteryState(frame)?.wholeUnit)
+    }
+
+    /** Evo Pro ANC response: BE^A5=1B slot, A3^A5=06 (off). */
+    @Test
+    fun `parse Evo Pro ANC response preserves slot and value`() {
+        val frame = EdifierWireCodec.Decoder().offer(
+            hex("BB EC CC 00 02 BE A3 D6"),
+        ).single()
+
+        val anc = requireNotNull(EdifierWireCodec.parseAncState(frame))
+        assertEquals(0x1B, anc.mode)
+        assertEquals(6, anc.level)
+    }
+
     // ── Send framing ──
 
     /** Battery query: AA EC D0 00 00 66 */
@@ -109,6 +132,23 @@ class EdifierWireCodecTest {
         assertNull(EdifierWireCodec.parseBatteryState(frame))
     }
 
+    @Test
+    fun `outbound echo cannot establish battery or ANC evidence`() {
+        val batteryEcho = EdifierWireCodec.Decoder().offer(EdifierWireCodec.queryBattery).single()
+        val ancEcho = EdifierWireCodec.Decoder().offer(
+            EdifierWireCodec.setAnc(EdifierWireCodec.ANC_VALUE_DEEP),
+        ).single()
+
+        assertNull(EdifierWireCodec.parseBatteryState(batteryEcho))
+        assertNull(EdifierWireCodec.parseAncState(ancEcho))
+    }
+
     private fun ByteArray.toHex(): String =
         joinToString(" ") { "%02X".format(it.toInt() and 0xFF) }
+
+    private fun hex(value: String): ByteArray = value
+        .trim()
+        .split(Regex("\\s+"))
+        .map { it.toInt(16).toByte() }
+        .toByteArray()
 }

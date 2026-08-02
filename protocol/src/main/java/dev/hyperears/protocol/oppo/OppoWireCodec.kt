@@ -5,7 +5,7 @@ package dev.hyperears.protocol.oppo
  *
  * This codec deliberately keeps model semantics out of the wire layer. In particular,
  * `OPPO Enco Air2 Pro` reverses two ANC values used by the rest of the family; the selected
- * integration profile owns that interpretation.
+ * integration Adapter owns that interpretation.
  */
 object OppoWireCodec {
     const val QUERY_BATTERY = 0x0106

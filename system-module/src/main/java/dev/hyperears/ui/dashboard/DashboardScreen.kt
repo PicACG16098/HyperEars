@@ -316,14 +316,14 @@ private fun DeviceSessionCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "Profile  ${session.profileName}",
+                        text = "Adapter  ${session.adapterName}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "ID  ${session.profileId}",
+                        text = "ID  ${session.adapterId}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -340,7 +340,7 @@ private fun DeviceSessionCard(
                 PhasePill(session.phase)
             }
 
-            ProfileFacts(session)
+            AdapterFacts(session)
 
             Text(
                 text = "耳机链路",
@@ -364,10 +364,10 @@ private fun DeviceSessionCard(
 }
 
 @Composable
-private fun ProfileFacts(session: DeviceSessionUiModel) {
-    if (!session.profileResolved) {
+private fun AdapterFacts(session: DeviceSessionUiModel) {
+    if (!session.adapterResolved) {
         Text(
-            text = session.profileSummary,
+            text = session.adapterSummary,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
         )
@@ -375,7 +375,7 @@ private fun ProfileFacts(session: DeviceSessionUiModel) {
     }
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(
-            text = session.profileSummary,
+            text = session.adapterSummary,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -396,7 +396,7 @@ private fun EarbudLinkStrip(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         stages.forEach { stage ->
-            LinkState(stage.label, stage.complete, Modifier.weight(1f))
+            LinkState(stage, Modifier.weight(1f))
         }
     }
 }
@@ -415,19 +415,20 @@ private fun MetricStrip(metrics: List<DeviceMetric>) {
 
 @Composable
 private fun LinkState(
-    label: String,
-    observed: Boolean,
+    stage: DeviceLinkStage,
     modifier: Modifier = Modifier,
 ) {
-    val color = if (observed) {
+    val color = if (stage.complete) {
         MaterialTheme.colorScheme.primary
+    } else if (stage.active) {
+        MaterialTheme.colorScheme.tertiary
     } else {
         MaterialTheme.colorScheme.outline
     }
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
-        color = if (observed) {
+        color = if (stage.complete || stage.active) {
             color.copy(alpha = 0.12f)
         } else {
             MaterialTheme.colorScheme.surfaceContainer
@@ -439,12 +440,20 @@ private fun LinkState(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             StatusDot(color)
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = color,
-                maxLines = 1,
-            )
+            Column {
+                Text(
+                    text = stage.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = color,
+                    maxLines = 1,
+                )
+                Text(
+                    text = stage.value,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -527,8 +536,14 @@ private fun CompactMetric(
 @Composable
 private fun PhasePill(phase: DevicePhase) {
     val color = when (phase) {
-        DevicePhase.CONNECTING -> MaterialTheme.colorScheme.tertiary
-        DevicePhase.PREPARING_PRIVATE_CHANNEL -> MaterialTheme.colorScheme.secondary
+        DevicePhase.SYSTEM_DISCONNECTED,
+        DevicePhase.PROTOCOL_REJECTED,
+        DevicePhase.TRANSPORT_DORMANT,
+        -> MaterialTheme.colorScheme.error
+        DevicePhase.TRANSPORT_CONNECTING,
+        DevicePhase.TRANSPORT_RECOVERING,
+        DevicePhase.PROTOCOL_CONFIRMING,
+        -> MaterialTheme.colorScheme.secondary
         DevicePhase.WAITING_FOR_MILINK -> MaterialTheme.colorScheme.tertiary
         DevicePhase.STATE_ACCEPTED,
         DevicePhase.IDENTITY_QUERIED,

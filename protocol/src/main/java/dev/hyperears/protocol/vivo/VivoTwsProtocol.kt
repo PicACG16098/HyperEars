@@ -35,12 +35,12 @@ object VivoTwsProtocol {
     }
 
     /**
-     * Immutable wire profile selected by a concrete model adapter.
+     * Immutable wire configuration selected by a concrete model adapter.
      *
-     * Profiles describe byte-level differences only. They deliberately do not contain retail
+     * Configurations describe byte-level differences only. They deliberately do not contain retail
      * name matching, capabilities or transport policy.
      */
-    enum class Profile(
+    enum class WireConfig(
         val label: String,
         val note: String,
         internal val gaiaVersion: Int,
@@ -109,18 +109,18 @@ object VivoTwsProtocol {
         command = HANDSHAKE,
     )
 
-    fun queryNoiseMode(profile: Profile): ByteArray = frame(
-        version = profile.gaiaVersion,
+    fun queryNoiseMode(configuration: WireConfig): ByteArray = frame(
+        version = configuration.gaiaVersion,
         vendor = VIVO_VENDOR,
         command = QUERY_NOISE_MODE,
-        payload = profile.noiseQueryPayload.copyOf(),
+        payload = configuration.noiseQueryPayload.copyOf(),
     )
 
-    fun setNoiseMode(mode: NoiseMode, profile: Profile): ByteArray = frame(
-        version = profile.gaiaVersion,
+    fun setNoiseMode(mode: NoiseMode, configuration: WireConfig): ByteArray = frame(
+        version = configuration.gaiaVersion,
         vendor = VIVO_VENDOR,
         command = SET_NOISE_MODE,
-        payload = byteArrayOf(mode.wireValue.toByte()) + profile.noiseSetSuffix,
+        payload = byteArrayOf(mode.wireValue.toByte()) + configuration.noiseSetSuffix,
     )
 
     /**

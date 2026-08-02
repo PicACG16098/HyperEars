@@ -2,24 +2,24 @@ package dev.hyperears.ui.dashboard
 
 import dev.hyperears.integration.BatteryReading
 import dev.hyperears.integration.BatterySource
-import dev.hyperears.integration.EarbudAdapter
-import dev.hyperears.integration.EarbudAdapterRegistry
-import dev.hyperears.integration.GattTransportSpec
+import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.HeadsetFormFactor
-import dev.hyperears.integration.L2capEndpointSpec
 import dev.hyperears.integration.NoiseMode
-import dev.hyperears.integration.RfcommEndpointSpec
-import dev.hyperears.integration.TransportReadiness
+import dev.hyperears.integration.AdapterResolution
+import dev.hyperears.integration.PrivateTransportState
+import dev.hyperears.integration.ProtocolHandshakeState
+import dev.hyperears.integration.SystemProfileState
+import dev.hyperears.integration.TransportKind
 
 /** Complete, adapter-agnostic data required to render one dashboard card. */
 data class DeviceSessionUiModel(
     val deviceName: String,
     val address: String,
-    val profileName: String,
-    val profileId: String,
-    val profileSummary: String,
+    val adapterName: String,
+    val adapterId: String,
+    val adapterSummary: String,
     val controlSummary: String,
-    val profileResolved: Boolean,
+    val adapterResolved: Boolean,
     val phase: DevicePhase,
     val headsetLifecycle: List<DeviceLinkStage>,
     val miLinkLifecycle: List<DeviceLifecycleStage>,
@@ -28,7 +28,9 @@ data class DeviceSessionUiModel(
 
 data class DeviceLinkStage(
     val label: String,
+    val value: String,
     val complete: Boolean,
+    val active: Boolean,
 )
 
 data class DeviceMetric(
@@ -37,23 +39,23 @@ data class DeviceMetric(
 )
 
 /**
- * The only UI-layer boundary allowed to inspect an [EarbudAdapter].
+ * The UI consumes only the immutable runtime adapter snapshot.
  *
- * Compose receives a stable, generic presentation model. Concrete profiles, transport classes,
+ * Compose receives a stable, generic presentation model. Concrete adapters, transport classes,
  * battery topology and readiness rules never leak into the view hierarchy.
  */
 object DeviceSessionUiProjector {
     fun project(session: DeviceSessionSnapshot): DeviceSessionUiModel {
         val state = session.state
-        val adapter = EarbudAdapterRegistry.byId(state.modelId)
+        val adapter = state.adapter
         return DeviceSessionUiModel(
             deviceName = state.deviceName ?: "未命名耳机",
             address = state.address ?: "—",
-            profileName = adapter?.displayName ?: "未解析",
-            profileId = state.modelId ?: "—",
-            profileSummary = adapter?.profileSummary() ?: "当前 Profile ID 未在本版本注册",
+            adapterName = adapter?.displayName ?: "未解析",
+            adapterId = adapter?.id ?: "—",
+            adapterSummary = adapter?.adapterSummary() ?: "尚未建立 Adapter 快照",
             controlSummary = adapter?.controlSummary() ?: "能力未知",
-            profileResolved = adapter != null,
+            adapterResolved = adapter != null,
             phase = session.phase,
             headsetLifecycle = headsetLifecycle(session, adapter),
             miLinkLifecycle = session.miLinkLifecycle,
@@ -63,33 +65,55 @@ object DeviceSessionUiProjector {
 
     private fun headsetLifecycle(
         session: DeviceSessionSnapshot,
-        adapter: EarbudAdapter?,
+        adapter: AdapterSnapshot?,
     ): List<DeviceLinkStage> = buildList {
         val state = session.state
-        add(DeviceLinkStage("A2DP 会话", state.sessionActive))
-        if (state.privateProtocolRequired) {
-            add(DeviceLinkStage("私有通道", state.privateChannelConnected))
-            val requiresHandshake =
-                adapter?.transportReadiness == TransportReadiness.PROTOCOL_HANDSHAKE
-            add(
-                DeviceLinkStage(
-                    label = if (requiresHandshake) "协议确认" else "连接即就绪",
-                    complete = if (requiresHandshake) {
-                        state.handshakeAccepted
-                    } else {
-                        state.privateChannelConnected
-                    },
+        add(
+            DeviceLinkStage(
+                label = "系统音频",
+                value = state.lifecycle.systemProfile.displayName(),
+                complete = state.lifecycle.systemProfile == SystemProfileState.CONNECTED,
+                active = state.lifecycle.systemProfile != SystemProfileState.CONNECTED,
+            ),
+        )
+        add(
+            DeviceLinkStage(
+                label = "Adapter",
+                value = adapter?.resolution?.displayName() ?: "未解析",
+                complete = adapter != null,
+                active = adapter == null,
+            ),
+        )
+        add(
+            DeviceLinkStage(
+                label = "私有传输",
+                value = state.lifecycle.privateTransport.displayName(),
+                complete = state.lifecycle.privateTransport in setOf(
+                    PrivateTransportState.NOT_REQUIRED,
+                    PrivateTransportState.CONNECTED,
                 ),
-            )
-        } else {
-            add(DeviceLinkStage("身份桥", state.connected))
-            add(DeviceLinkStage("无私有通道", true))
-        }
+                active = state.lifecycle.privateTransport in setOf(
+                    PrivateTransportState.CONNECTING,
+                    PrivateTransportState.RECOVERING,
+                ),
+            ),
+        )
+        add(
+            DeviceLinkStage(
+                label = "协议确认",
+                value = state.lifecycle.protocolHandshake.displayName(),
+                complete = state.lifecycle.protocolHandshake in setOf(
+                    ProtocolHandshakeState.NOT_REQUIRED,
+                    ProtocolHandshakeState.CONFIRMED,
+                ),
+                active = state.lifecycle.protocolHandshake == ProtocolHandshakeState.PENDING,
+            ),
+        )
     }
 
     private fun metrics(
         session: DeviceSessionSnapshot,
-        adapter: EarbudAdapter?,
+        adapter: AdapterSnapshot?,
     ): List<DeviceMetric> = buildList {
         val battery = session.state.battery
         if (adapter?.formFactor == HeadsetFormFactor.HEADPHONES || battery.overall.available) {
@@ -116,19 +140,19 @@ object DeviceSessionUiProjector {
         )
     }
 
-    private fun EarbudAdapter.profileSummary(): String =
-        "形态  ${formFactor.displayName()}  ·  " +
+    private fun AdapterSnapshot.adapterSummary(): String =
+        "匹配  ${resolution.displayName()}  ·  形态  ${formFactor.displayName()}  ·  " +
             "电量  ${batterySource.displayName()}  ·  " +
             "传输  ${transportSummary()}"
 
-    private fun EarbudAdapter.transportSummary(): String {
+    private fun AdapterSnapshot.transportSummary(): String {
         if (!privateProtocolRequired) return "标准 A2DP/HFP"
-        return transports
+        return transportKinds
             .map { transport ->
                 when (transport) {
-                    is RfcommEndpointSpec -> "RFCOMM"
-                    is GattTransportSpec -> "GATT"
-                    is L2capEndpointSpec -> "L2CAP"
+                    TransportKind.RFCOMM -> "RFCOMM"
+                    TransportKind.GATT -> "GATT"
+                    TransportKind.L2CAP -> "L2CAP"
                 }
             }
             .distinct()
@@ -136,7 +160,7 @@ object DeviceSessionUiProjector {
             .ifEmpty { "未声明" }
     }
 
-    private fun EarbudAdapter.controlSummary(): String {
+    private fun AdapterSnapshot.controlSummary(): String {
         val modeLabels = supportedNoiseModes.map { mode -> mode.displayName() }
         return when {
             modeLabels.isNotEmpty() -> modeLabels.joinToString(" / ")
@@ -144,6 +168,34 @@ object DeviceSessionUiProjector {
             else -> "无"
         }
     }
+}
+
+private fun AdapterResolution.displayName(): String = when (this) {
+    AdapterResolution.STANDARD -> "标准"
+    AdapterResolution.EXACT_MATCH -> "精确"
+    AdapterResolution.FAMILY_MATCH -> "家族"
+    AdapterResolution.PROTOCOL_CONFIRMED -> "协议确认"
+}
+
+private fun SystemProfileState.displayName(): String = when (this) {
+    SystemProfileState.DISCONNECTED -> "未连接"
+    SystemProfileState.CONNECTED -> "已连接"
+}
+
+private fun PrivateTransportState.displayName(): String = when (this) {
+    PrivateTransportState.NOT_REQUIRED -> "无需"
+    PrivateTransportState.IDLE -> "待连接"
+    PrivateTransportState.CONNECTING -> "连接中"
+    PrivateTransportState.CONNECTED -> "已连接"
+    PrivateTransportState.RECOVERING -> "恢复中"
+    PrivateTransportState.DORMANT -> "已休眠"
+}
+
+private fun ProtocolHandshakeState.displayName(): String = when (this) {
+    ProtocolHandshakeState.NOT_REQUIRED -> "无需"
+    ProtocolHandshakeState.PENDING -> "确认中"
+    ProtocolHandshakeState.CONFIRMED -> "已确认"
+    ProtocolHandshakeState.REJECTED -> "已拒绝"
 }
 
 private fun BatteryReading.displayValue(): String =

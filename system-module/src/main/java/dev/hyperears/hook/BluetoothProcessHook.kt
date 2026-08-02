@@ -83,6 +83,6 @@ internal class BluetoothProcessHook : HookContext() {
             "A2DP state=$state adapter=${earbudAdapter.id} " +
                 "address=${maskBluetoothAddress(address)}",
         )
-        EarbudSessionService.registerDevice(device)
+        EarbudSessionService.registerDevice(device, identity, earbudAdapter)
     }
 }

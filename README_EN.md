@@ -41,30 +41,32 @@ session.
 
 ## Compatibility overview
 
-| Device or family | Evidence | Battery | Noise control |
+| Adapter scope | Evidence level | Battery capability | Noise control |
 |---|---|---|---|
-| vivo / iQOO TWS | verified, public and family profiles | left/right/case | ANC/off/transparency |
-| OPPO Enco | reference profiles | left/right/case | ANC/off/transparency |
-| StarRing / LightYear | Ultra verified; other models standard fallback | left/right or Android aggregate | Ultra four-state |
-| Bose | one verified model plus BMAP product/capability profiles | aggregate or components | product-specific AudioModes/ANR/CNC |
-| Edifier | W860NB PRO verified; headphones family extrapolation | aggregate | verified model four-state |
-| ROSESELSA / ROSE | two public profiles plus protocol-line extrapolation | left/right/case or Android aggregate | four-state after confirmation |
-| NiceHCK / YuanDao | one public profile; other models standard fallback | left/right/case or Android aggregate | OriG in four-state after confirmation |
-| Apple AirPods | public AAP profiles and family extrapolation | dynamic components | Pro/Max three-state |
-| Sony | public WH/WF/WI/LinkBuds profiles and family extrapolation | model-specific topology | profile-specific ambient control |
-| standard A2DP/HFP headset | standard fallback | Android aggregate | none |
+| vivo / iQOO TWS | hardware-verified, public implementation, family extrapolation | private components | noise cancellation, off, transparency |
+| OPPO Enco | reference protocol | private components | noise cancellation, off, transparency |
+| StarRing / LightYear | Ultra hardware-verified; others standard fallback | Ultra private components; others Android aggregate | Ultra: noise cancellation, off, transparency, wind-noise reduction |
+| Bose | one hardware-verified model; public implementation, reference protocol and family extrapolation for others | private aggregate or components | explicit subset selected by BMAP product and control dialect |
+| Edifier | W860NB PRO and Huazai Evo Pro hardware-verified; others family extrapolation | headphone aggregate or TWS aggregate | noise cancellation, off, transparency and wind-noise reduction |
+| ROSESELSA / ROSE | two public implementations; product-line extrapolation; others standard fallback | private components after protocol confirmation; Android aggregate on fallback | four modes after protocol confirmation |
+| NiceHCK / YuanDao | OriG in public implementation; others standard fallback | private components after protocol confirmation; Android aggregate on fallback | OriG in: four modes after protocol confirmation |
+| Apple AirPods | public implementation and family extrapolation | private components | Pro / Max: noise cancellation, off, transparency |
+| Sony | public implementation, family extrapolation and standard fallback | private aggregate, private components or Android aggregate by form factor | explicit model-specific modes listed in the detailed matrix |
+| other standard A2DP/HFP headsets | standard fallback | Android aggregate | none |
 
-Public profiles, reference-derived profiles and family extrapolations are not hardware
-verification. A family name selects only a candidate protocol; adapters that require confirmation
+Every row includes device handoff and system volume. Public implementations, reference protocols
+and family extrapolations are not hardware verification. A family name selects only a candidate
+protocol; adapters that require confirmation
 also validate a service, on-wire identity or accepted state frame. Bose devices are refined by
 their on-wire BMAP product ID. Unknown BMAP devices retain battery telemetry and use GET-only
 AudioModes, ANR and CNC discovery; no write is exposed before a valid status response.
 
 AirPods are selected by the AAP service UUID, not by a display name alone. Battery packets carry a
 dynamic one-to-three component set; only Pro and Max refinements expose confirmed ANC controls.
-Sony private profiles require a valid RFCOMM v1/v2 initialization response. Exact profiles select
-battery topology and ambient-control dialect; unknown product-line models use conservative family
-fallbacks. The exhaustive model list, transports, evidence and known limits are maintained in the
+Sony private adapters require a valid RFCOMM v1/v2 initialization response. Exact model adapters
+select battery topology and the ambient-control dialect; unknown product-line models use
+conservative family fallbacks. The exhaustive model list, transports, evidence and known limits are
+maintained in the
 [compatibility matrix](docs/compatibility.md).
 
 ## Install
@@ -85,7 +87,7 @@ The public signing-certificate fingerprint and verification procedure are docume
 ## Repository layout
 
 - `protocol`: stateless wire codecs and incremental decoders.
-- `integration`: adapter hierarchy, capabilities and per-session protocol state machines.
+- `integration`: stateful adapters, capabilities and transferable per-device `ProtocolSession`s.
 - `system-module`: production LSPosed module, Bluetooth lifecycle, MiLink bridge and dashboard.
 - `protocol-test`: developer protocol laboratory; not shipped as a production artifact.
 

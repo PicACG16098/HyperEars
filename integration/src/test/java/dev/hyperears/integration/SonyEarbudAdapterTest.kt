@@ -27,10 +27,10 @@ class SonyEarbudAdapterTest {
     }
 
     @Test
-    fun unknownModelsInKnownProductLinesUseFamilyProtocolCapabilities() {
+    fun unknownModelsStartConservativeUntilTheFamilyProtocolIsConfirmed() {
         val noiseModel = resolve("WH-CH999N")
         assertEquals("sony-headphones-noise-protocol-family", noiseModel.id)
-        assertTrue(noiseModel.capabilities.noiseControl)
+        assertFalse(noiseModel.capabilities.noiseControl)
         assertEquals(
             "sony-headphones-noise-protocol-family",
             resolve("Sony WH-CH999N").id,
@@ -38,7 +38,7 @@ class SonyEarbudAdapterTest {
 
         val batteryModel = resolve("WF-C999")
         assertEquals("sony-tws-protocol-family", batteryModel.id)
-        assertTrue(batteryModel.capabilities.battery)
+        assertFalse(batteryModel.capabilities.battery)
         assertFalse(batteryModel.capabilities.noiseControl)
     }
 
@@ -55,12 +55,15 @@ class SonyEarbudAdapterTest {
     @Test
     fun v1HandshakeAcksAndAdvancesOneRequestPerDeviceAck() {
         val adapter = resolve("WH-1000XM3")
-        val protocol = requireNotNull(adapter.createProtocol())
+        val protocol = requireNotNull(adapter.protocolSession)
         val init = decode(protocol.initialReadCommands().single())
         assertArrayEquals(bytes("00 00"), init.payload)
 
         val handshakeEvents = protocol.offer(command(0, "01 00 40 10"))
-        assertEquals(listOf(EarbudEvent.Handshake(true)), handshakeEvents)
+        assertEquals(
+            listOf(ProtocolEvent.HandshakeAccepted),
+            handshakeEvents,
+        )
         assertEquals(
             SonyHeadphonesWireCodec.MessageType.ACK,
             decode(protocol.drainImmediateCommands().single()).type,
@@ -78,25 +81,55 @@ class SonyEarbudAdapterTest {
 
     @Test
     fun v1ParsesBatteryAndAmbientReports() {
-        val protocol = requireNotNull(resolve("WH-1000XM3").createProtocol())
+        val protocol = requireNotNull(resolve("WH-1000XM3").protocolSession)
         protocol.initialReadCommands()
         protocol.offer(command(0, "01 00 40 10"))
         protocol.drainImmediateCommands()
 
-        val batteryEvent = protocol.offer(command(0, "11 00 5a 00"))
-            .filterIsInstance<EarbudEvent.BatteryChanged>()
-            .single()
+        val batteryEvents = protocol.offer(command(0, "11 00 5a 00"))
+        assertEquals(
+            listOf(ProtocolEvent.CapabilitiesIdentified(battery = true)),
+            batteryEvents.filterIsInstance<ProtocolEvent.CapabilitiesIdentified>(),
+        )
+        val batteryEvent = batteryEvents.filterIsInstance<ProtocolEvent.BatteryChanged>().single()
         assertEquals(90, batteryEvent.battery.overall.percent)
 
-        val noiseEvent = protocol.offer(command(0, "67 02 01 02 02 01 00 00"))
-            .filterIsInstance<EarbudEvent.NoiseModeChanged>()
-            .single()
+        val noiseEvents = protocol.offer(command(0, "67 02 01 02 02 01 00 00"))
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY, NoiseMode.WIND),
+            noiseEvents.filterIsInstance<ProtocolEvent.CapabilitiesIdentified>()
+                .single()
+                .noiseModes,
+        )
+        val noiseEvent = noiseEvents.filterIsInstance<ProtocolEvent.NoiseModeChanged>().single()
         assertEquals(NoiseMode.ANC, noiseEvent.mode)
     }
 
     @Test
+    fun unknownSonyFamilyOpensEachCapabilityOnlyAfterItsOwnStateEvidence() {
+        val adapter = resolve("WH-CH999N")
+        adapter.beginHandshake()
+
+        val handshake = adapter.receive(command(0, "01 00 40 10"))
+        assertEquals(HandshakeResult.Ready, handshake.handshake)
+        assertFalse(adapter.snapshot().capabilities.battery)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+
+        adapter.receive(command(0, "11 00 5a 00"))
+        assertTrue(adapter.snapshot().capabilities.battery)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+
+        adapter.receive(command(0, "67 02 01 02 02 01 00 00"))
+        assertTrue(adapter.snapshot().capabilities.noiseControl)
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
+            adapter.snapshot().supportedNoiseModes,
+        )
+    }
+
+    @Test
     fun v2UsesDual2BatteryAndExtendedAmbientPayloads() {
-        val protocol = requireNotNull(resolve("WF-C700N").createProtocol())
+        val protocol = requireNotNull(resolve("WF-C700N").protocolSession)
         protocol.initialReadCommands()
         protocol.offer(command(0, "01 00 03 00 00 00 00 00"))
         protocol.drainImmediateCommands()
@@ -106,7 +139,7 @@ class SonyEarbudAdapterTest {
         assertArrayEquals(bytes("22 01"), batteryQuery.payload)
 
         val batteryEvent = protocol.offer(command(0, "23 01 4b 00 50 01"))
-            .filterIsInstance<EarbudEvent.BatteryChanged>()
+            .filterIsInstance<ProtocolEvent.BatteryChanged>()
             .single()
         assertEquals(75, batteryEvent.battery.left.percent)
         assertEquals(80, batteryEvent.battery.right.percent)

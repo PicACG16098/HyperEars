@@ -25,6 +25,16 @@ data class EarbudBattery(
     val overall: BatteryReading = BatteryReading(null, false),
 ) {
     companion object {
+        /** Projects one authoritative aggregate value without inventing component telemetry. */
+        fun fromAggregate(percent: Int?): EarbudBattery {
+            val reading = BatteryReading(percent?.takeIf { it in 0..100 }, charging = false)
+            return EarbudBattery(
+                left = reading,
+                right = reading,
+                overall = reading,
+            )
+        }
+
         /**
          * Projects Android's single headset battery value onto MiLink's left/right schema.
          *
@@ -32,12 +42,7 @@ data class EarbudBattery(
          * deliberately receive the same aggregate value and the case remains unavailable.
          */
         fun fromSystemAggregate(percent: Int?): EarbudBattery {
-            val reading = BatteryReading(percent?.takeIf { it in 0..100 }, charging = false)
-            return EarbudBattery(
-                left = reading,
-                right = reading,
-                overall = reading,
-            )
+            return fromAggregate(percent)
         }
     }
 }
@@ -64,65 +69,93 @@ enum class ControlConfirmationPolicy {
     PUBLISH_AFTER_WRITE_THEN_REFRESH,
 }
 
+enum class SystemProfileState {
+    DISCONNECTED,
+    CONNECTED,
+}
+
+enum class PrivateTransportState {
+    NOT_REQUIRED,
+    IDLE,
+    CONNECTING,
+    CONNECTED,
+    RECOVERING,
+    DORMANT,
+}
+
+enum class ProtocolHandshakeState {
+    NOT_REQUIRED,
+    PENDING,
+    CONFIRMED,
+    REJECTED,
+}
+
+/** One authoritative lifecycle projection for a physical headset session. */
+data class DeviceLifecycle(
+    val systemProfile: SystemProfileState = SystemProfileState.DISCONNECTED,
+    val privateTransport: PrivateTransportState = PrivateTransportState.NOT_REQUIRED,
+    val protocolHandshake: ProtocolHandshakeState = ProtocolHandshakeState.NOT_REQUIRED,
+) {
+    val active: Boolean get() = systemProfile == SystemProfileState.CONNECTED
+    val privateTransportRequired: Boolean
+        get() = privateTransport != PrivateTransportState.NOT_REQUIRED
+    val privateTransportConnected: Boolean
+        get() = privateTransport == PrivateTransportState.CONNECTED
+    val protocolConfirmed: Boolean
+        get() = protocolHandshake == ProtocolHandshakeState.CONFIRMED
+    val protocolReady: Boolean
+        get() = protocolHandshake in setOf(
+            ProtocolHandshakeState.NOT_REQUIRED,
+            ProtocolHandshakeState.CONFIRMED,
+        )
+    val operational: Boolean
+        get() = active && (
+            !privateTransportRequired ||
+                privateTransportConnected && protocolReady
+            )
+}
+
 data class EarbudState(
-    val modelId: String? = null,
+    val adapter: AdapterSnapshot? = null,
     val deviceName: String? = null,
     val address: String? = null,
-    val sessionActive: Boolean = false,
-    val privateProtocolRequired: Boolean = false,
-    val connected: Boolean = false,
-    val privateChannelConnected: Boolean = false,
-    val handshakeAccepted: Boolean = false,
+    val lifecycle: DeviceLifecycle = DeviceLifecycle(),
     val battery: EarbudBattery = EarbudBattery(),
     val noiseMode: NoiseMode? = null,
     val revision: Long = 0,
-)
+) {
+    /** Compatibility views. Lifecycle truth is stored only in [lifecycle]. */
+    val modelId: String? get() = adapter?.id
+    val sessionActive: Boolean get() = lifecycle.active
+    val privateProtocolRequired: Boolean get() = lifecycle.privateTransportRequired
+    val connected: Boolean get() = lifecycle.operational
+    val privateChannelConnected: Boolean get() = lifecycle.privateTransportConnected
+    val handshakeAccepted: Boolean get() = lifecycle.protocolConfirmed
+}
 
-sealed interface EarbudEvent {
-    /**
-     * A supported device has entered the system profile lifecycle.
-     *
-     * This does not imply that its private control channel is ready.
-     */
-    data class SessionStarted(
-        val modelId: String,
-        val deviceName: String,
-        val address: String,
-        val privateProtocolRequired: Boolean,
-    ) : EarbudEvent
+/** Evidence decoded from a vendor byte stream. It never represents system lifecycle state. */
+sealed interface ProtocolEvent {
+    data object HandshakeAccepted : ProtocolEvent
+    data object HandshakeRejected : ProtocolEvent
 
-    /** An identity-only adapter is ready without opening a vendor channel. */
-    data object AdapterReady : EarbudEvent
+    /** Authoritative vendor product identifier; mapping to an Adapter remains adapter-owned. */
+    data class ProductIdentified(val productId: Int) : ProtocolEvent
 
-    /** The private vendor channel is ready for reads and writes. */
-    data object ChannelConnected : EarbudEvent
+    /** Private-protocol abilities established by successful read-only responses. */
+    data class CapabilitiesIdentified(
+        val battery: Boolean,
+        val noiseModes: Set<NoiseMode> = emptySet(),
+    ) : ProtocolEvent
 
-    /**
-     * The private vendor channel was lost while the system profile remains connected.
-     *
-     * The session may reconnect without being recreated.
-     */
-    data object ChannelDisconnected : EarbudEvent
-
-    /** The system profile lifecycle ended and the device session was removed. */
-    data object SessionEnded : EarbudEvent
-
-    /** Refines a family match to a concrete model after an authoritative on-wire identity read. */
-    data class ModelIdentified(val modelId: String) : EarbudEvent
-
-    data class Handshake(val accepted: Boolean) : EarbudEvent
-    data class BatteryChanged(val battery: EarbudBattery) : EarbudEvent
-    data class NoiseModeChanged(
-        val mode: NoiseMode,
-        val acknowledged: Boolean,
-    ) : EarbudEvent
+    data class BatteryChanged(val battery: EarbudBattery) : ProtocolEvent
+    data class NoiseModeChanged(val mode: NoiseMode) : ProtocolEvent
 
     data class UnknownFrame(
         val version: Int,
         val vendor: Int,
         val command: Int,
         val payloadSize: Int,
-    ) : EarbudEvent
+    ) : ProtocolEvent
 }
 
 sealed interface ControlRequest {
@@ -199,6 +232,69 @@ data class EarbudCapabilities(
     val findDevice: Boolean = false,
 )
 
+enum class AdapterResolution {
+    STANDARD,
+    EXACT_MATCH,
+    FAMILY_MATCH,
+    PROTOCOL_CONFIRMED,
+}
+
+enum class TransportKind {
+    RFCOMM,
+    GATT,
+    L2CAP,
+}
+
+/** Immutable device-facing projection of the one active adapter instance. */
+data class AdapterSnapshot(
+    val id: String,
+    val displayName: String,
+    val resolution: AdapterResolution,
+    val privateProtocolRequired: Boolean,
+    val batterySource: BatterySource,
+    val formFactor: HeadsetFormFactor,
+    val capabilities: EarbudCapabilities,
+    val supportedNoiseModes: Set<NoiseMode>,
+    val presentationId: MiLinkCardPresentationId?,
+    val transportKinds: Set<TransportKind>,
+    val ancSwitchCooldownMs: Long,
+)
+
+data class AdapterRuntimeState(
+    val battery: EarbudBattery = EarbudBattery(),
+    val noiseMode: NoiseMode? = null,
+)
+
+enum class AdapterActivation {
+    KEEP_CHANNEL_READY,
+    RESTART_ON_CURRENT_CHANNEL,
+    RECONNECT,
+}
+
+sealed interface HandshakeResult {
+    data object AwaitingEvidence : HandshakeResult
+    data object Ready : HandshakeResult
+    data object Rejected : HandshakeResult
+    data class Replace(
+        val adapter: EarbudAdapter,
+        val activation: AdapterActivation,
+    ) : HandshakeResult
+}
+
+data class AdapterIoResult(
+    val commands: List<ByteArray> = emptyList(),
+    val handshake: HandshakeResult? = null,
+    val stateChanged: Boolean = false,
+    val unknownFrames: List<ProtocolEvent.UnknownFrame> = emptyList(),
+)
+
+data class AdapterControlResult(
+    val accepted: Boolean,
+    val commands: List<ByteArray> = emptyList(),
+    val readback: List<ByteArray> = emptyList(),
+    val stateChanged: Boolean = false,
+)
+
 /**
  * Physical presentation declared by an adapter.
  *
@@ -226,7 +322,7 @@ value class MiLinkCardPresentationId(
  * Model selection and capabilities belong to [EarbudAdapter]; this interface only translates
  * between the common domain model and a vendor byte stream.
  */
-interface EarbudProtocol {
+interface ProtocolSession {
     fun initialReadCommands(): List<ByteArray>
     fun encode(request: ControlRequest): List<ByteArray>
 
@@ -245,89 +341,11 @@ interface EarbudProtocol {
      * This keeps family-safe discovery separate from model-specific reads. The session serializes
      * returned commands on the existing transport; protocols never own sockets or coroutines.
      */
-    fun followUpCommands(event: EarbudEvent): List<ByteArray> = emptyList()
+    fun followUpCommands(event: ProtocolEvent): List<ByteArray> = emptyList()
 
     /** Optional authoritative readback sent after [encode] completes successfully. */
     fun readback(request: ControlRequest): List<ByteArray> = emptyList()
 
-    fun offer(bytes: ByteArray): List<EarbudEvent>
+    fun offer(bytes: ByteArray): List<ProtocolEvent>
     fun reset()
-}
-
-object EarbudStateReducer {
-    fun reduce(previous: EarbudState, event: EarbudEvent): EarbudState {
-        val nextRevision = previous.revision + 1
-        val candidate = when (event) {
-            is EarbudEvent.SessionStarted -> {
-                val sameLogicalDevice =
-                    previous.modelId == event.modelId &&
-                        previous.address
-                            ?.equals(event.address, ignoreCase = true) == true
-                EarbudState(
-                    modelId = event.modelId,
-                    deviceName = event.deviceName,
-                    address = event.address,
-                    sessionActive = true,
-                    privateProtocolRequired = event.privateProtocolRequired,
-                    battery = if (sameLogicalDevice) {
-                        previous.battery
-                    } else {
-                        EarbudBattery()
-                    },
-                    noiseMode = previous.noiseMode.takeIf { sameLogicalDevice },
-                    revision = previous.revision,
-                )
-            }
-
-            EarbudEvent.AdapterReady -> previous.copy(
-                connected = true,
-                privateChannelConnected = false,
-                handshakeAccepted = false,
-            )
-
-            EarbudEvent.ChannelConnected -> previous.copy(
-                connected = true,
-                privateChannelConnected = true,
-                handshakeAccepted = false,
-            )
-
-            EarbudEvent.ChannelDisconnected -> previous.copy(
-                connected = false,
-                privateChannelConnected = false,
-                handshakeAccepted = false,
-            )
-
-            EarbudEvent.SessionEnded -> previous.copy(
-                sessionActive = false,
-                connected = false,
-                privateChannelConnected = false,
-                handshakeAccepted = false,
-            )
-
-            is EarbudEvent.ModelIdentified -> if (previous.sessionActive) {
-                previous.copy(modelId = event.modelId)
-            } else {
-                previous
-            }
-
-            is EarbudEvent.Handshake -> previous.copy(
-                handshakeAccepted = event.accepted,
-            )
-
-            is EarbudEvent.BatteryChanged -> previous.copy(
-                battery = event.battery,
-            )
-
-            is EarbudEvent.NoiseModeChanged -> previous.copy(
-                noiseMode = event.mode,
-            )
-
-            is EarbudEvent.UnknownFrame -> previous
-        }
-        return if (candidate == previous) {
-            previous
-        } else {
-            candidate.copy(revision = nextRevision)
-        }
-    }
 }

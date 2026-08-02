@@ -1,153 +1,184 @@
-# 兼容性与证据等级
+# 兼容性
 
-## 1. 状态定义
+## 1. 阅读说明
+
+下表描述 HyperEars 当前代码实际开放的能力。所有条目均提供 MiLink 设备流转和系统音量；
+表格只列额外的电量与噪声控制能力。音频、通话、配对和音量路由仍由 Android / HyperOS
+负责。
+
+### 1.1 适配层级
+
+| 层级 | 含义 |
+|---|---|
+| 具体型号 | 具有独立型号配置；型号差异由对应 Adapter 定义 |
+| 产品线 | 一组已知共享协议和设备形态的型号使用同一候选配置 |
+| 品牌家族 | 先按品牌、服务或设备形态选择候选 Adapter，再由合法协议响应确认能力 |
+| 标准回退 | 不建立厂商私有通道，只使用 Android 标准耳机能力 |
+
+### 1.2 证据等级
 
 | 等级 | 含义 |
 |---|---|
-| 实机验证 | 在真实设备上完成连接、状态读取、控制写入和 UI 回读验证 |
-| 公开实现画像 | 有可检查的公开协议实现，但 HyperEars 尚未覆盖足够多本地实机 |
-| 参考协议盲适配 | 根据同家族公开项目建立兼容层，需社区设备继续验证 |
-| 家族外推 | 名称只选择候选协议；还需要服务、线端身份或合法状态帧确认能力 |
-| 通用回退 | 只使用 Android 已知的标准耳机身份、音量和整机电量 |
+| 实机验证 | 已在真实设备上验证识别、私有连接、状态读取、控制写入和卡片回读 |
+| 公开实现 | 依据可检查的公开协议实现建立适配，尚未完成 HyperEars 本地实机验证 |
+| 参考协议 | 依据同品牌或同协议家族资料建立适配，具体型号和固件仍需验证 |
+| 家族外推 | 名称或服务只选择候选协议；私有能力必须由合法响应确认后开放 |
+| 标准回退 | 只使用 Android 提供的标准能力 |
 
-状态描述的是证据强度，不是品牌或产品质量评价。
+证据等级描述适配依据和验证范围，不评价设备质量。
 
-## 2. HyperOS 平台
+### 1.3 电量与噪声能力
 
-HyperEars 的当前目标是 Android 15+ 的 Xiaomi HyperOS 和 LSPosed API 101。MiLink、
-蓝牙服务以及原生卡片类均属于 ROM 内部实现，不承诺跨 HyperOS 大版本二进制稳定。
+| 名称 | 含义 |
+|---|---|
+| 系统整机 | Android 提供的单一电量；TWS 卡片左右耳显示同一数值，充电盒不显示 |
+| 私有整机 | 厂商协议返回一个整机电量值 |
+| 私有组件 | 厂商协议分别返回左耳、右耳和充电盒；只显示实际收到的组件 |
+| 无 | 不开放对应能力 |
 
-开发过程中已在 Xiaomi 14 Pro、Xiaomi Pad 6S Pro 12.4 和 REDMI K Pad 等 HyperOS
-设备上验证过流转路径，但发布兼容性仍以具体 ROM 构建为准。遇到问题时应同时提供：
+噪声模式只包含表中明确列出的“降噪、关闭、通透、抗风噪”。需要协议确认的条目在
+确认成功前不开放私有电量或噪声控制；确认失败时继续保留流转、系统音量，以及表中
+明确写出的系统整机电量。
 
-- 设备型号和 HyperOS 完整版本；
-- Android API 级别；
-- MiLink 版本；
-- LSPosed 版本；
-- HyperEars 版本。
+## 2. 支持矩阵
 
-## 3. 耳机支持矩阵
+### 2.1 vivo / iQOO
 
-“传输”是 HyperEars 读取厂商遥测和发送私有控制的附加通道，不是 A2DP/HFP 音频
-链路。所有条目均继续由 Android 负责音频、通话、配对和系统音量。
-
-### 3.1 vivo / iQOO
-
-| 适配器 | 匹配与确认依据 | 证据 | 私有传输 | 电量 | 模式 |
+| 设备范围 | 层级 | 证据 | 识别与确认 | 电量 | 噪声模式 |
 |---|---|---|---|---|---|
-| vivo TWS Air3 Pro | 精确规范化零售名称 | 实机验证 | GAIA RFCOMM `0837` | 左/右/盒 | ANC/OFF/通透 |
-| vivo TWS 3e | 精确规范化零售名称 | 公开实现画像 | GAIA RFCOMM `0837`，channel 13 回退 | 左/右/盒 | ANC/OFF/通透 |
-| vivo/iQOO TWS 家族目录 | 明确目录名称 | 家族外推 | GAIA RFCOMM `0837` | 合法响应中的左/右/盒 | ANC/OFF/通透；未逐型号验证 |
+| vivo TWS Air3 Pro | 具体型号 | 实机验证 | 规范化名称精确匹配；合法 GAIA 响应确认协议 | 私有组件 | 降噪、关闭、通透 |
+| vivo TWS 3e | 具体型号 | 公开实现 | 规范化名称精确匹配；合法 GAIA 响应确认协议 | 私有组件 | 降噪、关闭、通透 |
+| 其他名称符合 vivo / iQOO TWS 规则的型号 | 品牌家族 | 家族外推 | 规范化家族名称选择候选；合法 GAIA 电量与模式响应分别确认对应能力 | 私有组件 | 降噪、关闭、通透 |
 
-### 3.2 OPPO
+私有传输使用 GAIA RFCOMM UUID `0837`；TWS 3e 另有 RFCOMM 通道 13 回退。已登记
+目录包括 vivo TWS Air2 / Air200、5e、3 Pro、3、2e、2、1、A1 Pro、A1、Air Pro、
+Air、Neo、X1，以及 iQOO TWS Air Pro、Air、1。
 
-| 适配器 | 匹配与确认依据 | 证据 | 私有传输 | 电量 | 模式 |
+### 2.2 OPPO Enco
+
+| 设备范围 | 层级 | 证据 | 识别与确认 | 电量 | 噪声模式 |
 |---|---|---|---|---|---|
-| OPPO Enco Air2 Pro | 精确产品名称 | 参考协议盲适配 | RFCOMM `079a` | 左/右/盒 | 反向 ANC/OFF 编码、通透 |
-| OPPO Enco Free4 / X3 / Air5 | 精确产品名称进入独立 Profile | 参考协议盲适配 | RFCOMM `079a` | 左/右/盒 | 当前沿用家族 ANC/OFF/通透；不宣称自适应或空间音频 |
-| 其他 OPPO/Enco | 保守家族名称 | 参考协议盲适配 | RFCOMM `079a` | 左/右/盒 | ANC/OFF/通透 |
+| OPPO Enco Air2 Pro | 具体型号 | 参考协议 | 型号名称匹配；合法 OPPO 响应确认 Air2 Pro 编码 | 私有组件 | 降噪、关闭、通透 |
+| OPPO Enco Free4 / X3 / Air5 | 具体型号 | 参考协议 | 型号名称匹配；合法 OPPO 响应确认协议 | 私有组件 | 降噪、关闭、通透 |
+| 其他 OPPO / Enco 标准耳机 | 品牌家族 | 参考协议 | 品牌名称选择候选；合法电量与模式响应分别确认对应能力 | 私有组件 | 降噪、关闭、通透 |
 
-### 3.3 StarRing / 籁特易耳
+私有传输使用 RFCOMM UUID `079a`。
 
-| 适配器 | 匹配与确认依据 | 证据 | 私有传输 | 电量 | 模式 |
+### 2.3 StarRing / 籁特易耳
+
+| 设备范围 | 层级 | 证据 | 识别与确认 | 电量 | 噪声模式 |
 |---|---|---|---|---|---|
-| StarRing Ultra | 精确规范化零售名称 | 实机验证 | 官方 GATT `7777/8888` 优先，RFCOMM 候选回退 | 左/右；盒仅在实际上报时显示 | 降噪/正常/通透/抗风噪 |
-| 其他 StarRing/籁特易耳 | 保守家族名称 | 通用回退 | 无 | Android 整机复制为左右 | 无私有模式 |
+| StarRing Ultra | 具体型号 | 实机验证 | 规范化名称精确匹配；私有传输连接成功 | 私有组件 | 降噪、关闭、通透、抗风噪 |
+| 其他 StarRing / 籁特易耳耳机 | 标准回退 | 标准回退 | 品牌名称与 Android 标准耳机身份匹配 | 系统整机 | 无 |
 
-### 3.4 Bose
+StarRing Ultra 使用 GATT `7777/8888` 特征，厂商 RFCOMM 为回退通道。
 
-| 适配器 | 匹配与确认依据 | 证据 | 私有传输 | 电量 | 模式 |
+### 2.4 Bose
+
+| 设备范围 | 层级 | 证据 | 识别与确认 | 电量 | 噪声模式 |
 |---|---|---|---|---|---|
-| Bose QuietComfort Headphones | BMAP `prince/0x4075` | 实机验证 | BMAP RFCOMM 候选经产品 STATUS 确认 | 单整机 | 安静/感知/配置中发现的抗风噪预设 |
-| Bose QC35 / QC35 II | BMAP `0x400C/0x4020` | 公开实现画像 | BMAP RFCOMM + 产品 STATUS | 单整机 | 高降噪/抗风噪/关闭；不把低降噪冒充通透 |
-| Bose NC Headphones 700 | BMAP `goodyear/0x4024` | 公开实现画像 | BMAP RFCOMM + 产品 STATUS | 单整机 | CNC 最大降噪/完全感知/关闭 |
-| Bose QC45 / QuietComfort Earbuds | BMAP `0x4039/0x402F` | 公开实现画像 | BMAP RFCOMM + 产品 STATUS | 整机或协议组件 | AudioModes 安静/感知 |
-| Bose QC Ultra Headphones / Earbuds / Earbuds II | BMAP `0x4066/0x4072/0x4064` | 参考协议盲适配 | BMAP RFCOMM + 产品 STATUS | 整机或协议组件 | AudioModes 安静/感知；附加 ANC 预设归一为降噪 |
-| Bose QC Ultra Headphones/Earbuds 二代 | BMAP `wolverine/0x4082`、`edith/0x4062` | 参考协议盲适配 | BMAP RFCOMM + 产品 STATUS | 整机或协议组件 | AudioModes 安静/感知；附加 ANC 预设归一为降噪 |
-| Bose Hearphones、ProFlight、Hearphones II、SoundSport/Pulse/Free、QuietControl 30、Sport Earbuds/Open、Ultra Open | 对应 BMAP 产品 ID | 产品目录身份画像 | BMAP RFCOMM + 产品 STATUS | BMAP 响应可用时发布 | 静态 Profile 不发送未确认控制；合法 GET 探测可升级能力 |
-| 未知 Bose BMAP | Bose 名称/OUI/服务 + 合法 BMAP STATUS | 家族外推 | BMAP RFCOMM 候选逐个验证 | BMAP 响应可用时发布 | 仅在 GET-only AudioModes/ANR/CNC 响应确认后开放 |
+| Bose QuietComfort Headphones | 具体型号 | 实机验证 | BMAP 产品身份 `prince / 0x4075` 匹配 | 私有整机 | 降噪、通透、抗风噪 |
+| Bose QuietComfort 35 / 35 II | 具体型号 | 公开实现 | BMAP 产品 ID `0x400C / 0x4020` 匹配 | 私有整机 | 降噪、关闭、抗风噪 |
+| Bose Noise Cancelling Headphones 700 | 具体型号 | 公开实现 | BMAP 产品身份 `goodyear / 0x4024` 匹配 | 私有整机 | 降噪、关闭、通透 |
+| Bose QuietComfort 45 | 具体型号 | 公开实现 | BMAP 产品 ID `0x4039` 匹配 | 私有整机 | 降噪、通透 |
+| Bose QuietComfort Earbuds | 具体型号 | 公开实现 | BMAP 产品 ID `0x402F` 匹配 | 私有组件 | 降噪、通透 |
+| Bose QuietComfort Earbuds II | 具体型号 | 参考协议 | BMAP 产品 ID `0x4064` 匹配 | 私有组件 | 降噪、通透 |
+| Bose QuietComfort Ultra Headphones | 具体型号 | 参考协议 | BMAP 产品 ID `0x4066` 匹配 | 私有整机 | 降噪、通透 |
+| Bose QuietComfort Ultra Earbuds | 具体型号 | 参考协议 | BMAP 产品 ID `0x4072` 匹配 | 私有组件 | 降噪、通透 |
+| Bose QuietComfort Ultra Headphones（第二代） | 具体型号 | 参考协议 | BMAP 产品身份 `wolverine / 0x4082` 匹配 | 私有整机 | 降噪、通透 |
+| Bose QuietComfort Ultra Earbuds（第二代） | 具体型号 | 参考协议 | BMAP 产品身份 `edith / 0x4062` 匹配 | 私有组件 | 降噪、通透 |
+| 已登记的其他 Bose BMAP 型号 | 具体型号 | 家族外推 | BMAP 产品 ID 匹配；只读状态响应确认控制方言 | 按 BMAP 响应 | AudioModes：降噪、通透；ANR：降噪、关闭、抗风噪；CNC：降噪、关闭、通透 |
+| 未登记的 Bose BMAP 耳机 | 品牌家族 | 家族外推 | Bose 名称、OUI 或服务选择候选；产品身份和只读状态响应确认能力 | 按 BMAP 响应 | AudioModes：降噪、通透；ANR：降噪、关闭、抗风噪；CNC：降噪、关闭、通透 |
 
-### 3.5 Edifier / 漫步者
+私有传输使用逐项验证的 BMAP RFCOMM 候选。头戴设备显示私有整机电量；响应包含组件
+字段时显示相应的左耳、右耳和充电盒电量。只支持 AudioModes 两态控制的型号保留系统
+三项布局，其中不受协议支持的“关闭”项显示为禁用状态，不会发送控制命令。
 
-| 适配器 | 匹配与确认依据 | 证据 | 私有传输 | 电量 | 模式 |
+### 2.5 Edifier / 漫步者
+
+| 设备范围 | 层级 | 证据 | 识别与确认 | 电量 | 噪声模式 |
 |---|---|---|---|---|---|
-| Edifier W860NB PRO | 精确规范化名称 + 头戴形态 | 实机验证 | Edifier BES RFCOMM，channel 1 回退 | 单整机 | 深度降噪、关闭、环境声、抗风噪 |
-| 其他 Edifier/W820/W830/W860 头戴 | 品牌/系列名称 + 头戴类别 | 家族外推 | Edifier BES RFCOMM | 合法响应中的整机电量 | 不开放未验证控制 |
+| Edifier W860NB PRO | 具体型号 | 实机验证 | 规范化名称和头戴形态匹配；合法 BES 响应确认协议 | 私有整机 | 降噪、关闭、通透、抗风噪 |
+| Edifier 花再 Evo Pro | 具体型号 | 实机验证 | 规范化名称包含 `Evo Pro`；合法 BES 响应确认协议 | 私有聚合（左右同值，盒未知） | 降噪、关闭、通透、抗风噪 |
+| Edifier W820 / W830 / W860 系列头戴耳机 | 产品线 | 家族外推 | 系列名称与头戴形态选择候选；合法电量与模式响应分别确认能力 | 私有整机 | 降噪、关闭、通透、抗风噪 |
+| 其他可识别的 Edifier 耳机 | 品牌家族 | 家族外推 | 品牌名称或 BES 服务选择候选；合法电量与模式响应分别确认能力 | 头戴整机或 TWS 聚合 | 降噪、关闭、通透、抗风噪 |
 
-### 3.6 ROSESELSA / 弱水时砂
+私有传输使用 Edifier BES RFCOMM UUID，RFCOMM 通道 1 为回退。噪声能力仅在设备返回
+合法模式响应后开放，写入使用设备实际报告的 `0x10` 或 `0x1B` ANC 方言。TWS 聚合
+电量只表示协议报告的单一数值：左右耳显示同值，充电盒保持未知，不表示独立组件遥测。
 
-| 适配器 | 匹配与确认依据 | 证据 | 私有传输 | 电量 | 模式 |
+### 2.6 ROSESELSA / 弱水时砂
+
+| 设备范围 | 层级 | 证据 | 识别与确认 | 电量 | 噪声模式 |
 |---|---|---|---|---|---|
-| ROSESELSA EARFREE i5 | 精确名称 | 公开实现画像 | GATT `011bf5da`，`7777/8888` | 左/右/盒 | ANC/OFF/通透/抗风噪 |
-| 其他 EARFREE/EARFEEL | 产品线名称 + 相同服务/特征 + 合法状态帧 | 家族外推 | GATT `011bf5da` | 握手后左/右/盒 | 握手后 ANC/OFF/通透/抗风噪 |
-| ROSE BudsFeel MK2 | 精确名称 | 公开实现画像 | RFCOMM `0cf12d31-…` | 左/右/盒 | ANC/OFF/通透/抗风噪 |
-| 其他 BudsFeel | 产品线名称 + 相同服务 + 合法状态帧 | 家族外推 | RFCOMM `0cf12d31-…` | 握手后左/右/盒 | 握手后 ANC/OFF/通透/抗风噪 |
-| 其他 ROSESELSA/ROSE | 保守品牌名称 | 通用回退 | 无 | Android 整机复制为左右 | 无私有模式 |
+| ROSESELSA EARFREE i5 | 具体型号 | 公开实现 | 规范化名称精确匹配；私有传输连接成功 | 私有组件 | 降噪、关闭、通透、抗风噪 |
+| ROSESELSA EARFREE / EARFEEL 产品线 | 产品线 | 家族外推 | 产品线名称或 GATT 服务选择候选；合法状态响应确认能力 | 系统整机 → 私有组件 | 降噪、关闭、通透、抗风噪 |
+| ROSE BudsFeel MK2 | 具体型号 | 公开实现 | 规范化名称精确匹配；私有传输连接成功 | 私有组件 | 降噪、关闭、通透、抗风噪 |
+| ROSE BudsFeel 产品线 | 产品线 | 家族外推 | 产品线名称或 RFCOMM 服务选择候选；合法状态响应确认能力 | 系统整机 → 私有组件 | 降噪、关闭、通透、抗风噪 |
+| 其他 ROSESELSA / ROSE 耳机 | 标准回退 | 标准回退 | 品牌名称与 Android 标准耳机身份匹配 | 系统整机 | 无 |
 
-### 3.7 NiceHCK / YuanDao
+EARFREE / EARFEEL 使用 GATT 服务 `011bf5da`、`7777/8888` 特征；BudsFeel 使用 RFCOMM
+UUID `0cf12d31-…`。产品线候选在收到合法私有电量前保留 Android 系统整机电量。
 
-| 适配器 | 匹配与确认依据 | 证据 | 私有传输 | 电量 | 模式 |
+### 2.7 NiceHCK / YuanDao
+
+| 设备范围 | 层级 | 证据 | 识别与确认 | 电量 | 噪声模式 |
 |---|---|---|---|---|---|
-| NiceHCK YuanDao OriG in | 精确规范化名称 + `a100` 服务 + 合法电量/模式帧 | 公开实现画像 | RFCOMM `a100` | 握手后左/右/盒 | ANC/OFF/通透/抗风噪；深度档归一为 ANC |
-| 其他 NiceHCK/YuanDao | 保守家族名称 | 通用回退 | 无 | Android 整机复制为左右 | 无私有模式 |
+| NiceHCK YuanDao OriG in | 具体型号 | 公开实现 | 规范化名称精确匹配；合法状态响应确认协议 | 私有组件 | 降噪、关闭、通透、抗风噪 |
+| 其他 NiceHCK / YuanDao 耳机 | 标准回退 | 标准回退 | 品牌名称与 Android 标准耳机身份匹配 | 系统整机 | 无 |
 
-### 3.8 Apple
+OriG in 使用 RFCOMM UUID `a100`。
 
-| 适配器 | 匹配与确认依据 | 证据 | 私有传输 | 电量 | 模式 |
+### 2.8 Apple AirPods
+
+| 设备范围 | 层级 | 证据 | 识别与确认 | 电量 | 噪声模式 |
 |---|---|---|---|---|---|
-| AirPods Pro | AAP SDP UUID + Pro 名称细分 | 公开实现画像 | BR/EDR L2CAP PSM `0x1001` | 每次通知动态解析 1–3 个左/右/盒组件 | ANC/OFF/通透；Adaptive 状态归一为 ANC |
-| AirPods Max | AAP SDP UUID + Max 名称细分 | 公开实现画像 | BR/EDR L2CAP PSM `0x1001` | 动态组件电量；头戴卡片取可用单组件作为整机值 | ANC/OFF/通透；Adaptive 状态归一为 ANC |
-| 其他带 AAP 服务的 AirPods | AAP SDP UUID | 家族外推 | BR/EDR L2CAP PSM `0x1001` | 动态组件电量 | 不开放无法从型号确认的控制 |
+| Apple AirPods Pro | 具体型号 | 公开实现 | AAP SDP UUID 确认家族；规范化名称确认 Pro 配置 | 私有组件 | 降噪、关闭、通透 |
+| Apple AirPods Max | 具体型号 | 公开实现 | AAP SDP UUID 确认家族；规范化名称确认 Max 配置 | 私有整机 | 降噪、关闭、通透 |
+| 其他带 AAP SDP UUID 的 AirPods | 品牌家族 | 家族外推 | AAP SDP UUID 确认家族；私有传输连接成功 | 私有组件 | 无 |
 
-### 3.9 Sony
+私有传输使用 BR/EDR L2CAP PSM `0x1001`。AAP 电量按包内数量解析一至三个组件；缺失
+组件不显示。Adaptive 状态映射为“降噪”，当前不提供独立 Adaptive 控件。
 
-| 适配器 | 匹配与确认依据 | 证据 | 私有传输 | 电量 | 模式 |
+### 2.9 Sony
+
+| 设备范围 | 层级 | 证据 | 识别与确认 | 电量 | 噪声模式 |
 |---|---|---|---|---|---|
-| Sony WH-1000XM2/XM3/XM4 | 精确型号 + 合法 Sony v1/v2 初始化 | 公开实现画像 | Sony RFCOMM v1 优先 | 单整机 | ANC/OFF/环境声/抗风噪 |
-| Sony WH-1000XM5/XM6、WH-CH720N | 精确型号 + 合法 Sony v1/v2 初始化 | 公开实现画像 | Sony RFCOMM v1 优先 | 单整机 | ANC/OFF/环境声 |
-| Sony ULT WEAR (WH-ULT900N) | 精确型号 + 合法 Sony v1/v2 初始化 | 公开实现画像 | Sony RFCOMM v2 优先 | 单整机 | ANC/OFF/环境声 |
-| Sony WF-1000XM3/XM4 | 精确型号 + 合法 Sony v1/v2 初始化 | 公开实现画像 | Sony RFCOMM v1 优先 | 左/右/盒 | ANC/OFF/环境声/抗风噪 |
-| Sony WF-1000XM5、WF-SP800N、LinkBuds S | 精确型号 + 合法 Sony v1/v2 初始化 | 公开实现画像 | 型号指定 v1/v2 优先级 | 左/右/盒 | ANC/OFF/环境声 |
-| Sony WF-C700N/C710N | 精确型号 + 合法 Sony v1/v2 初始化 | 公开实现画像 | Sony RFCOMM v1 优先 | 左/右/盒 | ANC/OFF/环境声 |
-| Sony WF-C510 | 精确型号 + 合法 Sony v1/v2 初始化 | 公开实现画像 | Sony RFCOMM v1 优先 | 左/右/盒 | OFF/环境声；不伪造 ANC |
-| Sony WF-C500 / LinkBuds | 精确型号 + 合法 Sony v1/v2 初始化 | 公开实现画像 | 型号指定 v1/v2 优先级 | 左/右；C500 无盒，LinkBuds 含盒 | 仅电量 |
-| Sony WI-SP600N / WI-C100 | 精确型号 + 合法 Sony v1/v2 初始化 | 公开实现画像 | Sony RFCOMM v1 优先 | 单整机 | SP600N 支持 ANC/OFF/环境声/抗风噪；C100 仅电量 |
-| 其他 Sony WH/WI/MDR 或 WF/LinkBuds | 产品线名称或 Sony 服务 + 合法初始化 | 家族外推 | Sony RFCOMM v1/v2 | 形态对应整机或组件 | 名称明确表示降噪时开放三态，否则仅协议电量 |
+| WH-1000XM2 / XM3 / XM4 | 具体型号 | 公开实现 | 规范化型号匹配；合法 v1/v2 初始化响应确认协议 | 私有整机 | 降噪、关闭、通透、抗风噪 |
+| WH-1000XM5 / XM6 / WH-CH720N | 具体型号 | 公开实现 | 规范化型号匹配；合法 v1/v2 初始化响应确认协议 | 私有整机 | 降噪、关闭、通透 |
+| ULT WEAR（WH-ULT900N） | 具体型号 | 公开实现 | 规范化型号或零售名称匹配；合法 v1/v2 初始化响应确认协议 | 私有整机 | 降噪、关闭、通透 |
+| WF-1000XM3 / XM4 | 具体型号 | 公开实现 | 规范化型号匹配；合法 v1/v2 初始化响应确认协议 | 私有组件 | 降噪、关闭、通透、抗风噪 |
+| WF-1000XM5 / WF-SP800N / LinkBuds S | 具体型号 | 公开实现 | 规范化型号匹配；合法 v1/v2 初始化响应确认协议 | 私有组件 | 降噪、关闭、通透 |
+| WF-C700N / WF-C710N | 具体型号 | 公开实现 | 规范化型号匹配；合法 v1/v2 初始化响应确认协议 | 私有组件 | 降噪、关闭、通透 |
+| WF-C510 | 具体型号 | 公开实现 | 规范化型号匹配；合法 v1/v2 初始化响应确认协议 | 私有组件 | 关闭、通透 |
+| WF-C500 | 具体型号 | 公开实现 | 规范化型号匹配；合法 v1/v2 初始化响应确认协议 | 私有组件 | 无 |
+| LinkBuds | 具体型号 | 公开实现 | 规范化名称精确匹配；合法 v1/v2 初始化响应确认协议 | 私有组件 | 无 |
+| WI-SP600N | 具体型号 | 公开实现 | 规范化型号匹配；合法 v1/v2 初始化响应确认协议 | 私有整机 | 降噪、关闭、通透、抗风噪 |
+| WI-C100 | 具体型号 | 公开实现 | 规范化型号匹配；合法 v1/v2 初始化响应确认协议 | 私有整机 | 无 |
+| 其他 Sony WH / WI / MDR 降噪产品线 | 产品线 | 家族外推 | 产品线名称选择候选；合法 v1/v2 初始化响应确认协议 | 私有整机 | 降噪、关闭、通透 |
+| 其他 Sony WF / LinkBuds 降噪产品线 | 产品线 | 家族外推 | 产品线名称选择候选；合法 v1/v2 初始化响应确认协议 | 私有组件 | 降噪、关闭、通透 |
+| 其他具有 Sony 型号名称或私有服务的头戴耳机 | 品牌家族 | 家族外推 | 设备形态、名称或服务选择候选；合法 v1/v2 初始化响应确认协议 | 私有整机 | 无 |
+| 其他具有 Sony 型号名称或私有服务的 TWS 耳机 | 品牌家族 | 家族外推 | 设备形态、名称或服务选择候选；合法 v1/v2 初始化响应确认协议 | 私有组件 | 无 |
+| 其他 Sony 标准耳机 | 标准回退 | 标准回退 | 品牌名称与 Android 标准耳机身份匹配 | 系统整机 | 无 |
 
-### 3.10 通用蓝牙耳机
+私有传输使用 Sony RFCOMM v1/v2；具体型号决定协议优先级、电量形态和 Ambient 方言。
 
-| 适配器 | 匹配与确认依据 | 证据 | 私有传输 | 电量 | 模式 |
+### 2.10 通用蓝牙耳机
+
+| 设备范围 | 层级 | 证据 | 识别与确认 | 电量 | 噪声模式 |
 |---|---|---|---|---|---|
-| 标准 A2DP/HFP 耳机 | Android 蓝牙设备类别或保守耳机名称，排除 HyperOS 原生型号 | 通用回退 | 无 | Android 整机复制为左右；盒不可用 | 无私有模式 |
+| 其他标准 A2DP / HFP 耳机 | 标准回退 | 标准回退 | Android 标准耳机身份或保守名称匹配；排除 HyperOS 原生支持型号 | 系统整机 | 无 |
 
-ROSESELSA、NiceHCK 和 AirPods 条目来自公开实现画像，当前尚未完成 HyperEars 本地实机
-验证。ROSE 的外推限定在 EARFREE/EARFEEL 与 BudsFeel 两条已知协议产品线：名称只选择
-候选协议，捕获的服务/特征和合法状态帧共同确认协议就绪；其他 ROSE 型号仍走标准回退。
-NiceHCK 仅精确的 YuanDao OriG in 名称进入其私有协议候选，并由合法电量或模式帧完成
-协议确认；其他 NiceHCK/YuanDao 名称保持标准回退。
-AirPods 的 AAP 服务 UUID 是家族判型依据，设备名称只用于把已确认的 AAP 设备细分为
-Pro 或 Max 能力 Profile。电量通知不是固定三组件包：解析器按包内组件计数处理一至三
-个组件，缺失字段保持不可用，不把上一帧或其他组件值硬填入。
-Sony 条目来自公开实现画像，当前尚未完成 HyperEars 本地逐型号实机验证。名称选择具体
-电池拓扑和控制 Profile，合法 RFCOMM 初始化响应负责确认协议；无法确认私有协议时不会
-把控制通道标记为就绪。
+## 3. HyperOS 平台范围
 
-## 4. vivo/iQOO 型号目录
+当前目标平台为 Android 15+ 的 Xiaomi HyperOS 和 LSPosed API 101。MiLink、蓝牙服务和
+原生卡片属于 ROM 内部实现，不承诺跨 HyperOS 大版本二进制稳定。已在 Xiaomi 14 Pro、
+Xiaomi Pad 6S Pro 12.4 和 REDMI K Pad 上验证流转路径；实际兼容性仍取决于 ROM 构建。
 
-家族目录包括：TWS Air3 Pro、TWS 3e、TWS Air2/Air200、TWS 5e、TWS 3 Pro、
-TWS 3、TWS 2e、TWS 2、TWS 1、TWS A1 Pro、TWS A1、TWS Air Pro、TWS Air、
-TWS Neo、TWS X1，以及已登记的 iQOO TWS 系列。
+名称和系统能力可确认由 HyperOS 原生支持的 Xiaomi / REDMI 耳机不会被 HyperEars 接管。
+音箱、车机和无法保守判定为耳机的设备也不会进入标准耳机回退。
 
-除 Air3 Pro 与 TWS 3e 外，目录命中只代表进入 vivo 家族 Profile，并不代表所有私有
-命令已经逐型号验证。家族设备返回不兼容帧时，正确做法是新增具体型号 Adapter，而
-不是在通用解析器中扩大猜测范围。
+## 4. 提交新设备证据
 
-## 5. 原生 Xiaomi 耳机
-
-名称和系统能力可确认由 HyperOS 原生支持的 Xiaomi/REDMI 耳机不会被 HyperEars
-接管。音箱、车机和无法保守判定为耳机的设备同样不会进入标准耳机回退。
-
-## 6. 提交新设备证据
-
-请按照 [CONTRIBUTING.md](../CONTRIBUTING.md) 提交经过脱敏的设备名称、OUI、UUID、
+请按 [CONTRIBUTING.md](../CONTRIBUTING.md) 提交设备名称、设备形态、服务 UUID、脱敏后的
 只读响应和控制回读。完整个人 MAC 地址不属于协议证据，不应公开。

@@ -2,7 +2,6 @@ package dev.hyperears.hook
 
 import android.os.Looper
 import android.view.View
-import dev.hyperears.integration.EarbudAdapterRegistry
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.NoiseMode
@@ -112,16 +111,14 @@ internal class MiLinkHeadsetDetailExtension(
         if (!root.isAttachedToWindow) return
         val retainedState = environment.stateProvider(target.address)
         val localState = retainedState.takeIf(EarbudState::sessionActive)
-        val localPresentationId = EarbudAdapterRegistry
-            .integratedById(localState?.modelId)
-            ?.miLinkCardPresentationId
+        val localPresentationId = localState?.adapter?.presentationId
         val presentationId = localPresentationId ?: target.publishedPresentationId
         if (target.boundPresentationId != presentationId) {
             release(target)
         }
         val cardAdapter = presentationId
             ?.let(MiLinkCardAdapterRegistry::resolve)
-            ?: return
+        if (cardAdapter == null) return
         if (target.binding == null) {
             target.binding = cardAdapter.bind(root, target.address, environment)
             target.boundPresentationId = presentationId.takeIf { target.binding != null }

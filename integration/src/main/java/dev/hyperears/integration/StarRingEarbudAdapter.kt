@@ -34,12 +34,11 @@ open class StarRingEarbudAdapter : StandardEarbudAdapter() {
 }
 
 /** Concrete adapter for the captured StarRing Ultra protocol. */
-object StarRingUltraAdapter : StarRingEarbudAdapter() {
-    const val ID = "starring-ultra"
-    val PRESENTATION_ID = MiLinkCardPresentationId(ID)
+class StarRingUltraAdapter : StarRingEarbudAdapter() {
 
     override val id: String = ID
     override val displayName: String = "StarRing Ultra"
+    override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
     override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
     override val privateProtocolRequired: Boolean = true
     override val transports: List<EarbudTransportSpec> = listOf(
@@ -63,16 +62,19 @@ object StarRingUltraAdapter : StarRingEarbudAdapter() {
     override fun matches(identity: EarbudIdentity): Boolean =
         normalizeDeviceName(identity.deviceName.orEmpty()) == "starringultra"
 
-    override fun createProtocol(): EarbudProtocol = StarRingUltraEarbudProtocol()
+    override fun createProtocolSession(): ProtocolSession = StarRingUltraProtocolSession()
 
-    private const val WRITE_CHARACTERISTIC_UUID =
-        "00007777-0000-1000-8000-00805F9B34FB"
-    private const val NOTIFY_CHARACTERISTIC_UUID =
-        "00008888-0000-1000-8000-00805F9B34FB"
-
+    companion object {
+        const val ID = "starring-ultra"
+        val PRESENTATION_ID = MiLinkCardPresentationId(ID)
+        private const val WRITE_CHARACTERISTIC_UUID =
+            "00007777-0000-1000-8000-00805F9B34FB"
+        private const val NOTIFY_CHARACTERISTIC_UUID =
+            "00008888-0000-1000-8000-00805F9B34FB"
+    }
 }
 
-private class StarRingUltraEarbudProtocol : EarbudProtocol {
+private class StarRingUltraProtocolSession : ProtocolSession {
     private val decoder = StarRingWireCodec.Decoder()
 
     override fun initialReadCommands(): List<ByteArray> = listOf(
@@ -89,10 +91,10 @@ private class StarRingUltraEarbudProtocol : EarbudProtocol {
 
     override fun readback(request: ControlRequest): List<ByteArray> = emptyList()
 
-    override fun offer(bytes: ByteArray): List<EarbudEvent> =
+    override fun offer(bytes: ByteArray): List<ProtocolEvent> =
         decoder.offer(bytes).map { frame ->
             StarRingWireCodec.parseBatteryState(frame)?.let {
-                return@map EarbudEvent.BatteryChanged(
+                return@map ProtocolEvent.BatteryChanged(
                     EarbudBattery(
                         left = BatteryReading(it.leftPercent, charging = false),
                         right = BatteryReading(it.rightPercent, charging = false),
@@ -101,12 +103,11 @@ private class StarRingUltraEarbudProtocol : EarbudProtocol {
                 )
             }
             StarRingWireCodec.parseNoiseState(frame)?.let {
-                return@map EarbudEvent.NoiseModeChanged(
+                return@map ProtocolEvent.NoiseModeChanged(
                     mode = it.mode.toDomainMode(),
-                    acknowledged = true,
                 )
             }
-            EarbudEvent.UnknownFrame(
+            ProtocolEvent.UnknownFrame(
                 version = 0,
                 vendor = frame.group,
                 command = frame.command,
