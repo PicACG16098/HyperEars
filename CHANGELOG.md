@@ -4,6 +4,35 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-03
+
+### Architecture
+
+- 将设备适配聚合为每个物理会话唯一的有状态 `EarbudAdapter`；Adapter 统一持有身份、
+  能力、传输配置、运行状态和可转移的 `ProtocolSession`，移除并行的 Adapter/Profile
+  双重事实来源。
+- `ProtocolSession` 负责握手、请求队列和增量解码状态，纯 `WireCodec` 只处理字节；
+  只有线端产品身份或控制方言确实变化时才原子替换 Adapter，并复用既有会话与通道。
+- 蓝牙、私有传输和协议确认改为显式生命周期状态；同一设备的握手、控制、读回和
+  Adapter 更新在单一事务边界内串行执行。
+- MiLink 不再重新按名称判型；蓝牙进程选出的 Adapter 身份与完整能力快照沿状态桥
+  传递，界面仅消费统一快照。
+
+### Fixed
+
+- 家族 Adapter 改为保守初始化：合法电量响应只开放电量，合法模式响应才开放对应
+  控制；能力确认在当前 Adapter 内更新，不再通过同类型替换模拟状态变化。
+- 修复 MiLink 在 Adapter 能力集合变化但电量或模式数值未变化时不刷新卡片的问题。
+- Sony 家族初始化响应只确认协议版本，不再提前声明电量或环境声能力。
+- Edifier 家族以名称或 BES 服务选择候选；D8 仅确认传输，合法模式响应记录设备返回
+  的 ANC 槽位后才开放控制，并拒绝把发送帧回显识别为设备能力。
+- Bose 仅在产品 ID 或控制方言实际变化时替换 Adapter，重复能力响应保持原实例。
+- ROSESELSA 协议家族改为原地确认私有电量和噪声模式，保留既有 GATT/RFCOMM 会话。
+- Bose AudioModes 两态设备保留原生三项卡片，并禁用协议不支持的“关闭”项；不 Hook
+  MiLink 混淆回调，不通过重试或轮询修正界面。
+- 统一应用“关于”页、README 与兼容性矩阵的层级、证据、电量和噪声模式术语，使每项
+  能力与当前 Adapter 声明和协议确认条件一致。
+
 ## [1.0.0] - 2026-08-02
 
 ### Added
@@ -116,7 +145,8 @@
 - Release 构建改用独立环境变量签名，不再使用 debug 证书。
 - 增加 CI、标签发布、APK 签名验证和 SHA-256 产物。
 
-[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.1.0
 [1.0.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.0.0
 [0.11.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.11.0
 [0.10.4]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.10.4

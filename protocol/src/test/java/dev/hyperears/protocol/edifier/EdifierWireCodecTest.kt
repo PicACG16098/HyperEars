@@ -109,6 +109,17 @@ class EdifierWireCodecTest {
         assertNull(EdifierWireCodec.parseBatteryState(frame))
     }
 
+    @Test
+    fun `outbound echo cannot establish battery or ANC evidence`() {
+        val batteryEcho = EdifierWireCodec.Decoder().offer(EdifierWireCodec.queryBattery).single()
+        val ancEcho = EdifierWireCodec.Decoder().offer(
+            EdifierWireCodec.setAnc(EdifierWireCodec.ANC_VALUE_DEEP),
+        ).single()
+
+        assertNull(EdifierWireCodec.parseBatteryState(batteryEcho))
+        assertNull(EdifierWireCodec.parseAncState(ancEcho))
+    }
+
     private fun ByteArray.toHex(): String =
         joinToString(" ") { "%02X".format(it.toInt() and 0xFF) }
 }

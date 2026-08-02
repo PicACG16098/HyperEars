@@ -27,19 +27,20 @@ Sony 通道一次只允许一个等待 ACK 的请求。HyperEars 的协议实例
 
 1. `SonyEarbudAdapter`：只提供标准 A2DP/HFP、流转、音量和 Android 整机电量回退；
 2. `SonyProtocolFamilyAdapter`：声明 Sony RFCOMM、握手、ACK 队列和 v1/v2 公共语义；
-3. 具体型号 Profile：只声明外形、电池拓扑、环境声方言和服务优先级。
+3. 具体型号 Adapter：内嵌 `SonyAdapterConfig`，声明外形、电池拓扑、环境声方言和
+   服务优先级。
 
-已登记 Profile 覆盖 WH-1000XM2–XM6、WH-CH720N、ULT WEAR、WF-1000XM3–XM5、
+已登记 Adapter 覆盖 WH-1000XM2–XM6、WH-CH720N、ULT WEAR、WF-1000XM3–XM5、
 WF-C500/C510/C700N/C710N、WF-SP800N、WI-SP600N、WI-C100、LinkBuds 和
 LinkBuds S。未知 `WH/WI/MDR` 或 `WF/LinkBuds` 产品先进入协议家族；名称明确表示降噪
 产品时开放通用三态，否则只读取协议电量。未知型号仍须返回合法初始化帧，私有通道
-才会就绪。
+才会就绪；合法电量或环境声状态响应分别确认对应能力，名称本身不会提前开放控制。
 
 ## 证据与限制
 
 协议帧依据公开协议文档、SonyHeadphonesClient 和 Gadgetbridge 的可互操作行为独立
 实现。上述型号当前属于公开实现画像，尚未完成 HyperEars 本地逐型号实机验证。型号名
-用于选择电池拓扑和能力 Profile，RFCOMM 初始化响应用于确认协议；`LE_` 广播影子名称
+用于选择候选 Adapter 配置，RFCOMM 初始化响应用于确认协议和家族能力；`LE_` 广播影子名称
 不会创建第二个设备会话。
 
 完整来源、固定提交和许可证见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。

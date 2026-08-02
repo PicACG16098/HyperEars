@@ -7,10 +7,14 @@ import dev.hyperears.bridge.StateBroadcaster
 import dev.hyperears.hook.ModuleLog
 import dev.hyperears.hook.maskBluetoothAddress
 import dev.hyperears.integration.ControlRequest
-import dev.hyperears.integration.EarbudAdapterRegistry
-import dev.hyperears.integration.EarbudEvent
+import dev.hyperears.integration.DeviceLifecycle
+import dev.hyperears.integration.EarbudAdapter
+import dev.hyperears.integration.EarbudIdentity
 import dev.hyperears.integration.EarbudState
-import dev.hyperears.integration.EarbudStateReducer
+import dev.hyperears.integration.PrivateTransportState
+import dev.hyperears.integration.ProtocolHandshakeState
+import dev.hyperears.integration.SystemProfileState
+import dev.hyperears.integration.TransportReadiness
 import java.io.Closeable
 import java.util.Locale
 import java.util.UUID
@@ -61,11 +65,13 @@ internal class EarbudConnectionManager(
     }
 
     @SuppressLint("MissingPermission")
-    fun registerDevice(device: BluetoothDevice): Boolean {
+    fun registerDevice(
+        device: BluetoothDevice,
+        identity: EarbudIdentity,
+        earbudAdapter: EarbudAdapter,
+    ): Boolean {
         if (closed) return false
-        val identity = device.toEarbudIdentity()
         val name = identity.deviceName
-        val earbudAdapter = EarbudAdapterRegistry.forIntegration(identity) ?: return false
         val address = runCatching { device.address }.getOrNull() ?: return false
         val key = normalizeAddress(address)
 
@@ -75,9 +81,7 @@ internal class EarbudConnectionManager(
                 val initialState = knownDevices[key]
                     ?.state
                     ?.copy(
-                        sessionActive = false,
-                        connected = false,
-                        handshakeAccepted = false,
+                        lifecycle = DeviceLifecycle(),
                         revision = lastRevisions[key] ?: 0,
                     )
                     ?: EarbudState(
@@ -88,18 +92,19 @@ internal class EarbudConnectionManager(
                     device = device,
                     deviceName = name ?: earbudAdapter.displayName,
                     address = address,
-                    earbudAdapter = earbudAdapter,
+                    initialAdapter = earbudAdapter,
                     connectionCoordinator = connectionCoordinator,
                     listener = ::onSessionEvent,
                 )
-                val state = EarbudStateReducer.reduce(
-                    initialState,
-                    EarbudEvent.SessionStarted(
-                        modelId = earbudAdapter.id,
-                        deviceName = session.deviceName,
-                        address = address,
-                        privateProtocolRequired = earbudAdapter.privateProtocolRequired,
-                    ),
+                val runtime = session.snapshot()
+                val state = initialState.copy(
+                    adapter = runtime.adapter,
+                    deviceName = session.deviceName,
+                    address = address,
+                    lifecycle = runtime.lifecycle,
+                    battery = runtime.runtime.battery,
+                    noiseMode = runtime.runtime.noiseMode,
+                    revision = initialState.revision + 1,
                 )
                 val record = SessionRecord(
                     session = session,
@@ -173,8 +178,8 @@ internal class EarbudConnectionManager(
 
         if (request is ControlRequest.SetNoiseMode &&
             (
-                !record.session.effectiveAdapter.capabilities.noiseControl ||
-                    request.mode !in record.session.effectiveAdapter.supportedNoiseModes
+                !record.session.adapter.effectiveCapabilities().noiseControl ||
+                    request.mode !in record.session.adapter.effectiveSupportedNoiseModes()
                 )
         ) {
             return false
@@ -195,14 +200,23 @@ internal class EarbudConnectionManager(
         finishRemovals(removals)
     }
 
-    private fun onSessionEvent(session: EarbudDeviceSession, event: EarbudEvent) {
+    private fun onSessionEvent(
+        session: EarbudDeviceSession,
+        update: EarbudDeviceSession.Snapshot,
+    ) {
         val snapshot = synchronized(lifecycleLock) {
             val key = normalizeAddress(session.address)
             val record = sessions[key]?.takeIf { it.session === session }
                 ?: return
             val previous = record.state
-            val next = EarbudStateReducer.reduce(previous, event)
-            if (next === previous) return
+            val projected = previous.copy(
+                adapter = update.adapter,
+                lifecycle = update.lifecycle,
+                battery = update.runtime.battery,
+                noiseMode = update.runtime.noiseMode,
+            )
+            if (projected == previous) return
+            val next = projected.copy(revision = previous.revision + 1)
             record.state = next
             lastRevisions[key] = next.revision
             Snapshot(next, record.token).also {
@@ -220,7 +234,26 @@ internal class EarbudConnectionManager(
         }
         return keys.mapNotNull { key ->
             val record = sessions.remove(key) ?: return@mapNotNull null
-            val ended = EarbudStateReducer.reduce(record.state, EarbudEvent.SessionEnded)
+            val ended = record.state.copy(
+                lifecycle = DeviceLifecycle(
+                    systemProfile = SystemProfileState.DISCONNECTED,
+                    privateTransport = if (record.session.adapter.privateProtocolRequired) {
+                        PrivateTransportState.IDLE
+                    } else {
+                        PrivateTransportState.NOT_REQUIRED
+                    },
+                    protocolHandshake = if (
+                        record.session.adapter.privateProtocolRequired &&
+                        record.session.adapter.transportReadiness ==
+                        TransportReadiness.PROTOCOL_HANDSHAKE
+                    ) {
+                        ProtocolHandshakeState.PENDING
+                    } else {
+                        ProtocolHandshakeState.NOT_REQUIRED
+                    },
+                ),
+                revision = record.state.revision + 1,
+            )
             record.state = ended
             lastRevisions[key] = ended.revision
             val finalSnapshot = Snapshot(ended, record.token)

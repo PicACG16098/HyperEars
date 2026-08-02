@@ -28,7 +28,7 @@ internal object BoseAnrMiLinkCardAdapter : MiLinkCardAdapter by BoseWindSlotCard
     replacedViewId = ANC_TRANSPARENCY_ID,
 )
 
-/** Quiet/Aware devices have no verified Off command, so the unsupported native item is hidden. */
+/** Quiet/Aware devices have no verified Off command, so the native item remains visibly disabled. */
 internal object BoseTwoModeMiLinkCardAdapter : MiLinkCardAdapter {
     override val presentationId = BoseMiLinkPresentationIds.TWO_MODE
 
@@ -38,13 +38,21 @@ internal object BoseTwoModeMiLinkCardAdapter : MiLinkCardAdapter {
         environment: MiLinkCardEnvironment,
     ): MiLinkCardBinding? {
         val off = root.findMiLinkView(ANC_OFF_ID) ?: return null
-        val originalVisibility = off.visibility
-        off.visibility = View.GONE
+        val originalEnabled = off.isEnabled
+        val originalClickable = off.isClickable
+        val originalAlpha = off.alpha
+        off.isEnabled = false
+        off.isClickable = false
+        off.alpha = DISABLED_ALPHA
         return MiLinkCardBinding {
-            // State selection remains owned by MiLink; this binding only maintains capability UI.
-            off.visibility = View.GONE
+            // MiLink owns selection; the model presentation owns unsupported-action availability.
+            off.isEnabled = false
+            off.isClickable = false
+            off.alpha = DISABLED_ALPHA
         }.withUnbind {
-            off.visibility = originalVisibility
+            off.isEnabled = originalEnabled
+            off.isClickable = originalClickable
+            off.alpha = originalAlpha
         }
     }
 }
@@ -53,7 +61,7 @@ internal object BoseTwoModeMiLinkCardAdapter : MiLinkCardAdapter {
  * One-shot native-slot replacement shared by Bose products with an explicit wind mode.
  *
  * The host's own ANC item class, layout parameters and drawables are reused. This layer contains
- * no Bluetooth logic; concrete model profiles decide whether this presentation is selected.
+ * no Bluetooth logic; concrete model Adapters decide whether this presentation is selected.
  */
 private class BoseWindSlotCardAdapter(
     override val presentationId: MiLinkCardPresentationId,

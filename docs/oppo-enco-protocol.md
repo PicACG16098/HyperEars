@@ -73,9 +73,9 @@ AA | TotalLen | 00 00 | Command(2) | Sequence | PayloadLen(2) | Payload
 主动报告可能只包含部分组件。会话协议在设备范围内合并增量，避免一个单耳
 更新把另一个耳或充电盒电量清空。
 
-## 5. 降噪与型号 Profile
+## 5. 降噪与型号线配置
 
-设置载荷以 `01 01` 开头。通用 OPPO Profile 使用：
+设置载荷以 `01 01` 开头。通用 OPPO Adapter 的 `OppoWireConfig.STANDARD` 使用：
 
 | 统一状态 | 写入载荷尾部 |
 |---|---|
@@ -91,7 +91,7 @@ AA | TotalLen | 00 00 | Command(2) | Sequence | PayloadLen(2) | Payload
 | 降噪 | `01` |
 | 通透 | `04` |
 
-这个差异声明在 `OppoEncoAir2ProAdapter.protocolProfile`，而不是写死在
+这个差异声明在 `OppoEncoAir2ProAdapter.wireConfig`，而不是写死在
 WireCodec 或 MiLink Hook 中。
 
 参考实现还识别智能、轻度、中度、深度和自适应降噪。HyperEars 当前统一领域
@@ -117,15 +117,17 @@ WireCodec 或 MiLink Hook 中。
 
 ```text
 StandardEarbudAdapter
-  └─ OppoEarbudAdapter (通用 OPPO/Enco 协议与三态能力)
+  └─ OppoEarbudAdapter (保守家族入口，等待协议证据)
        ├─ OppoEncoAir2ProAdapter (兼容 ANC 编码)
        ├─ OppoEncoFree4Adapter
        ├─ OppoEncoX3Adapter
        └─ OppoEncoAir5Adapter
 ```
 
-四个具体型号保留独立 ID，便于未来在不改变通用协议的情况下增加自适应、
-空间音频等能力。当前它们除 Air2 Pro 的编码例外外，均复用家族行为。
+四个具体型号保留独立 ID，并静态声明已知三态能力。家族 Adapter 初始不发布噪声
+控制；只有合法通知能力、电量或状态响应确认 OPPO 协议后，才在同一 Adapter 会话中
+开放已经由协议证据支持的能力。当前具体型号除 Air2 Pro 的编码例外外，均复用家族
+`ProtocolSession`。
 
 ## 8. MiLink 边界
 

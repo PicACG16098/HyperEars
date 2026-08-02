@@ -1,6 +1,6 @@
 package dev.hyperears.hook
 
-import dev.hyperears.integration.EarbudAdapter
+import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.HeadsetFormFactor
 import dev.hyperears.integration.MiLinkCardPresentationId
 
@@ -22,7 +22,7 @@ internal object MiLinkCarrierIdentity {
      */
     const val HEADPHONES_DEVICE_ID = "01013A04"
 
-    fun deviceId(adapter: EarbudAdapter): String = when (adapter.formFactor) {
+    fun deviceId(adapter: AdapterSnapshot): String = when (adapter.formFactor) {
         HeadsetFormFactor.TWS -> TWS_DEVICE_ID
         HeadsetFormFactor.HEADPHONES -> HEADPHONES_DEVICE_ID
     }

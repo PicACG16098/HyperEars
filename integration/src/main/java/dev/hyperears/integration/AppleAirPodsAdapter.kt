@@ -23,7 +23,7 @@ open class AppleAirPodsAdapter : StandardEarbudAdapter() {
     override fun matches(identity: EarbudIdentity): Boolean =
         !identity.nativeSystemEarbud && identity.serviceUuids.any(AAP_SERVICE_UUIDS::contains)
 
-    override fun createProtocol(): EarbudProtocol = AppleAapProtocol()
+    override fun createProtocolSession(): ProtocolSession = AppleAapProtocolSession()
 
     companion object {
         const val ID = "apple-airpods-family"
@@ -36,11 +36,11 @@ open class AppleAirPodsAdapter : StandardEarbudAdapter() {
     }
 }
 
-object AppleAirPodsProAdapter : AppleAirPodsAdapter() {
-    const val ID = "apple-airpods-pro"
+class AppleAirPodsProAdapter : AppleAirPodsAdapter() {
 
     override val id: String = ID
     override val displayName: String = "Apple AirPods Pro"
+    override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
     override val capabilities: EarbudCapabilities = super.capabilities.copy(
         noiseControl = true,
     )
@@ -53,13 +53,15 @@ object AppleAirPodsProAdapter : AppleAirPodsAdapter() {
     override fun matches(identity: EarbudIdentity): Boolean =
         super.matches(identity) &&
             normalizeDeviceName(identity.deviceName.orEmpty()).contains("airpodspro")
+
+    companion object { const val ID = "apple-airpods-pro" }
 }
 
-object AppleAirPodsMaxAdapter : AppleAirPodsAdapter() {
-    const val ID = "apple-airpods-max"
+class AppleAirPodsMaxAdapter : AppleAirPodsAdapter() {
 
     override val id: String = ID
     override val displayName: String = "Apple AirPods Max"
+    override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
     override val formFactor: HeadsetFormFactor = HeadsetFormFactor.HEADPHONES
     override val capabilities: EarbudCapabilities = super.capabilities.copy(
         noiseControl = true,
@@ -73,9 +75,11 @@ object AppleAirPodsMaxAdapter : AppleAirPodsAdapter() {
     override fun matches(identity: EarbudIdentity): Boolean =
         super.matches(identity) &&
             normalizeDeviceName(identity.deviceName.orEmpty()).contains("airpodsmax")
+
+    companion object { const val ID = "apple-airpods-max" }
 }
 
-private class AppleAapProtocol : EarbudProtocol {
+private class AppleAapProtocolSession : ProtocolSession {
     private val decoder = AppleAapWireCodec.Decoder()
 
     override fun initialReadCommands(): List<ByteArray> = listOf(
@@ -91,10 +95,10 @@ private class AppleAapProtocol : EarbudProtocol {
         )
     }
 
-    override fun offer(bytes: ByteArray): List<EarbudEvent> =
+    override fun offer(bytes: ByteArray): List<ProtocolEvent> =
         decoder.offer(bytes).map { state ->
             when (state) {
-                is AppleAapWireCodec.State.Battery -> EarbudEvent.BatteryChanged(
+                is AppleAapWireCodec.State.Battery -> ProtocolEvent.BatteryChanged(
                     EarbudBattery(
                         left = state.left.toDomainReading(),
                         right = state.right.toDomainReading(),
@@ -102,9 +106,8 @@ private class AppleAapProtocol : EarbudProtocol {
                     ),
                 )
 
-                is AppleAapWireCodec.State.Noise -> EarbudEvent.NoiseModeChanged(
+                is AppleAapWireCodec.State.Noise -> ProtocolEvent.NoiseModeChanged(
                     mode = state.mode.toDomainMode(),
-                    acknowledged = true,
                 )
             }
         }

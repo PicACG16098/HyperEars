@@ -8,13 +8,18 @@ import android.os.SystemClock
 import dev.hyperears.hook.ModuleLog
 import dev.hyperears.hook.maskBluetoothAddress
 import dev.hyperears.integration.ControlRequest
-import dev.hyperears.integration.ControlConfirmationPolicy
 import dev.hyperears.integration.BatterySource
-import dev.hyperears.integration.EarbudBattery
+import dev.hyperears.integration.AdapterActivation
+import dev.hyperears.integration.AdapterIoResult
+import dev.hyperears.integration.AdapterRuntimeState
+import dev.hyperears.integration.AdapterSnapshot
+import dev.hyperears.integration.DeviceLifecycle
 import dev.hyperears.integration.EarbudAdapter
-import dev.hyperears.integration.EarbudAdapterRegistry
-import dev.hyperears.integration.EarbudEvent
-import dev.hyperears.integration.EarbudProtocol
+import dev.hyperears.integration.HandshakeResult
+import dev.hyperears.integration.PrivateTransportState
+import dev.hyperears.integration.ProtocolEvent
+import dev.hyperears.integration.ProtocolHandshakeState
+import dev.hyperears.integration.SystemProfileState
 import dev.hyperears.integration.TransportReadiness
 import java.io.Closeable
 import java.io.IOException
@@ -47,14 +52,20 @@ internal class EarbudDeviceSession(
     val device: BluetoothDevice,
     val deviceName: String,
     val address: String,
-    val earbudAdapter: EarbudAdapter,
+    initialAdapter: EarbudAdapter,
     private val connectionCoordinator: ConnectionAttemptCoordinator,
     private val listener: Listener,
     private val channelFactory: EarbudChannelFactory = AndroidEarbudChannelFactory,
 ) : Closeable {
     fun interface Listener {
-        fun onEvent(session: EarbudDeviceSession, event: EarbudEvent)
+        fun onSnapshotChanged(session: EarbudDeviceSession, snapshot: Snapshot)
     }
+
+    data class Snapshot(
+        val adapter: AdapterSnapshot,
+        val runtime: AdapterRuntimeState,
+        val lifecycle: DeviceLifecycle,
+    )
 
     private val sessionJob = SupervisorJob()
     private val scope = CoroutineScope(sessionJob + Dispatchers.IO)
@@ -71,29 +82,40 @@ internal class EarbudDeviceSession(
     private var channel: EarbudChannel? = null
 
     @Volatile
-    private var protocol: EarbudProtocol? = null
-
-    @Volatile
-    var effectiveAdapter: EarbudAdapter = earbudAdapter
+    var adapter: EarbudAdapter = initialAdapter
         private set
 
+    @Volatile
+    private var lifecycle = DeviceLifecycle(
+        systemProfile = SystemProfileState.CONNECTED,
+        privateTransport = if (initialAdapter.privateProtocolRequired) {
+            PrivateTransportState.IDLE
+        } else {
+            PrivateTransportState.NOT_REQUIRED
+        },
+        protocolHandshake = initialAdapter.initialHandshakeState(),
+    )
+
+    fun snapshot(): Snapshot = Snapshot(
+        adapter = adapter.snapshot(),
+        runtime = adapter.runtimeState(),
+        lifecycle = lifecycle,
+    )
+
     fun start() {
-        if (earbudAdapter.privateProtocolRequired) {
+        if (adapter.privateProtocolRequired) {
             requestConnection()
         } else {
-            listener.onEvent(this, EarbudEvent.AdapterReady)
+            publishSnapshot()
         }
         publishCachedSystemBattery()
     }
 
     fun onSystemBatteryChanged(percent: Int?) {
-        if (closed.get() || earbudAdapter.batterySource != BatterySource.SYSTEM_AGGREGATE) {
+        if (closed.get() || adapter.effectiveBatterySource() != BatterySource.SYSTEM_AGGREGATE) {
             return
         }
-        listener.onEvent(
-            this,
-            EarbudEvent.BatteryChanged(EarbudBattery.fromSystemAggregate(percent)),
-        )
+        if (adapter.onSystemBatteryChanged(percent)) publishSnapshot()
     }
 
     /**
@@ -104,13 +126,15 @@ internal class EarbudDeviceSession(
      */
     fun requestConnection(): Boolean {
         if (closed.get()) return false
-        if (!earbudAdapter.privateProtocolRequired) return true
+        if (!adapter.privateProtocolRequired) return true
+        var createdNewJob = false
         val job = synchronized(connectionJobLock) {
             if (closed.get()) return false
             if (channel != null || connectionJob?.isActive == true) return true
             scope.launch(start = CoroutineStart.LAZY) {
                 runConnectionCycle()
             }.also { created ->
+                createdNewJob = true
                 connectionJob = created
                 created.invokeOnCompletion {
                     synchronized(connectionJobLock) {
@@ -119,36 +143,43 @@ internal class EarbudDeviceSession(
                 }
             }
         }
+        if (createdNewJob) {
+            updateLifecycle(
+                privateTransport = PrivateTransportState.CONNECTING,
+                protocolHandshake = adapter.initialHandshakeState(),
+            )
+        }
         job.start()
         return true
     }
 
     fun execute(request: ControlRequest): Boolean {
         if (closed.get()) return false
-        if (!earbudAdapter.privateProtocolRequired) {
+        if (!adapter.privateProtocolRequired) {
             return request === ControlRequest.Refresh
         }
         if (request is ControlRequest.SetNoiseMode &&
             (
-                !effectiveAdapter.capabilities.noiseControl ||
-                    request.mode !in effectiveAdapter.supportedNoiseModes
+                !adapter.effectiveCapabilities().noiseControl ||
+                    request.mode !in adapter.effectiveSupportedNoiseModes()
                 )
         ) {
             return false
         }
         val activeChannel = channel ?: return false
-        val activeProtocol = protocol ?: return false
         scope.launch {
             runCatching {
                 transactionMutex.withLock {
+                    val result = adapter.executeControl(request)
+                    if (!result.accepted) return@withLock
                     sendCommands(
                         activeChannel = activeChannel,
-                        commands = activeProtocol.encode(request),
+                        commands = result.commands,
                         gapMs = COMMAND_GAP_MS,
                         description = request.description(),
                     )
-                    publishWrittenStateIfConfigured(request)
-                    val readback = activeProtocol.readback(request)
+                    if (result.stateChanged) publishSnapshot()
+                    val readback = result.readback
                     if (readback.isNotEmpty()) {
                         delay(CONTROL_READBACK_DELAY_MS)
                         sendCommands(
@@ -178,8 +209,7 @@ internal class EarbudDeviceSession(
         val activeChannel = synchronized(transportLock) {
             channel.also {
                 channel = null
-                protocol?.reset()
-                protocol = null
+                adapter.resetProtocolSession()
             }
         }
         activeChannel?.close()
@@ -187,6 +217,19 @@ internal class EarbudDeviceSession(
             connectionJob.also { connectionJob = null }
         }?.cancel()
         scope.cancel()
+        lifecycle = lifecycle.copy(
+            systemProfile = SystemProfileState.DISCONNECTED,
+            privateTransport = if (adapter.privateProtocolRequired) {
+                PrivateTransportState.IDLE
+            } else {
+                PrivateTransportState.NOT_REQUIRED
+            },
+            protocolHandshake = if (adapter.privateProtocolRequired) {
+                adapter.initialHandshakeState()
+            } else {
+                ProtocolHandshakeState.NOT_REQUIRED
+            },
+        )
         ModuleLog.debug(COMPONENT, "closed ${maskBluetoothAddress(address)}")
     }
 
@@ -197,11 +240,9 @@ internal class EarbudDeviceSession(
 
         while (currentCoroutineContext().isActive && !closed.get()) {
             var connectedAt = 0L
-            var wasConnected = false
             try {
                 val connectedTransport = connectFirstTransport()
                 val activeChannel = connectedTransport.channel
-                val activeProtocol = connectedTransport.protocol
                 currentCoroutineContext().ensureActive()
                 if (closed.get()) {
                     activeChannel.close()
@@ -210,47 +251,35 @@ internal class EarbudDeviceSession(
 
                 synchronized(transportLock) {
                     channel = activeChannel
-                    protocol = activeProtocol
                 }
                 connectedAt = SystemClock.elapsedRealtime()
-                wasConnected = true
-                listener.onEvent(this, EarbudEvent.ChannelConnected)
                 ModuleLog.debug(
                     COMPONENT,
                     "channel connected endpoint=${activeChannel.endpointId} " +
                         "address=${maskBluetoothAddress(address)}",
                 )
 
-                if (!connectedTransport.initialReadSent) {
-                    transactionMutex.withLock {
-                        sendCommands(
-                            activeChannel = activeChannel,
-                            commands = activeProtocol.initialReadCommands(),
-                            gapMs = INITIAL_COMMAND_GAP_MS,
-                            description = "initial read",
-                        )
-                    }
-                }
-                connectedTransport.bufferedEvents.forEach { event ->
-                    dispatchProtocolEvent(activeChannel, activeProtocol, event)
-                }
-                readFrames(activeChannel, activeProtocol)
+                updateLifecycle(
+                    privateTransport = PrivateTransportState.CONNECTED,
+                    protocolHandshake = adapter.readyHandshakeState(),
+                )
+                readFrames(activeChannel)
                 throw IOException("vendor channel stream ended")
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
                 clearTransport()
                 if (closed.get() || !currentCoroutineContext().isActive) return
-                if (wasConnected) {
-                    listener.onEvent(this, EarbudEvent.ChannelDisconnected)
-                }
-
                 val stableConnection =
                     connectedAt != 0L &&
                         SystemClock.elapsedRealtime() - connectedAt >= STABLE_CONNECTION_MS
                 if (stableConnection) consecutiveFailures = 0
                 val waitMs = ChannelRecoveryPolicy.delayBeforeRetry(consecutiveFailures)
                 if (waitMs == null) {
+                    updateLifecycle(
+                        privateTransport = PrivateTransportState.DORMANT,
+                        protocolHandshake = adapter.initialHandshakeState(),
+                    )
                     ModuleLog.warn(
                         COMPONENT,
                         "channel dormant after bounded recovery: ${error.message}",
@@ -258,6 +287,10 @@ internal class EarbudDeviceSession(
                     return
                 }
                 consecutiveFailures += 1
+                updateLifecycle(
+                    privateTransport = PrivateTransportState.RECOVERING,
+                    protocolHandshake = adapter.initialHandshakeState(),
+                )
                 ModuleLog.warn(
                     COMPONENT,
                     "channel unavailable; retry in ${waitMs}ms: ${error.message}",
@@ -278,7 +311,7 @@ internal class EarbudDeviceSession(
     }
 
     private fun publishCachedSystemBattery() {
-        if (earbudAdapter.batterySource != BatterySource.SYSTEM_AGGREGATE) return
+        if (adapter.effectiveBatterySource() != BatterySource.SYSTEM_AGGREGATE) return
         onSystemBatteryChanged(BluetoothSystemBattery.cachedLevel(device))
     }
 
@@ -290,37 +323,33 @@ internal class EarbudDeviceSession(
 
     private suspend fun connectFirstTransportSerially(): ConnectedTransport {
         var lastError: Throwable? = null
-        earbudAdapter.transports.forEach { transport ->
+        adapter.transports.forEach { transport ->
             currentCoroutineContext().ensureActive()
             val candidate = channelFactory.create(context, device, transport)
-            val candidateProtocol = requireNotNull(earbudAdapter.createProtocol()) {
-                "integrated adapter ${earbudAdapter.id} has no private protocol"
-            }
+            adapter.resetProtocolSession()
             synchronized(transportLock) { channel = candidate }
             try {
                 withTimeout(CONNECT_TIMEOUT_MS) { candidate.connect() }
-                if (earbudAdapter.transportReadiness == TransportReadiness.CONNECTED) {
-                    return ConnectedTransport(
-                        channel = candidate,
-                        protocol = candidateProtocol,
-                    )
-                }
-
+                updateLifecycle(
+                    privateTransport = PrivateTransportState.CONNECTED,
+                    protocolHandshake = adapter.initialHandshakeState(),
+                )
+                val initial = adapter.beginHandshake()
                 sendCommands(
                     activeChannel = candidate,
-                    commands = candidateProtocol.initialReadCommands(),
+                    commands = initial.commands,
                     gapMs = INITIAL_COMMAND_GAP_MS,
-                    description = "transport probe",
+                    description = "adapter handshake",
                 )
-                val bufferedEvents = awaitAcceptedHandshake(candidate, candidateProtocol)
-                return ConnectedTransport(
-                    channel = candidate,
-                    protocol = candidateProtocol,
-                    initialReadSent = true,
-                    bufferedEvents = bufferedEvents,
-                )
+                when (val handshake = initial.handshake) {
+                    HandshakeResult.Ready, null -> return ConnectedTransport(candidate)
+                    HandshakeResult.AwaitingEvidence -> awaitAcceptedHandshake(candidate)
+                    is HandshakeResult.Replace -> applyReplacement(handshake, candidate)
+                    HandshakeResult.Rejected -> throw IOException("adapter handshake rejected")
+                }
+                return ConnectedTransport(candidate)
             } catch (error: Throwable) {
-                candidateProtocol.reset()
+                adapter.resetProtocolSession()
                 candidate.close()
                 synchronized(transportLock) {
                     if (channel === candidate) channel = null
@@ -342,91 +371,135 @@ internal class EarbudDeviceSession(
 
     private suspend fun awaitAcceptedHandshake(
         candidate: EarbudChannel,
-        candidateProtocol: EarbudProtocol,
-    ): List<EarbudEvent> = withTimeout(PROTOCOL_HANDSHAKE_TIMEOUT_MS) {
+    ) = withTimeout(PROTOCOL_HANDSHAKE_TIMEOUT_MS) {
         val buffer = ByteArray(READ_BUFFER_SIZE)
-        val bufferedEvents = mutableListOf<EarbudEvent>()
         while (true) {
             val count = candidate.read(buffer)
             if (count < 0) throw IOException("vendor channel ended before protocol handshake")
-            val events = offerProtocolBytes(candidate, candidateProtocol, buffer.copyOf(count))
-            events.forEach { event ->
-                if (event is EarbudEvent.UnknownFrame) {
-                    logUnknownFrame(event)
-                } else {
-                    bufferedEvents += event
-                }
-            }
-            val handshake = events.filterIsInstance<EarbudEvent.Handshake>().lastOrNull()
-            if (handshake != null) {
-                if (!handshake.accepted) throw IOException("protocol handshake rejected")
-                return@withTimeout bufferedEvents
-            }
+            offerAdapterBytes(candidate, buffer.copyOf(count))
+            if (lifecycle.protocolReady) return@withTimeout
         }
-        @Suppress("UNREACHABLE_CODE")
-        bufferedEvents
     }
 
     private suspend fun readFrames(
         activeChannel: EarbudChannel,
-        activeProtocol: EarbudProtocol,
     ) {
         val buffer = ByteArray(READ_BUFFER_SIZE)
         while (currentCoroutineContext().isActive && !closed.get()) {
             val count = activeChannel.read(buffer)
             if (count < 0) return
-            offerProtocolBytes(activeChannel, activeProtocol, buffer.copyOf(count)).forEach { event ->
-                dispatchProtocolEvent(activeChannel, activeProtocol, event)
-            }
+            offerAdapterBytes(activeChannel, buffer.copyOf(count))
         }
     }
 
-    private suspend fun offerProtocolBytes(
+    private suspend fun offerAdapterBytes(
         activeChannel: EarbudChannel,
-        activeProtocol: EarbudProtocol,
         bytes: ByteArray,
-    ): List<EarbudEvent> {
-        val events = activeProtocol.offer(bytes)
-        val immediateCommands = activeProtocol.drainImmediateCommands()
-        if (immediateCommands.isNotEmpty()) {
-            transactionMutex.withLock {
-                sendCommands(
-                    activeChannel = activeChannel,
-                    commands = immediateCommands,
-                    gapMs = 0L,
-                    description = "protocol response",
-                )
-            }
+    ): AdapterIoResult = transactionMutex.withLock {
+        val result = adapter.receive(bytes)
+        if (result.commands.isNotEmpty()) {
+            sendCommands(
+                activeChannel = activeChannel,
+                commands = result.commands,
+                gapMs = 0L,
+                description = "adapter response",
+            )
         }
-        return events
+        result.unknownFrames.forEach(::logUnknownFrame)
+        var publishRequired = result.stateChanged
+        when (val handshake = result.handshake) {
+            HandshakeResult.Ready -> {
+                publishRequired = setLifecycle(
+                    protocolHandshake = adapter.readyHandshakeState(),
+                ) || publishRequired
+            }
+
+            HandshakeResult.Rejected -> {
+                setLifecycle(protocolHandshake = ProtocolHandshakeState.REJECTED)
+                publishSnapshot()
+                throw IOException("protocol rejected active adapter")
+            }
+
+            is HandshakeResult.Replace -> {
+                applyReplacement(handshake, activeChannel)
+                publishRequired = true
+                when (handshake.activation) {
+                    AdapterActivation.KEEP_CHANNEL_READY -> {
+                        publishRequired = setLifecycle(
+                            protocolHandshake = adapter.readyHandshakeState(),
+                        ) || publishRequired
+                    }
+
+                    AdapterActivation.RESTART_ON_CURRENT_CHANNEL -> {
+                        publishRequired = setLifecycle(
+                            protocolHandshake = adapter.initialHandshakeState(),
+                        ) || publishRequired
+                        val restart = adapter.beginHandshake()
+                        sendCommands(
+                            activeChannel,
+                            restart.commands,
+                            INITIAL_COMMAND_GAP_MS,
+                            "replacement handshake",
+                        )
+                        when (restart.handshake) {
+                            HandshakeResult.Ready, null -> {
+                                publishRequired = setLifecycle(
+                                    protocolHandshake = adapter.readyHandshakeState(),
+                                ) || publishRequired
+                            }
+
+                            HandshakeResult.AwaitingEvidence -> Unit
+                            HandshakeResult.Rejected -> {
+                                setLifecycle(protocolHandshake = ProtocolHandshakeState.REJECTED)
+                                publishSnapshot()
+                                throw IOException("replacement adapter handshake rejected")
+                            }
+
+                            is HandshakeResult.Replace ->
+                                throw IOException("nested adapter replacement is not supported")
+                        }
+                    }
+
+                    AdapterActivation.RECONNECT ->
+                        throw IOException("adapter replacement requires reconnect")
+                }
+            }
+
+            HandshakeResult.AwaitingEvidence, null -> Unit
+        }
+        if (publishRequired) publishSnapshot()
+        result
     }
 
-    private suspend fun dispatchProtocolEvent(
+    private fun applyReplacement(
+        replacement: HandshakeResult.Replace,
         activeChannel: EarbudChannel,
-        activeProtocol: EarbudProtocol,
-        event: EarbudEvent,
     ) {
-        if (event is EarbudEvent.UnknownFrame) {
-            logUnknownFrame(event)
-            return
-        }
-        if (event is EarbudEvent.ModelIdentified) {
-            EarbudAdapterRegistry.integratedById(event.modelId)?.let {
-                effectiveAdapter = it
-            }
-        }
-        listener.onEvent(this, event)
-        val followUp = activeProtocol.followUpCommands(event)
-        if (followUp.isNotEmpty()) {
-            transactionMutex.withLock {
-                sendCommands(
-                    activeChannel = activeChannel,
-                    commands = followUp,
-                    gapMs = INITIAL_COMMAND_GAP_MS,
-                    description = "model follow-up",
-                )
-            }
-        }
+        if (channel !== activeChannel) throw CancellationException("stale adapter replacement")
+        adapter = replacement.adapter
+    }
+
+    private fun updateLifecycle(
+        systemProfile: SystemProfileState = lifecycle.systemProfile,
+        privateTransport: PrivateTransportState = lifecycle.privateTransport,
+        protocolHandshake: ProtocolHandshakeState = lifecycle.protocolHandshake,
+    ) {
+        if (setLifecycle(systemProfile, privateTransport, protocolHandshake)) publishSnapshot()
+    }
+
+    private fun setLifecycle(
+        systemProfile: SystemProfileState = lifecycle.systemProfile,
+        privateTransport: PrivateTransportState = lifecycle.privateTransport,
+        protocolHandshake: ProtocolHandshakeState = lifecycle.protocolHandshake,
+    ): Boolean {
+        val next = DeviceLifecycle(systemProfile, privateTransport, protocolHandshake)
+        if (next == lifecycle) return false
+        lifecycle = next
+        return true
+    }
+
+    private fun publishSnapshot() {
+        listener.onSnapshotChanged(this, snapshot())
     }
 
     private suspend fun sendCommands(
@@ -449,34 +522,17 @@ internal class EarbudDeviceSession(
         }
     }
 
-    private fun publishWrittenStateIfConfigured(request: ControlRequest) {
-        if (request !is ControlRequest.SetNoiseMode) return
-        if (effectiveAdapter.noiseControlConfirmation ==
-            ControlConfirmationPolicy.DEVICE_REPORT
-        ) {
-            return
-        }
-        listener.onEvent(
-            this,
-            EarbudEvent.NoiseModeChanged(
-                mode = request.mode,
-                acknowledged = false,
-            ),
-        )
-    }
-
     private fun clearTransport() {
         val oldChannel = synchronized(transportLock) {
             channel.also {
                 channel = null
-                protocol?.reset()
-                protocol = null
+                adapter.resetProtocolSession()
             }
         }
         oldChannel?.close()
     }
 
-    private fun logUnknownFrame(event: EarbudEvent.UnknownFrame) {
+    private fun logUnknownFrame(event: ProtocolEvent.UnknownFrame) {
         val key = (event.vendor shl 16) or event.command
         val now = SystemClock.elapsedRealtime()
         val last = unknownFrameLogTimes[key] ?: Long.MIN_VALUE
@@ -500,12 +556,23 @@ internal class EarbudDeviceSession(
     private fun ByteArray.toHex(): String =
         joinToString(separator = " ") { "%02X".format(it.toInt() and 0xFF) }
 
+    private fun EarbudAdapter.initialHandshakeState(): ProtocolHandshakeState =
+        if (privateProtocolRequired && transportReadiness == TransportReadiness.PROTOCOL_HANDSHAKE) {
+            ProtocolHandshakeState.PENDING
+        } else {
+            ProtocolHandshakeState.NOT_REQUIRED
+        }
+
+    private fun EarbudAdapter.readyHandshakeState(): ProtocolHandshakeState =
+        if (privateProtocolRequired && transportReadiness == TransportReadiness.PROTOCOL_HANDSHAKE) {
+            ProtocolHandshakeState.CONFIRMED
+        } else {
+            ProtocolHandshakeState.NOT_REQUIRED
+        }
+
     private companion object {
         data class ConnectedTransport(
             val channel: EarbudChannel,
-            val protocol: EarbudProtocol,
-            val initialReadSent: Boolean = false,
-            val bufferedEvents: List<EarbudEvent> = emptyList(),
         )
 
         const val COMPONENT = "DeviceSession"

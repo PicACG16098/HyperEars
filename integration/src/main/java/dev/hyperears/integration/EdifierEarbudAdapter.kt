@@ -13,7 +13,11 @@ open class EdifierEarbudAdapter : StandardEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "Edifier headset"
     override val privateProtocolRequired: Boolean = true
+    override val transportReadiness: TransportReadiness =
+        TransportReadiness.PROTOCOL_HANDSHAKE
     override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
+    override val capabilities: EarbudCapabilities = super.capabilities.copy(battery = false)
+    protected open val wireConfig: EdifierWireConfig = EdifierWireConfig()
     override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.ServiceUuid(
             uuid = EDF_SPP_UUID,
@@ -25,11 +29,14 @@ open class EdifierEarbudAdapter : StandardEarbudAdapter() {
     override fun matches(identity: EarbudIdentity): Boolean {
         if (!identity.standardHeadset || identity.nativeSystemEarbud) return false
         val name = normalizeDeviceName(identity.deviceName.orEmpty())
-        return EDIFIER_NAME_MARKERS.any(name::contains)
+        val advertisedService = identity.serviceUuids.any {
+            it.equals(EDF_SPP_UUID, ignoreCase = true)
+        }
+        return advertisedService || EDIFIER_NAME_MARKERS.any(name::contains)
     }
 
-    override fun createProtocol(): EarbudProtocol =
-        EdifierEarbudProtocol()
+    override fun createProtocolSession(): ProtocolSession =
+        EdifierProtocolSession(wireConfig)
 
     companion object {
         const val ID = "edifier-family"
@@ -37,6 +44,7 @@ open class EdifierEarbudAdapter : StandardEarbudAdapter() {
 
         private val EDIFIER_NAME_MARKERS = setOf(
             "edifier",
+            "漫步者",
             "w860nb",
             "w820nb",
             "w830nb",
@@ -84,13 +92,15 @@ open class EdifierHeadphonesAdapter : EdifierEarbudAdapter() {
  * Selected by exact normalized Bluetooth name match. The private protocol queries
  * device capabilities (D8) and battery level after connection.
  */
-object EdifierW860NBProAdapter : EdifierHeadphonesAdapter() {
-    const val ID = "edifier-w860nb-pro"
-    val PRESENTATION_ID = MiLinkCardPresentationId(ID)
+class EdifierW860NBProAdapter : EdifierHeadphonesAdapter() {
 
     override val id: String = ID
     override val displayName: String = "Edifier W860NB PRO"
+    override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
     override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
+    override val wireConfig: EdifierWireConfig = EdifierWireConfig(
+        preverifiedAncIndex = EdifierWireCodec.ANC_INDEX,
+    )
     override val capabilities: EarbudCapabilities = EarbudCapabilities(
         battery = true,
         noiseControl = true,
@@ -116,7 +126,17 @@ object EdifierW860NBProAdapter : EdifierHeadphonesAdapter() {
     override fun matches(identity: EarbudIdentity): Boolean =
         super.matches(identity) &&
             normalizeDeviceName(identity.deviceName.orEmpty()) == "edifierw860nbpro"
+
+    companion object {
+        const val ID = "edifier-w860nb-pro"
+        val PRESENTATION_ID = MiLinkCardPresentationId(ID)
+    }
 }
+
+/** Wire facts known before a session starts; family candidates intentionally leave them unset. */
+data class EdifierWireConfig(
+    val preverifiedAncIndex: Int? = null,
+)
 
 /**
  * Edifier private protocol state machine.
@@ -124,9 +144,12 @@ object EdifierW860NBProAdapter : EdifierHeadphonesAdapter() {
  * Uses the BES/恒玄 SPP framing to query battery, ANC state, and device capabilities.
  * Frame format: [0xBB/0xCC][APP_CODE][CMD][LEN_H][LEN_L][PAYLOAD...][CRC8]
  */
-private class EdifierEarbudProtocol : EarbudProtocol {
+private class EdifierProtocolSession(
+    private val configuration: EdifierWireConfig,
+) : ProtocolSession {
     private val decoder = EdifierWireCodec.Decoder()
-    private var functionQueried = false
+    private var handshakePublished = false
+    private var activeAncIndex: Int? = configuration.preverifiedAncIndex
 
     override fun initialReadCommands(): List<ByteArray> = listOf(
         EdifierWireCodec.queryBattery,
@@ -141,8 +164,9 @@ private class EdifierEarbudProtocol : EarbudProtocol {
         )
         is ControlRequest.SetNoiseMode -> {
             val ancValue = request.mode.toEdifierAncValue()
-            if (ancValue != null) {
-                listOf(EdifierWireCodec.setAnc(ancValue = ancValue))
+            val ancIndex = activeAncIndex
+            if (ancValue != null && ancIndex != null) {
+                listOf(EdifierWireCodec.setAnc(ancValue = ancValue, ancIndex = ancIndex))
             } else {
                 emptyList()
             }
@@ -156,37 +180,51 @@ private class EdifierEarbudProtocol : EarbudProtocol {
         is ControlRequest.SetNoiseMode -> emptyList()
     }
 
-    override fun offer(bytes: ByteArray): List<EarbudEvent> = buildList {
+    override fun offer(bytes: ByteArray): List<ProtocolEvent> = buildList {
         decoder.offer(bytes).forEach { frame ->
             EdifierWireCodec.parseBatteryState(frame)?.let { battery ->
+                add(ProtocolEvent.CapabilitiesIdentified(battery = true))
                 add(
-                    EarbudEvent.BatteryChanged(
+                    ProtocolEvent.BatteryChanged(
                         EarbudBattery(
                             overall = BatteryReading(battery.wholeUnit, charging = false),
                         ),
                     ),
                 )
+                publishHandshakeIfNeeded()
                 return@forEach
             }
 
             EdifierWireCodec.parseAncState(frame)?.let { anc ->
                 // anc.mode = ancIndex (0x10), anc.level = ancValue (1-5)
+                activeAncIndex = anc.mode
                 val mode = anc.level?.toNoiseMode()
                 if (mode != null) {
-                    add(EarbudEvent.NoiseModeChanged(mode, acknowledged = true))
+                    add(
+                        ProtocolEvent.CapabilitiesIdentified(
+                            battery = false,
+                            noiseModes = EDIFIER_NOISE_MODES,
+                        ),
+                    )
+                    add(ProtocolEvent.NoiseModeChanged(mode))
                 }
+                publishHandshakeIfNeeded()
                 return@forEach
             }
 
             // Function query response (D8) — confirms device capabilities
-            if (frame.commandIndex == EdifierWireCodec.CMD_FUNCTION_QUERY) {
-                functionQueried = true
-                add(EarbudEvent.Handshake(accepted = true))
+            if (
+                frame.commandIndex == EdifierWireCodec.CMD_FUNCTION_QUERY &&
+                EdifierWireCodec.isProtocolResponse(frame)
+            ) {
+                // This proves the BES command family only. It does not itself prove that a
+                // battery or ANC command is implemented by this particular headset.
+                publishHandshakeIfNeeded()
                 return@forEach
             }
 
             add(
-                EarbudEvent.UnknownFrame(
+                ProtocolEvent.UnknownFrame(
                     version = 0,
                     vendor = 0,
                     command = frame.commandIndex,
@@ -198,7 +236,14 @@ private class EdifierEarbudProtocol : EarbudProtocol {
 
     override fun reset() {
         decoder.reset()
-        functionQueried = false
+        handshakePublished = false
+        activeAncIndex = configuration.preverifiedAncIndex
+    }
+
+    private fun MutableList<ProtocolEvent>.publishHandshakeIfNeeded() {
+        if (handshakePublished) return
+        handshakePublished = true
+        add(ProtocolEvent.HandshakeAccepted)
     }
 
     private fun NoiseMode.toEdifierAncValue(): Int? = when (this) {
@@ -228,5 +273,14 @@ private class EdifierEarbudProtocol : EarbudProtocol {
         EdifierWireCodec.ANC_VALUE_AMBIENT -> NoiseMode.TRANSPARENCY
         EdifierWireCodec.ANC_VALUE_OFF -> NoiseMode.OFF
         else -> null
+    }
+
+    private companion object {
+        val EDIFIER_NOISE_MODES = setOf(
+            NoiseMode.ANC,
+            NoiseMode.OFF,
+            NoiseMode.TRANSPARENCY,
+            NoiseMode.WIND,
+        )
     }
 }

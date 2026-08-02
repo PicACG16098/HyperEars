@@ -99,10 +99,10 @@ START switch:  1F 03 05 02 <modeIndex> <voicePrompt>
 START configs: 1F 06 05 00
 ```
 
-已知 Quiet/Aware 索引分别为 `0/1`。没有可靠关闭命令的产品只发布这两种状态，卡片
-隐藏不受支持的“关闭”入口。`prince/0x4075` 额外读取 ModeConfig，并只切换设备实际
+已知 Quiet/Aware 索引分别为 `0/1`。没有可靠关闭命令的产品只发布这两种状态；系统
+原生三项卡片中的“关闭”项保留显示但设为禁用，不会发送命令。`prince/0x4075` 额外读取 ModeConfig，并只切换设备实际
 返回且 `wind=true` 的预设，不修改用户模式参数。不同代 ModeConfig 的字段偏移由
-Profile 提供，Codec 不写死成一个型号布局。
+具体 Adapter 内嵌的 `BoseWireConfig` 提供，Codec 不写死成一个型号布局。
 
 ## 5. 电量 `[2.2]`
 
@@ -121,14 +121,19 @@ STATUS payload 按四字节组件重复：
 
 ## 6. 运行时结构
 
-- `BoseEarbudAdapter`：无扫描家族初筛、端点顺序和通用 BMAP 会话入口。
-- `BoseBmapModelRegistry`：产品 ID 到具体 Adapter/Profile 的唯一查找表。
-- `BoseCapabilityAdapterRegistry`：型号画像缺失时，由合法 STATUS 选择的运行时家族
-  能力 Adapter；分别保留头戴/TWS 形态。
-- 具体型号 Adapter：只声明产品 ID、形态、能力、噪声控制画像和可选卡片呈现。
-- `BoseBmapEarbudProtocol`：同一字节流上的型号升级、电量、画像分派和状态回读。
+- `BoseEarbudAdapter`：无扫描家族初筛、端点顺序、当前能力和 BMAP 会话所有权。
+- `BoseBmapModelRegistry`：产品 ID 到具体 Adapter 线配置的内部目录。
+- `BoseCapabilityConfigRegistry`：型号画像缺失时，由合法 STATUS 选择的只读能力配置；
+  分别保留头戴/TWS 形态。
+- 具体型号 Adapter：声明产品 ID、形态、能力、`BoseWireConfig` 和可选卡片呈现。
+- `BoseBmapProtocolSession`：同一字节流上的增量解码、请求状态、电量和模式回读；
+  它只产生产品 ID 与协议证据，不自行选择 Adapter。
 - `BoseBmapWireCodec`：纯 BMAP 分帧，以及 Product、Battery、ANR、CNC、AudioModes
   的无状态编解码。
+
+家族 Adapter 收到产品 ID 后，由自身映射并返回 `Replace`。设备会话原子替换为具体
+Adapter，同时复用已建立的 RFCOMM 与原 `ProtocolSession`；产品未知时，只有合法只读
+STATUS 才会形成带对应控制方言的新 Adapter。UI 与 MiLink 只接收替换后的完整快照。
 
 未知产品 ID 不会伪装成具体型号；只有协议能力探测成功才得到对应写命令。电量 `[2.2]`
 始终独立解析，因此噪声控制探测失败不会使电量退化。协议响应、设备会话和 UI 状态仍

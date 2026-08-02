@@ -85,6 +85,7 @@ object EdifierWireCodec {
      * Verified: `BB EC D0 00 01 99 11` -> payload[0]=0x99 -> 0x99^0xA5 = 0x3C = 60%.
      */
     fun parseBatteryState(frame: Frame): BatteryState? {
+        if (!isProtocolResponse(frame)) return null
         if (frame.commandIndex != CMD_BATTERY_QUERY && frame.commandIndex != CMD_DEVICE_STATE_QUERY) {
             return null
         }
@@ -100,6 +101,7 @@ object EdifierWireCodec {
      * -> ancIndex=16, ancValue=5 (NC off).
      */
     fun parseAncState(frame: Frame): AncState? {
+        if (!isProtocolResponse(frame)) return null
         if (frame.commandIndex != CMD_ANC_QUERY && frame.commandIndex != CMD_ANC_SET) {
             return null
         }
@@ -108,6 +110,11 @@ object EdifierWireCodec {
         val level = frame.payload.getOrNull(1)?.unsigned()?.let { it xor RESPONSE_XOR_KEY }
         return AncState(mode = mode, level = level)
     }
+
+    /** A device-originated BES/Edifier frame eligible to establish protocol evidence. */
+    fun isProtocolResponse(frame: Frame): Boolean =
+        (frame.header == RECEIVE_HEADER || frame.header == RECEIVE_HEADER_OLD) &&
+            frame.appCode == APP_CODE
 
     // ── Frame building ──
 
