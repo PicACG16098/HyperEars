@@ -43,7 +43,7 @@ Get-Content .\HyperEars-vX.Y.Z.apk.sha256
 3. 确认静态作用域为 `com.android.bluetooth` 和 `com.milink.service`。
 4. 重启整台设备。
 5. 连接耳机，打开 HyperEars 运行看板。
-6. 确认卡片中的 Profile、形态、传输与控制能力符合目标设备；观察“耳机链路”及
+6. 确认卡片中的 Adapter、形态、传输与控制能力符合目标设备；观察“耳机链路”及
    “MiLink 处理”各阶段。需要握手确认的型号应完成“协议确认”，连接即就绪的型号
    不会伪造握手阶段。
 

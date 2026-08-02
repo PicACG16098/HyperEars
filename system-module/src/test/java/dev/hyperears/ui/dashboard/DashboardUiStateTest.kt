@@ -2,293 +2,155 @@ package dev.hyperears.ui.dashboard
 
 import dev.hyperears.bridge.BridgeReceipt
 import dev.hyperears.bridge.BridgeStage
-import dev.hyperears.integration.AppleAirPodsMaxAdapter
-import dev.hyperears.integration.BatteryReading
-import dev.hyperears.integration.EarbudBattery
+import dev.hyperears.integration.BoseHeadphonesAdapter
+import dev.hyperears.integration.DeviceLifecycle
 import dev.hyperears.integration.EarbudState
+import dev.hyperears.integration.PrivateTransportState
+import dev.hyperears.integration.ProtocolHandshakeState
+import dev.hyperears.integration.StandardEarbudAdapter
+import dev.hyperears.integration.SystemProfileState
+import dev.hyperears.integration.VivoEarbudAdapter
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DashboardUiStateTest {
     @Test
-    fun `two addresses remain as two independent sessions`() {
-        val left = activeState("02:00:00:00:00:01", "vivo TWS Air3 Pro")
-        val right = activeState("AA:BB:CC:DD:EE:FF", "Second TWS")
+    fun reducerKeepsIndependentAddressKeyedSessions() {
+        val first = activeState(FIRST_ADDRESS, "First")
+        val second = activeState(SECOND_ADDRESS, "Second")
 
-        val afterFirst = DeviceSessionReducer.reduce(
-            DeviceSessionCollection(),
-            left,
-            "token-1",
+        val collection = DeviceSessionReducer.reduce(
+            DeviceSessionReducer.reduce(DeviceSessionCollection(), first, "first-token"),
+            second,
+            "second-token",
         )
-        val afterSecond = DeviceSessionReducer.reduce(afterFirst, right, "token-2")
 
-        assertEquals(2, afterSecond.sessions.size)
-        assertEquals(
-            "token-1",
-            afterSecond.sessions["02:00:00:00:00:01"]?.sessionToken,
-        )
-        assertEquals(
-            "token-2",
-            afterSecond.sessions["AA:BB:CC:DD:EE:FF"]?.sessionToken,
-        )
+        assertEquals(2, collection.sessions.size)
+        assertEquals("First", collection.sessions[FIRST_ADDRESS]?.state?.deviceName)
+        assertEquals("Second", collection.sessions[SECOND_ADDRESS]?.state?.deviceName)
     }
 
     @Test
-    fun `new state replaces only the matching address`() {
-        val first = activeState("02:00:00:00:00:01", "vivo TWS Air3 Pro")
-        val second = activeState("AA:BB:CC:DD:EE:FF", "Second TWS")
-        val initial = DeviceSessionReducer.reduce(
+    fun disconnectedSystemLifecycleRemovesOnlyThatSession() {
+        val both = DeviceSessionReducer.reduce(
             DeviceSessionReducer.reduce(
                 DeviceSessionCollection(),
-                first,
-                "token-1",
+                activeState(FIRST_ADDRESS, "First"),
+                "first-token",
             ),
-            second,
-            "token-2",
+            activeState(SECOND_ADDRESS, "Second"),
+            "second-token",
         )
 
-        val connectedFirst = first.copy(connected = true, revision = 2)
-        val updated = DeviceSessionReducer.reduce(initial, connectedFirst, "token-1")
+        val ended = activeState(FIRST_ADDRESS, "First").copy(lifecycle = DeviceLifecycle())
+        val remaining = DeviceSessionReducer.reduce(both, ended, "first-token")
 
-        assertEquals(2, updated.sessions.size)
-        assertEquals(
-            true,
-            updated.sessions["02:00:00:00:00:01"]?.state?.connected,
-        )
-        assertEquals(
-            false,
-            updated.sessions["AA:BB:CC:DD:EE:FF"]?.state?.connected,
-        )
+        assertFalse(FIRST_ADDRESS in remaining.sessions)
+        assertTrue(SECOND_ADDRESS in remaining.sessions)
     }
 
     @Test
-    fun `session end removes only the matching address`() {
-        val first = activeState("02:00:00:00:00:01", "vivo TWS Air3 Pro")
-        val second = activeState("AA:BB:CC:DD:EE:FF", "Second TWS")
-        val initial = DeviceSessionReducer.reduce(
-            DeviceSessionReducer.reduce(
-                DeviceSessionCollection(),
-                first,
-                "token-1",
+    fun phaseComesDirectlyFromExplicitTransportAndHandshakeStates() {
+        val connecting = snapshot(
+            lifecycle = privateLifecycle(PrivateTransportState.CONNECTING),
+        )
+        val recovering = snapshot(
+            lifecycle = privateLifecycle(PrivateTransportState.RECOVERING),
+        )
+        val confirming = snapshot(
+            lifecycle = privateLifecycle(
+                PrivateTransportState.CONNECTED,
+                ProtocolHandshakeState.PENDING,
             ),
-            second,
-            "token-2",
         )
 
-        val updated = DeviceSessionReducer.reduce(
-            initial,
-            first.copy(sessionActive = false, connected = false),
-            "token-1",
-        )
-
-        assertEquals(setOf("AA:BB:CC:DD:EE:FF"), updated.sessions.keys)
+        assertEquals(DevicePhase.TRANSPORT_CONNECTING, connecting.phase)
+        assertEquals(DevicePhase.TRANSPORT_RECOVERING, recovering.phase)
+        assertEquals(DevicePhase.PROTOCOL_CONFIRMING, confirming.phase)
     }
 
     @Test
-    fun `matching MiLink receipt is observed for the exact revision`() {
-        val state = activeState("02:00:00:00:00:01", "First").copy(
-            connected = true,
-            handshakeAccepted = true,
-            revision = 8,
-        )
-        val initial = DeviceSessionReducer.reduce(
-            DeviceSessionCollection(),
-            state,
-            "token-1",
-        )
-
-        val updated = DeviceSessionReducer.acceptBridgeReceipt(
-            initial,
-            receipt(state, token = "token-1", revision = 8),
-        )
-
-        val session = updated.sessions.getValue("02:00:00:00:00:01")
-        assertEquals(true, session.bridgeObserved)
-        assertEquals(DevicePhase.STATE_ACCEPTED, session.phase)
-    }
-
-    @Test
-    fun `old MiLink receipt does not mark a newer state observed`() {
-        val state = activeState("02:00:00:00:00:01", "First").copy(
-            connected = true,
-            handshakeAccepted = true,
-            revision = 9,
-        )
-        val initial = DeviceSessionReducer.reduce(
-            DeviceSessionCollection(),
-            state,
-            "token-1",
-        )
-
-        val updated = DeviceSessionReducer.acceptBridgeReceipt(
-            initial,
-            receipt(state, token = "token-1", revision = 8),
-        )
-
-        val session = updated.sessions.getValue("02:00:00:00:00:01")
-        assertEquals(false, session.bridgeObserved)
-        assertEquals(DevicePhase.WAITING_FOR_MILINK, session.phase)
-    }
-
-    @Test
-    fun `connected readiness does not require a synthetic handshake`() {
-        val state = activeState("02:00:00:00:00:01", "Connected-ready device").copy(
-            connected = true,
-            privateProtocolRequired = true,
-            privateChannelConnected = true,
-            handshakeAccepted = false,
-        )
-
-        val session = DeviceSessionSnapshot(state = state, sessionToken = "token-1")
-
-        assertEquals(DevicePhase.WAITING_FOR_MILINK, session.phase)
-        assertEquals(true, session.miLinkLifecycle.first().active)
-    }
-
-    @Test
-    fun `private transport is reported as preparing until adapter readiness`() {
-        val state = activeState("02:00:00:00:00:01", "Private device").copy(
-            privateProtocolRequired = true,
-            privateChannelConnected = true,
-            connected = false,
-        )
-
-        val session = DeviceSessionSnapshot(state = state, sessionToken = "token-1")
-
-        assertEquals(DevicePhase.PREPARING_PRIVATE_CHANNEL, session.phase)
-    }
-
-    @Test
-    fun `projector owns headset battery topology and readiness labels`() {
-        val state = activeState("02:00:00:00:00:01", "AirPods Max").copy(
-            modelId = AppleAirPodsMaxAdapter.ID,
-            connected = true,
-            privateProtocolRequired = true,
-            privateChannelConnected = true,
-            battery = EarbudBattery(left = BatteryReading(82, charging = false)),
-        )
-
-        val card = DeviceSessionUiProjector.project(
-            DeviceSessionSnapshot(state = state, sessionToken = "token-1"),
-        )
-
-        assertEquals("Apple AirPods Max", card.profileName)
-        assertEquals(DeviceMetric("整机", "82%"), card.metrics.first())
-        assertEquals("连接即就绪", card.headsetLifecycle.last().label)
-        assertEquals(true, card.headsetLifecycle.last().complete)
-    }
-
-    @Test
-    fun `receipt arriving before state is attached when revision catches up`() {
-        val state = activeState("02:00:00:00:00:01", "First").copy(revision = 4)
-        val receiptFirst = DeviceSessionReducer.acceptBridgeReceipt(
-            DeviceSessionCollection(),
-            receipt(state, token = "token-1", revision = 4),
-        )
-
-        val updated = DeviceSessionReducer.reduce(receiptFirst, state, "token-1")
-
-        assertEquals(
-            true,
-            updated.sessions.getValue("02:00:00:00:00:01").bridgeObserved,
-        )
-    }
-
-    @Test
-    fun `dashboard reports independently observed counters`() {
-        val readyState = activeState("02:00:00:00:00:01", "First").copy(
-            connected = true,
-            handshakeAccepted = true,
-            revision = 3,
-        )
-        val dashboard = DashboardUiState(
-            runtimeResponsive = true,
-            sessions = listOf(
-                DeviceSessionSnapshot(
-                    state = readyState,
-                    sessionToken = "token-1",
-                    bridgeReceipts = setOf(
-                        receipt(readyState, token = "token-1", revision = 3),
-                        receipt(
-                            readyState,
-                            token = "token-1",
-                            revision = 2,
-                            stage = BridgeStage.IDENTITY_QUERIED,
-                        ),
-                        receipt(
-                            readyState,
-                            token = "token-1",
-                            revision = 2,
-                            stage = BridgeStage.CAPABILITIES_QUERIED,
-                        ),
-                    ),
-                ),
-                DeviceSessionSnapshot(
-                    activeState("AA:BB:CC:DD:EE:FF", "Second"),
-                    "token-2",
+    fun projectorUsesAdapterSnapshotWithoutRegistryLookup() {
+        val adapter = BoseHeadphonesAdapter().snapshot()
+        val session = DeviceSessionSnapshot(
+            state = EarbudState(
+                adapter = adapter,
+                deviceName = "Custom Bluetooth Name",
+                address = FIRST_ADDRESS,
+                lifecycle = privateLifecycle(
+                    PrivateTransportState.CONNECTED,
+                    ProtocolHandshakeState.CONFIRMED,
                 ),
             ),
+            sessionToken = "token",
         )
 
-        assertEquals(2, dashboard.sessions.size)
-        assertEquals(1, dashboard.connectedCount)
-        assertEquals(1, dashboard.handshakeCount)
-        assertEquals(1, dashboard.miLinkObservedCount)
-        assertEquals(1, dashboard.identityQueriedCount)
-        assertEquals(1, dashboard.capabilitiesQueriedCount)
+        val card = DeviceSessionUiProjector.project(session)
+
+        assertEquals("Custom Bluetooth Name", card.deviceName)
+        assertEquals(adapter.displayName, card.adapterName)
+        assertEquals(adapter.id, card.adapterId)
+        assertTrue(card.adapterResolved)
+        assertEquals(4, card.headsetLifecycle.size)
     }
 
     @Test
-    fun `session scoped MiLink calls survive a later state revision`() {
-        val initialState = activeState("02:00:00:00:00:01", "First").copy(
-            connected = true,
-            handshakeAccepted = true,
-            revision = 3,
-        )
-        val initial = DeviceSessionReducer.reduce(
-            DeviceSessionCollection(),
-            initialState,
-            "token-1",
-        )
-        val withCapabilityCall = DeviceSessionReducer.acceptBridgeReceipt(
-            initial,
-            receipt(
-                initialState,
-                token = "token-1",
-                revision = 3,
-                stage = BridgeStage.CAPABILITIES_QUERIED,
-            ),
+    fun bridgeReceiptsAdvanceOnlyTheObservedMiLinkStages() {
+        val state = activeState(FIRST_ADDRESS, "Headset")
+        val session = DeviceSessionSnapshot(state, "token")
+        val receipt = BridgeReceipt(
+            address = FIRST_ADDRESS,
+            sessionToken = "token",
+            revision = state.revision,
+            consumerProcess = "com.milink.service",
+            stage = BridgeStage.STATE_ACCEPTED,
         )
 
-        val updated = DeviceSessionReducer.reduce(
-            withCapabilityCall,
-            initialState.copy(revision = 4),
-            "token-1",
+        val collection = DeviceSessionReducer.acceptBridgeReceipt(
+            DeviceSessionCollection(sessions = mapOf(FIRST_ADDRESS to session)),
+            receipt,
         )
+        val updated = requireNotNull(collection.sessions[FIRST_ADDRESS])
 
-        val session = updated.sessions.getValue("02:00:00:00:00:01")
-        assertEquals(true, session.capabilitiesQueried)
-        assertEquals(false, session.bridgeObserved)
+        assertTrue(updated.bridgeObserved)
+        assertFalse(updated.identityQueried)
+        assertEquals(DevicePhase.STATE_ACCEPTED, updated.phase)
     }
 
     private fun activeState(address: String, name: String) = EarbudState(
-        modelId = "test-profile",
+        adapter = StandardEarbudAdapter().snapshot(),
         deviceName = name,
         address = address,
-        sessionActive = true,
+        lifecycle = DeviceLifecycle(
+            SystemProfileState.CONNECTED,
+            PrivateTransportState.NOT_REQUIRED,
+            ProtocolHandshakeState.NOT_REQUIRED,
+        ),
         revision = 1,
     )
 
-    private fun receipt(
-        state: EarbudState,
-        token: String,
-        revision: Long,
-        stage: BridgeStage = BridgeStage.STATE_ACCEPTED,
-    ) = BridgeReceipt(
-        address = requireNotNull(state.address),
-        sessionToken = token,
-        revision = revision,
-        consumerProcess = "com.milink.service:core",
-        stage = stage,
+    private fun snapshot(lifecycle: DeviceLifecycle) = DeviceSessionSnapshot(
+        state = EarbudState(
+            adapter = VivoEarbudAdapter().snapshot(),
+            address = FIRST_ADDRESS,
+            lifecycle = lifecycle,
+        ),
+        sessionToken = "token",
     )
+
+    private fun privateLifecycle(
+        transport: PrivateTransportState,
+        handshake: ProtocolHandshakeState = ProtocolHandshakeState.PENDING,
+    ) = DeviceLifecycle(
+        systemProfile = SystemProfileState.CONNECTED,
+        privateTransport = transport,
+        protocolHandshake = handshake,
+    )
+
+    private companion object {
+        const val FIRST_ADDRESS = "00:11:22:33:44:55"
+        const val SECOND_ADDRESS = "AA:BB:CC:DD:EE:FF"
+    }
 }

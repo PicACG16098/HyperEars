@@ -119,6 +119,12 @@ NiceHCK_Controller 及可互操作协议事实独立完成。
 QuietComfort Earbuds 和 QuietComfort Ultra 二代的控制帧。HyperEars 只独立实现互操作
 所需的协议事实，不随 APK 分发上述项目的源代码、抓包、二进制或品牌资源。
 
+## Edifier BES protocol research
+
+Edifier W860NB PRO 的 BES RFCOMM 帧、电量和 ANC 槽位来自本项目对 Edifier Connect
+v8.4.39 的互操作行为分析，并由真实设备通信验证。HyperEars 不分发厂商应用、反编译
+产物、图片或品牌资源；其他 Edifier 型号只在合法 BES 响应确认相应能力后开放。
+
 ## Sony Headphones protocol research
 
 - Plutoberth/SonyHeadphonesClient:

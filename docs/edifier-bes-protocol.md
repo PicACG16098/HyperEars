@@ -123,3 +123,7 @@ Response example: `BB EC D0 00 01 99 11` — single-byte XOR-encrypted payload.
 6. **Send payloads are also XOR-0xA5-encrypted** (not just responses)
 7. The W860NB PRO executes ANC writes immediately; HyperEars skips the readback
    round-trip to keep control latency low
+8. Family candidates start with no private battery or noise-control capability. A valid battery
+   response opens private battery; a valid ANC state response records that device's returned
+   `ancIndex` and only then opens writable noise modes. A D8 function reply confirms the BES
+   transport but does not by itself claim battery or ANC support.

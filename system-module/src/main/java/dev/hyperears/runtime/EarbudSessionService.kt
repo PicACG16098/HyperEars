@@ -9,6 +9,8 @@ import android.content.IntentFilter
 import dev.hyperears.bridge.ModuleContract
 import dev.hyperears.bridge.StateBroadcaster
 import dev.hyperears.hook.ModuleLog
+import dev.hyperears.integration.EarbudAdapter
+import dev.hyperears.integration.EarbudIdentity
 import dev.hyperears.integration.EarbudState
 import java.io.Closeable
 
@@ -36,8 +38,11 @@ internal object EarbudSessionService {
         ModuleLog.debug(COMPONENT, "created")
     }
 
-    fun registerDevice(device: BluetoothDevice): Boolean =
-        runtime?.connectionManager?.registerDevice(device) == true
+    fun registerDevice(
+        device: BluetoothDevice,
+        identity: EarbudIdentity,
+        adapter: EarbudAdapter,
+    ): Boolean = runtime?.connectionManager?.registerDevice(device, identity, adapter) == true
 
     fun unregisterDevice(device: BluetoothDevice?): Boolean =
         runtime?.connectionManager?.unregisterDevice(device) == true

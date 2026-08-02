@@ -12,7 +12,7 @@ SHA-256: 3C:ED:7C:0E:E4:D3:0F:2B:12:5C:06:CE:51:C2:75:B7:96:39:B4:AB:99:5C:4F:0F
 安装后可以用 Android SDK `apksigner` 检查下载文件：
 
 ```powershell
-apksigner verify --verbose --print-certs .\HyperEars-v1.0.0.apk
+apksigner verify --verbose --print-certs .\HyperEars-v1.1.0.apk
 ```
 
 输出的 `Signer #1 certificate SHA-256 digest` 必须等于：

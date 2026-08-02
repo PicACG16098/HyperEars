@@ -38,10 +38,12 @@ import dev.hyperears.R
 
 private data class SupportEntry(
     val name: String,
+    val scope: SupportScope,
     val evidence: EvidenceLevel,
-    val matchBasis: String,
-    val capabilities: String,
-    val note: String? = null,
+    val matchAndConfirmation: String,
+    val privateTransport: String,
+    val battery: String,
+    val noiseControl: String,
 )
 
 private data class SupportBrand(
@@ -51,9 +53,16 @@ private data class SupportBrand(
 
 private enum class EvidenceLevel(val label: String) {
     VERIFIED("实机验证"),
-    PUBLIC_PROFILE("公开实现"),
-    REFERENCE_PROFILE("参考协议"),
+    PUBLIC_IMPLEMENTATION("公开实现"),
+    REFERENCE_PROTOCOL("参考协议"),
     FAMILY_EXTRAPOLATION("家族外推"),
+    STANDARD_FALLBACK("标准回退"),
+}
+
+private enum class SupportScope(val label: String) {
+    MODEL("具体型号"),
+    PRODUCT_LINE("产品线"),
+    VENDOR_FAMILY("品牌家族"),
     STANDARD_FALLBACK("标准回退"),
 }
 
@@ -67,83 +76,339 @@ private val supportBrands = listOf(
     SupportBrand(
         name = "vivo / iQOO",
         entries = listOf(
-            SupportEntry("vivo TWS Air3 Pro", EvidenceLevel.VERIFIED, "精确名称；GAIA RFCOMM 0837", "左/右/盒电量；ANC/OFF/通透；流转"),
-            SupportEntry("vivo TWS 3e", EvidenceLevel.PUBLIC_PROFILE, "精确名称；GAIA RFCOMM 0837，channel 13 回退", "左/右/盒电量；ANC/OFF/通透；流转"),
             SupportEntry(
-                "vivo / iQOO TWS 家族目录",
-                EvidenceLevel.FAMILY_EXTRAPOLATION,
-                "精确目录名称；GAIA RFCOMM 0837",
-                "合法响应中的左/右/盒电量；ANC/OFF/通透；流转",
-                "Air2/Air200、5e、3 Pro、3、2e、2、1、A1 Pro/A1、Air Pro/Air、Neo、X1；iQOO TWS Air Pro/Air/1。",
+                name = "vivo TWS Air3 Pro",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.VERIFIED,
+                matchAndConfirmation = "规范化名称精确匹配；合法 GAIA 响应确认协议",
+                privateTransport = "GAIA RFCOMM UUID 0837",
+                battery = "私有组件（协议确认后）",
+                noiseControl = "降噪、关闭、通透（协议确认后）",
+            ),
+            SupportEntry(
+                name = "vivo TWS 3e",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "规范化名称精确匹配；合法 GAIA 响应确认协议",
+                privateTransport = "GAIA RFCOMM UUID 0837；RFCOMM 通道 13 回退",
+                battery = "私有组件（协议确认后）",
+                noiseControl = "降噪、关闭、通透（协议确认后）",
+            ),
+            SupportEntry(
+                name = "其他 vivo / iQOO TWS 家族型号",
+                scope = SupportScope.VENDOR_FAMILY,
+                evidence = EvidenceLevel.FAMILY_EXTRAPOLATION,
+                matchAndConfirmation = "规范化家族名称选择候选；合法 GAIA 响应确认协议",
+                privateTransport = "GAIA RFCOMM UUID 0837",
+                battery = "私有组件（合法电量响应后）",
+                noiseControl = "降噪、关闭、通透（合法握手或模式响应后）",
             ),
         ),
     ),
     SupportBrand(
         name = "OPPO",
         entries = listOf(
-            SupportEntry("Enco Air2 Pro", EvidenceLevel.REFERENCE_PROFILE, "精确名称；OPPO RFCOMM 079a", "左/右/盒电量；反向 ANC/OFF 编码、通透；流转"),
-            SupportEntry("Enco Free4 / X3 / Air5", EvidenceLevel.REFERENCE_PROFILE, "精确名称进入独立 Profile；RFCOMM 079a", "左/右/盒电量；当前沿用家族 ANC/OFF/通透；流转", "不宣称尚未实现的自适应降噪或空间音频。"),
-            SupportEntry("其他 OPPO / Enco", EvidenceLevel.REFERENCE_PROFILE, "保守家族名称；RFCOMM 079a", "左/右/盒电量；ANC/OFF/通透；流转"),
+            SupportEntry(
+                name = "OPPO Enco Air2 Pro",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.REFERENCE_PROTOCOL,
+                matchAndConfirmation = "规范化名称包含型号标记；合法 OPPO 响应确认协议；使用 Air2 Pro 编码映射",
+                privateTransport = "RFCOMM UUID 079a",
+                battery = "私有组件（协议确认后）",
+                noiseControl = "降噪、关闭、通透（协议确认后）",
+            ),
+            SupportEntry(
+                name = "OPPO Enco Free4 / Enco X3 / Enco Air5",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.REFERENCE_PROTOCOL,
+                matchAndConfirmation = "规范化名称包含对应型号标记；合法 OPPO 响应确认协议",
+                privateTransport = "RFCOMM UUID 079a",
+                battery = "私有组件（协议确认后）",
+                noiseControl = "降噪、关闭、通透（协议确认后）",
+            ),
+            SupportEntry(
+                name = "其他 OPPO / Enco 耳机",
+                scope = SupportScope.VENDOR_FAMILY,
+                evidence = EvidenceLevel.REFERENCE_PROTOCOL,
+                matchAndConfirmation = "品牌名称与标准耳机身份匹配；合法 OPPO 响应确认协议",
+                privateTransport = "RFCOMM UUID 079a",
+                battery = "私有组件（合法电量响应后）",
+                noiseControl = "降噪、关闭、通透（合法通知或模式响应后）",
+            ),
         ),
     ),
     SupportBrand(
         name = "StarRing / 籁特易耳",
         entries = listOf(
-            SupportEntry("StarRing Ultra", EvidenceLevel.VERIFIED, "精确名称；官方 GATT 7777/8888，RFCOMM 候选回退", "左/右电量；降噪/正常/通透/抗风噪；流转", "充电盒仅在协议实际上报时显示。"),
-            SupportEntry("其他 StarRing / 籁特易耳", EvidenceLevel.STANDARD_FALLBACK, "保守家族名称和耳机类别", "Android 整机电量、音量和流转；无私有控制"),
+            SupportEntry(
+                name = "StarRing Ultra",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.VERIFIED,
+                matchAndConfirmation = "规范化名称精确匹配；传输连接成功",
+                privateTransport = "GATT 7777/8888 特征优先；厂商 RFCOMM 回退",
+                battery = "私有组件",
+                noiseControl = "降噪、关闭、通透、抗风噪",
+            ),
+            SupportEntry(
+                name = "其他 StarRing / 籁特易耳耳机",
+                scope = SupportScope.STANDARD_FALLBACK,
+                evidence = EvidenceLevel.STANDARD_FALLBACK,
+                matchAndConfirmation = "品牌名称与标准耳机身份匹配",
+                privateTransport = "Android 标准蓝牙能力",
+                battery = "系统整机",
+                noiseControl = "无",
+            ),
         ),
     ),
     SupportBrand(
         name = "Bose",
         entries = listOf(
-            SupportEntry("QuietComfort Headphones (0x4075)", EvidenceLevel.VERIFIED, "BMAP 在线产品身份 prince / 0x4075", "整机电量；安静/感知/发现的抗风噪预设；流转"),
-            SupportEntry("QC35/35 II、NC700、QC45、QuietComfort Earbuds", EvidenceLevel.PUBLIC_PROFILE, "BMAP 产品 ID；AudioModes / ANR / CNC Profile", "整机或组件电量；按型号开放安静/感知、关闭或抗风噪；流转"),
-            SupportEntry("QuietComfort Ultra Headphones/Earbuds 与二代", EvidenceLevel.REFERENCE_PROFILE, "BMAP 产品 ID；同代 AudioModes Profile", "整机或组件电量；安静/感知；附加 ANC 预设归一为降噪；流转"),
-            SupportEntry("其他已登记或未知 BMAP", EvidenceLevel.FAMILY_EXTRAPOLATION, "BMAP STATUS 产品身份；GET-only AudioModes/ANR/CNC 探测", "BMAP 电量；仅在合法只读响应后开放对应控制；流转"),
+            SupportEntry(
+                name = "Bose QuietComfort Headphones",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.VERIFIED,
+                matchAndConfirmation = "BMAP 产品身份 prince / 0x4075 匹配",
+                privateTransport = "BMAP RFCOMM；产品身份响应确认就绪",
+                battery = "私有整机",
+                noiseControl = "降噪、通透、抗风噪",
+            ),
+            SupportEntry(
+                name = "Bose QuietComfort 35 / 35 II",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "BMAP 产品 ID 0x400C / 0x4020 匹配",
+                privateTransport = "BMAP RFCOMM；产品身份响应确认就绪",
+                battery = "私有整机",
+                noiseControl = "降噪、关闭、抗风噪",
+            ),
+            SupportEntry(
+                name = "Bose Noise Cancelling Headphones 700",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "BMAP 产品身份 goodyear / 0x4024 匹配",
+                privateTransport = "BMAP RFCOMM；产品身份响应确认就绪",
+                battery = "私有整机",
+                noiseControl = "降噪、关闭、通透",
+            ),
+            SupportEntry(
+                name = "Bose QuietComfort 45 / QuietComfort Earbuds",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "BMAP 产品 ID 0x4039 / 0x402F 匹配",
+                privateTransport = "BMAP RFCOMM；产品身份响应确认就绪",
+                battery = "私有整机或组件（按设备形态）",
+                noiseControl = "降噪、通透",
+            ),
+            SupportEntry(
+                name = "QuietComfort Earbuds II / Ultra 系列与第二代",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.REFERENCE_PROTOCOL,
+                matchAndConfirmation = "已登记 BMAP 产品 ID 匹配",
+                privateTransport = "BMAP RFCOMM；产品身份响应确认就绪",
+                battery = "私有整机或组件（按设备形态）",
+                noiseControl = "降噪、通透",
+            ),
+            SupportEntry(
+                name = "其他 Bose BMAP 耳机",
+                scope = SupportScope.VENDOR_FAMILY,
+                evidence = EvidenceLevel.FAMILY_EXTRAPOLATION,
+                matchAndConfirmation = "BMAP 产品身份与只读状态响应确认能力",
+                privateTransport = "BMAP RFCOMM 候选逐一验证",
+                battery = "按 BMAP 响应显示私有整机或组件",
+                noiseControl = "AudioModes：降噪、通透；ANR：降噪、关闭、抗风噪；CNC：降噪、关闭、通透",
+            ),
         ),
     ),
     SupportBrand(
         name = "Edifier / 漫步者",
         entries = listOf(
-            SupportEntry("W860NB PRO", EvidenceLevel.VERIFIED, "精确名称和头戴形态；Edifier BES RFCOMM", "整机电量；深度降噪/OFF/环境声/抗风噪；流转"),
-            SupportEntry("其他 W820/W830/W860 头戴", EvidenceLevel.FAMILY_EXTRAPOLATION, "品牌/系列名称和头戴类别；BES RFCOMM", "合法响应中的整机电量；不开放未验证控制；流转"),
+            SupportEntry(
+                name = "Edifier W860NB PRO",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.VERIFIED,
+                matchAndConfirmation = "规范化名称精确匹配；合法 BES 响应确认协议",
+                privateTransport = "Edifier BES RFCOMM；通道 1 回退",
+                battery = "私有整机（协议确认后）",
+                noiseControl = "降噪、关闭、通透、抗风噪（协议确认后）",
+            ),
+            SupportEntry(
+                name = "其他 Edifier W820 / W830 / W860 系列头戴式耳机",
+                scope = SupportScope.PRODUCT_LINE,
+                evidence = EvidenceLevel.FAMILY_EXTRAPOLATION,
+                matchAndConfirmation = "系列名称与头戴式设备形态匹配；合法 BES 响应确认协议",
+                privateTransport = "Edifier BES RFCOMM；通道 1 回退",
+                battery = "私有整机（合法电量响应后）",
+                noiseControl = "降噪、关闭、通透、抗风噪（合法模式响应后）",
+            ),
+            SupportEntry(
+                name = "其他名称可识别的 Edifier 耳机",
+                scope = SupportScope.VENDOR_FAMILY,
+                evidence = EvidenceLevel.FAMILY_EXTRAPOLATION,
+                matchAndConfirmation = "品牌名称与标准耳机身份匹配；合法 BES 响应确认协议",
+                privateTransport = "Edifier BES RFCOMM；通道 1 回退",
+                battery = "私有整机（合法电量响应后）",
+                noiseControl = "降噪、关闭、通透、抗风噪（合法模式响应后）",
+            ),
         ),
     ),
     SupportBrand(
         name = "ROSESELSA / 弱水时砂",
         entries = listOf(
-            SupportEntry("EARFREE i5", EvidenceLevel.PUBLIC_PROFILE, "精确名称；GATT 011bf5da，7777/8888 特征", "左/右/盒电量；ANC/OFF/通透/抗风噪；流转"),
-            SupportEntry("BudsFeel MK2", EvidenceLevel.PUBLIC_PROFILE, "精确名称；RFCOMM 0cf12d31", "左/右/盒电量；ANC/OFF/通透/抗风噪；流转"),
-            SupportEntry("其他 EARFREE/EARFEEL 与 BudsFeel", EvidenceLevel.FAMILY_EXTRAPOLATION, "产品线名称 + 对应服务 + 合法状态帧", "握手后左/右/盒电量和四态控制；流转"),
-            SupportEntry("其他 ROSESELSA / ROSE", EvidenceLevel.STANDARD_FALLBACK, "保守品牌名称和耳机类别", "Android 整机电量、音量和流转；无私有控制"),
+            SupportEntry(
+                name = "ROSESELSA EARFREE i5",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "规范化名称精确匹配；传输连接成功",
+                privateTransport = "GATT 服务 011bf5da；7777/8888 特征",
+                battery = "私有组件",
+                noiseControl = "降噪、关闭、通透、抗风噪",
+            ),
+            SupportEntry(
+                name = "ROSE BudsFeel MK2",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "规范化名称精确匹配；传输连接成功",
+                privateTransport = "RFCOMM UUID 0cf12d31-…",
+                battery = "私有组件",
+                noiseControl = "降噪、关闭、通透、抗风噪",
+            ),
+            SupportEntry(
+                name = "EARFREE / EARFEEL 与 BudsFeel 产品线",
+                scope = SupportScope.PRODUCT_LINE,
+                evidence = EvidenceLevel.FAMILY_EXTRAPOLATION,
+                matchAndConfirmation = "产品线名称或对应服务选择候选；合法状态帧确认协议",
+                privateTransport = "对应 GATT 或 RFCOMM 私有通道",
+                battery = "系统整机；合法电量响应后切换为私有组件",
+                noiseControl = "降噪、关闭、通透、抗风噪（合法状态响应后）",
+            ),
+            SupportEntry(
+                name = "其他 ROSESELSA / ROSE 耳机",
+                scope = SupportScope.STANDARD_FALLBACK,
+                evidence = EvidenceLevel.STANDARD_FALLBACK,
+                matchAndConfirmation = "品牌名称与标准耳机身份匹配",
+                privateTransport = "Android 标准蓝牙能力",
+                battery = "系统整机",
+                noiseControl = "无",
+            ),
         ),
     ),
     SupportBrand(
         name = "NiceHCK / YuanDao",
         entries = listOf(
-            SupportEntry("YuanDao OriG in", EvidenceLevel.PUBLIC_PROFILE, "精确规范化名称；a100 RFCOMM + 合法状态帧", "握手后左/右/盒电量；ANC/OFF/通透/抗风噪；流转"),
-            SupportEntry("其他 NiceHCK / YuanDao", EvidenceLevel.STANDARD_FALLBACK, "保守家族名称和耳机类别", "Android 整机电量、音量和流转；无私有控制"),
+            SupportEntry(
+                name = "NiceHCK YuanDao OriG in",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "规范化名称精确匹配；合法状态帧确认协议",
+                privateTransport = "RFCOMM UUID a100",
+                battery = "私有组件（协议确认后）",
+                noiseControl = "降噪、关闭、通透、抗风噪（协议确认后）",
+            ),
+            SupportEntry(
+                name = "其他 NiceHCK / YuanDao 耳机",
+                scope = SupportScope.STANDARD_FALLBACK,
+                evidence = EvidenceLevel.STANDARD_FALLBACK,
+                matchAndConfirmation = "品牌名称与标准耳机身份匹配",
+                privateTransport = "Android 标准蓝牙能力",
+                battery = "系统整机",
+                noiseControl = "无",
+            ),
         ),
     ),
     SupportBrand(
         name = "Apple",
         entries = listOf(
-            SupportEntry("AirPods Pro / Max", EvidenceLevel.PUBLIC_PROFILE, "AAP SDP UUID；Pro/Max 名称只细分形态和能力；L2CAP PSM 1001", "动态一至三个组件电量；ANC/OFF/通透；流转", "Adaptive 状态归一为降噪。"),
-            SupportEntry("其他带 AAP 服务的 AirPods", EvidenceLevel.FAMILY_EXTRAPOLATION, "AAP SDP UUID，不单独依赖设备名称", "动态组件电量和流转；未确认型号不开放噪声控制"),
+            SupportEntry(
+                name = "Apple AirPods Pro / Max",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "AAP SDP UUID 确认家族；规范化名称确认型号配置",
+                privateTransport = "BR/EDR L2CAP PSM 0x1001",
+                battery = "Pro：私有组件；Max：私有整机",
+                noiseControl = "降噪（含 Adaptive 状态映射）、关闭、通透",
+            ),
+            SupportEntry(
+                name = "其他带 AAP SDP UUID 的 AirPods",
+                scope = SupportScope.VENDOR_FAMILY,
+                evidence = EvidenceLevel.FAMILY_EXTRAPOLATION,
+                matchAndConfirmation = "AAP SDP UUID 确认家族；传输连接成功",
+                privateTransport = "BR/EDR L2CAP PSM 0x1001",
+                battery = "私有组件",
+                noiseControl = "无",
+            ),
         ),
     ),
     SupportBrand(
         name = "Sony",
         entries = listOf(
-            SupportEntry("WH / WF / WI / LinkBuds 登记型号", EvidenceLevel.PUBLIC_PROFILE, "精确零售型号 + Sony RFCOMM v1/v2 合法初始化", "按 Profile 提供整机或左/右/盒电量和对应环境声控制", "WH-1000XM2–XM6、CH720N、ULT WEAR、WF-1000XM3–XM5、C500/C510/C700N/C710N、SP800N、LinkBuds/S、WI-SP600N、WI-C100。"),
-            SupportEntry("其他 WH/WI/MDR、WF/LinkBuds", EvidenceLevel.FAMILY_EXTRAPOLATION, "产品线名称或 Sony 服务 + 合法初始化", "形态对应电量；名称明确指示降噪时开放三态，否则仅电量"),
-            SupportEntry("其他 Sony 耳机", EvidenceLevel.STANDARD_FALLBACK, "保守品牌名称和耳机类别", "Android 整机电量、音量和流转；无私有控制"),
+            SupportEntry(
+                name = "WH-1000XM2/XM3/XM4、WF-1000XM3/XM4、WI-SP600N",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "规范化型号匹配；合法 v1/v2 初始化响应确认协议",
+                privateTransport = "Sony RFCOMM v1/v2",
+                battery = "按设备形态显示私有整机或组件",
+                noiseControl = "降噪、关闭、通透、抗风噪",
+            ),
+            SupportEntry(
+                name = "WH-1000XM5/XM6、CH720N、ULT WEAR、WF-1000XM5、SP800N、C700N/C710N、LinkBuds S",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "规范化型号匹配；合法 v1/v2 初始化响应确认协议",
+                privateTransport = "Sony RFCOMM v1/v2",
+                battery = "按设备形态显示私有整机或组件",
+                noiseControl = "降噪、关闭、通透",
+            ),
+            SupportEntry(
+                name = "Sony WF-C510",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "规范化型号匹配；合法 v1/v2 初始化响应确认协议",
+                privateTransport = "Sony RFCOMM v1/v2",
+                battery = "私有组件",
+                noiseControl = "关闭、通透",
+            ),
+            SupportEntry(
+                name = "Sony WF-C500 / LinkBuds / WI-C100",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                matchAndConfirmation = "规范化型号匹配；合法 v1/v2 初始化响应确认协议",
+                privateTransport = "Sony RFCOMM v1/v2",
+                battery = "按设备形态显示私有整机或组件",
+                noiseControl = "无",
+            ),
+            SupportEntry(
+                name = "其他 Sony WH / WI / MDR、WF / LinkBuds 产品线",
+                scope = SupportScope.PRODUCT_LINE,
+                evidence = EvidenceLevel.FAMILY_EXTRAPOLATION,
+                matchAndConfirmation = "产品线名称或 Sony 服务选择候选；合法初始化响应确认协议",
+                privateTransport = "Sony RFCOMM v1/v2",
+                battery = "按设备形态显示私有整机或组件（协议确认后）",
+                noiseControl = "降噪、关闭、通透（降噪产品线且协议确认后）",
+            ),
+            SupportEntry(
+                name = "其他 Sony 标准耳机",
+                scope = SupportScope.STANDARD_FALLBACK,
+                evidence = EvidenceLevel.STANDARD_FALLBACK,
+                matchAndConfirmation = "品牌名称与标准耳机身份匹配",
+                privateTransport = "Android 标准蓝牙能力",
+                battery = "系统整机",
+                noiseControl = "无",
+            ),
         ),
     ),
     SupportBrand(
         name = "通用蓝牙耳机",
         entries = listOf(
-            SupportEntry("标准 A2DP / HFP 耳机", EvidenceLevel.STANDARD_FALLBACK, "Android 蓝牙设备类别或保守耳机名称；排除原生 Xiaomi/REDMI", "系统整机电量复制为左右耳；系统音量和流转；无私有控制"),
+            SupportEntry(
+                name = "其他标准 A2DP / HFP 耳机",
+                scope = SupportScope.STANDARD_FALLBACK,
+                evidence = EvidenceLevel.STANDARD_FALLBACK,
+                matchAndConfirmation = "Android 标准耳机身份；HyperOS 原生型号由系统处理",
+                privateTransport = "Android 标准蓝牙能力",
+                battery = "系统整机",
+                noiseControl = "无",
+            ),
         ),
     ),
 )
@@ -158,6 +423,11 @@ private val projectLinks = listOf(
         title = "问题反馈",
         detail = "提交兼容性问题或功能建议",
         url = "https://github.com/silverpoetry/HyperEars/issues/new/choose",
+    ),
+    ProjectLink(
+        title = "兼容性文档",
+        detail = "查看完整型号、证据、传输和能力矩阵",
+        url = "https://github.com/silverpoetry/HyperEars/blob/main/docs/compatibility.md",
     ),
     ProjectLink(
         title = "版本发布",
@@ -369,15 +639,11 @@ private fun BrandSupportTable(brand: SupportBrand) {
                     )
                     EvidenceBadge(entry.evidence)
                 }
-                SupportDetail(label = "判型/传输", value = entry.matchBasis)
-                SupportDetail(label = "能力", value = entry.capabilities)
-                entry.note?.let { note ->
-                    Text(
-                        text = note,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                SupportDetail(label = "适配层级", value = entry.scope.label)
+                SupportDetail(label = "判型与确认", value = entry.matchAndConfirmation)
+                SupportDetail(label = "私有传输", value = entry.privateTransport)
+                SupportDetail(label = "电量", value = entry.battery)
+                SupportDetail(label = "噪声模式", value = entry.noiseControl)
             }
             if (index != brand.entries.lastIndex) {
                 HorizontalDivider(
@@ -395,6 +661,12 @@ private fun EvidenceLegend() {
         modifier = Modifier.padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        Text(
+            text = "所有条目均提供设备流转和系统音量。下表分别列出额外的电量与噪声控制能力；需要协议确认的能力只在合法响应后开放。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         EvidenceLevel.entries.forEach { level ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -411,7 +683,7 @@ private fun EvidenceLegend() {
             }
         }
         Text(
-            text = "证据等级描述验证范围，不代表同品牌所有固件均兼容。设备流转仍由 HyperOS 和 MiLink 的系统链路负责。",
+            text = "证据等级描述适配依据和验证范围。设备流转由 HyperOS 与 MiLink 系统链路负责。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -422,8 +694,8 @@ private fun EvidenceLegend() {
 private fun EvidenceBadge(level: EvidenceLevel) {
     val color = when (level) {
         EvidenceLevel.VERIFIED -> MaterialTheme.colorScheme.primary
-        EvidenceLevel.PUBLIC_PROFILE -> MaterialTheme.colorScheme.secondary
-        EvidenceLevel.REFERENCE_PROFILE -> MaterialTheme.colorScheme.tertiary
+        EvidenceLevel.PUBLIC_IMPLEMENTATION -> MaterialTheme.colorScheme.secondary
+        EvidenceLevel.REFERENCE_PROTOCOL -> MaterialTheme.colorScheme.tertiary
         EvidenceLevel.FAMILY_EXTRAPOLATION -> MaterialTheme.colorScheme.tertiary
         EvidenceLevel.STANDARD_FALLBACK -> MaterialTheme.colorScheme.outline
     }
@@ -460,9 +732,9 @@ private fun SupportDetail(label: String, value: String) {
 
 private val EvidenceLevel.description: String
     get() = when (this) {
-        EvidenceLevel.VERIFIED -> "已在 HyperEars 实机完成连接、读取、控制和卡片回读。"
-        EvidenceLevel.PUBLIC_PROFILE -> "依据可检查的公开实现建立具体型号画像，尚待更多实机覆盖。"
-        EvidenceLevel.REFERENCE_PROFILE -> "依据同家族参考协议盲适配，具体固件可能存在差异。"
-        EvidenceLevel.FAMILY_EXTRAPOLATION -> "名称只选择候选协议；能力还需服务、身份或合法响应确认。"
-        EvidenceLevel.STANDARD_FALLBACK -> "仅使用 Android 与 MiLink 的标准耳机能力，不发送厂商控制命令。"
+        EvidenceLevel.VERIFIED -> "已在真实设备上验证判型、私有连接、状态读取、控制写入和卡片回读。"
+        EvidenceLevel.PUBLIC_IMPLEMENTATION -> "可检查的公开实现提供具体型号的传输、帧格式和字段语义。"
+        EvidenceLevel.REFERENCE_PROTOCOL -> "同品牌或同协议家族的公开资料提供传输与命令语义。"
+        EvidenceLevel.FAMILY_EXTRAPOLATION -> "名称或服务选择候选适配，合法身份或状态响应完成协议确认。"
+        EvidenceLevel.STANDARD_FALLBACK -> "提供设备流转、系统音量和 Android 整机电量。"
     }

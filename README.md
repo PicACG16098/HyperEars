@@ -33,22 +33,23 @@ HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频�
 
 ## 兼容性概览
 
-| 设备或家族 | 状态 | 电量 | 噪声控制 | MiLink 流转 |
-|---|---|---|---|---|
-| vivo / iQOO TWS | 实机、公开画像与家族外推 | 左/右/盒 | ANC/OFF/通透 | 是 |
-| OPPO Enco | 参考协议画像 | 左/右/盒 | ANC/OFF/通透 | 是 |
-| StarRing / 籁特易耳 | Ultra 实机；其他标准回退 | 左/右或系统整机 | Ultra 四态 | 是 |
-| Bose | QuietComfort Headphones 实机；BMAP 产品画像与能力探测 | 整机或组件 | AudioModes/ANR/CNC，按产品开放 | 是 |
-| Edifier / 漫步者 | W860NB PRO 实机；头戴家族外推 | 整机 | W860NB PRO 四态；家族不开放未验证控制 | 是 |
-| ROSESELSA / 弱水时砂 | i5/MK2 公开画像；协议产品线外推 | 左/右/盒或系统整机 | 确认协议后四态 | 是 |
-| NiceHCK / YuanDao | OriG in 公开画像；其他标准回退 | 左/右/盒或系统整机 | OriG in 确认协议后四态 | 是 |
-| Apple AirPods | AAP 公开画像与家族外推 | 动态组件 | Pro/Max 三态 | 是 |
-| Sony | WH/WF/WI/LinkBuds 公开画像与家族外推 | 按型号为整机或组件 | 按 Profile 开放 | 是 |
-| 标准 A2DP/HFP 耳机 | 通用回退 | Android 系统整机 | 无私有控制 | 是 |
+| 适配范围 | 证据等级 | 电量能力 | 噪声控制 |
+|---|---|---|---|
+| vivo / iQOO TWS | 实机验证、公开实现、家族外推 | 私有组件电量 | 降噪、关闭、通透 |
+| OPPO Enco | 参考协议 | 私有组件电量 | 降噪、关闭、通透 |
+| StarRing / 籁特易耳 | Ultra 实机验证；其他标准回退 | Ultra 私有组件电量；其他系统整机电量 | Ultra 支持降噪、关闭、通透、抗风噪 |
+| Bose | 一个型号实机验证；其余公开实现、参考协议或家族外推 | 私有整机或组件电量 | 按 BMAP 产品和控制方言开放明确的模式子集 |
+| Edifier / 漫步者 | W860NB PRO 实机验证；其余家族外推 | 合法电量响应后提供私有整机电量 | 合法模式响应后提供降噪、关闭、通透、抗风噪 |
+| ROSESELSA / 弱水时砂 | 两个型号公开实现；产品线家族外推；其余标准回退 | 协议确认后私有组件电量；回退设备使用系统整机电量 | 协议确认后支持降噪、关闭、通透、抗风噪 |
+| NiceHCK / YuanDao | OriG in 公开实现；其他标准回退 | 协议确认后私有组件电量；回退设备使用系统整机电量 | OriG in 支持降噪、关闭、通透、抗风噪 |
+| Apple AirPods | 公开实现、家族外推 | 私有组件电量 | Pro / Max 支持降噪、关闭、通透 |
+| Sony | 公开实现、家族外推、标准回退 | 按设备形态提供私有整机、私有组件或系统整机电量 | 按具体型号开放表中明确列出的模式 |
+| 其他标准 A2DP/HFP 耳机 | 标准回退 | 系统整机电量 | 无 |
 
-“公开实现画像”“参考协议盲适配”和“家族外推”均不等于实机验证。家族名称只用于
-选择候选协议；需要确认的 Adapter 还会校验服务、线端身份或合法状态帧。完整型号、
-证据级别、传输和已知限制见
+所有条目均提供设备流转和系统音量。“公开实现”“参考协议”和“家族外推”均不等于
+实机验证。家族名称只用于选择候选协议；需要确认的适配器还会校验服务、线端身份或
+合法状态帧。完整型号、
+证据等级、判型条件、私有传输和开放能力见
 [兼容性文档](docs/compatibility.md)。
 
 ## 系统要求
@@ -68,12 +69,12 @@ HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频�
 2. 校验 SHA-256：
 
    ```powershell
-    Get-FileHash .\HyperEars-v1.0.0.apk -Algorithm SHA256
+    Get-FileHash .\HyperEars-v1.1.0.apk -Algorithm SHA256
    ```
 
 3. 安装 APK，在 LSPosed 中启用 HyperEars，并确认两个静态作用域均已选中。
 4. 重启设备。仅强停 MiLink 不一定会让两个目标进程同时重新加载模块。
-5. 连接耳机后打开 HyperEars，确认对应会话显示正确的 Profile、形态、传输和能力，
+5. 连接耳机后打开 HyperEars，确认对应会话显示正确的 Adapter、形态、传输和能力，
    并观察 MiLink 的状态接收、身份查询、能力查询与通知阶段。
 
 从早期开发测试包迁移到首个公开 Release 时，若 Android 提示签名不一致，需要先在
@@ -89,10 +90,13 @@ Android 蓝牙事件
 EarbudConnectionManager ── 每个蓝牙地址一个逻辑会话
         │
         ▼
-EarbudAdapter             ── Standard → 厂商家族 → 具体型号
-        │
+EarbudAdapter             ── 当前设备身份、能力、配置与运行状态
+        │ owns
         ▼
-EarbudProtocol            ── 每会话独立的私有协议状态机
+ProtocolSession           ── 每会话独立、可随 Adapter 替换转移的协议状态
+        │ uses
+        ▼
+WireCodec                 ── 纯字节编解码
         │
         ▼
 DeviceStateRegistry       ── 带 token/revision 的进程内状态
@@ -102,7 +106,7 @@ MiLinkServiceHook         ── 最小身份、状态与控制映射
 ```
 
 - `protocol`：纯帧编解码，不创建连接、不依赖界面。
-- `integration`：设备识别、能力、Adapter 层级和每会话 Protocol。
+- `integration`：设备识别、状态化 Adapter、能力模型和每会话 `ProtocolSession`。
 - `system-module`：LSPosed 入口、蓝牙生命周期、MiLink 桥和运行看板。
 - `protocol-test`：开发者使用的只读/显式控制协议实验工具，不随正式 Release 发布。
 

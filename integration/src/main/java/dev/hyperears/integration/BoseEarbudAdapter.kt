@@ -10,13 +10,17 @@ import java.util.Locale
  * Family detection only reads properties already cached by Android. The private channel then
  * confirms Bose's product ID through BMAP `[0.3]`; names and OUIs never unlock model controls.
  */
-open class BoseEarbudAdapter : StandardEarbudAdapter() {
+open class BoseEarbudAdapter(
+    transferredSession: ProtocolSession? = null,
+    initialRuntimeState: AdapterRuntimeState = AdapterRuntimeState(),
+) : StandardEarbudAdapter(transferredSession, initialRuntimeState) {
     override val id: String = ID
     override val displayName: String = "Bose BMAP headset"
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE
     override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
+    override val capabilities: EarbudCapabilities = super.capabilities.copy(battery = false)
     override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.Channel(number = 8),
         RfcommEndpointSpec.ServiceUuid(
@@ -29,7 +33,7 @@ open class BoseEarbudAdapter : StandardEarbudAdapter() {
         ),
         RfcommEndpointSpec.Channel(number = 2),
     )
-    open val bmapProfile: BoseBmapProfile? = null
+    open val wireConfig: BoseWireConfig? = null
 
     override fun matches(identity: EarbudIdentity): Boolean {
         if (!identity.standardHeadset || identity.nativeSystemEarbud) return false
@@ -43,11 +47,49 @@ open class BoseEarbudAdapter : StandardEarbudAdapter() {
         return hasBmapService || BOSE_NAME_MARKERS.any(name::contains) || oui in BOSE_OUIS
     }
 
-    override fun createProtocol(): EarbudProtocol =
-        BoseBmapEarbudProtocol(
-            expectedProfile = bmapProfile,
+    override fun createProtocolSession(): ProtocolSession =
+        BoseBmapProtocolSession(
+            expectedProductId = wireConfig?.productId,
             fallbackFormFactor = formFactor,
+        ).also { session -> wireConfig?.let(session::configure) }
+
+    override fun onProductIdentified(productId: Int): HandshakeResult? {
+        if (wireConfig?.productId == productId) return null
+        val session = protocolSession as? BoseBmapProtocolSession ?: return null
+        val next = BoseRuntimeAdapterFactory.create(
+            productId = productId,
+            protocolSession = session,
+            runtimeState = runtimeState(),
+        ) ?: return null
+        return HandshakeResult.Replace(next, AdapterActivation.KEEP_CHANNEL_READY)
+    }
+
+    override fun onCapabilitiesIdentified(
+        battery: Boolean,
+        noiseModes: Set<NoiseMode>,
+    ): HandshakeResult? {
+        val session = protocolSession as? BoseBmapProtocolSession ?: return null
+        val discovered = session.discoveredConfig
+            ?: return super.onCapabilitiesIdentified(battery, noiseModes)
+        val nextConfig = wireConfig?.copy(noiseControl = discovered.noiseControl) ?: discovered
+        if (wireConfig == nextConfig) {
+            return super.onCapabilitiesIdentified(battery, noiseModes)
+        }
+        val next = BoseRuntimeAdapterFactory.create(
+            configuration = nextConfig,
+            formFactor = formFactor,
+            displayName = if (wireConfig == null) {
+                BoseCapabilityConfigRegistry.displayName(formFactor, nextConfig)
+            } else {
+                displayName
+            },
+            presentationId = miLinkCardPresentationId
+                ?: BoseCapabilityConfigRegistry.presentationId(nextConfig),
+            protocolSession = session,
+            runtimeState = runtimeState(),
         )
+        return HandshakeResult.Replace(next, AdapterActivation.KEEP_CHANNEL_READY)
+    }
 
     companion object {
         const val ID = "bose-bmap-family"
@@ -69,7 +111,10 @@ open class BoseEarbudAdapter : StandardEarbudAdapter() {
 }
 
 /** Bose's over-ear family, selected from Android's stable Bluetooth device class. */
-open class BoseHeadphonesAdapter : BoseEarbudAdapter() {
+open class BoseHeadphonesAdapter(
+    transferredSession: ProtocolSession? = null,
+    initialRuntimeState: AdapterRuntimeState = AdapterRuntimeState(),
+) : BoseEarbudAdapter(transferredSession, initialRuntimeState) {
     override val id: String = ID
     override val displayName: String = "Bose headphones"
     override val formFactor: HeadsetFormFactor = HeadsetFormFactor.HEADPHONES
@@ -89,8 +134,8 @@ open class BoseHeadphonesAdapter : BoseEarbudAdapter() {
     }
 }
 
-/** Wire-level noise-control dialect selected by a concrete Bose product profile. */
-sealed interface BoseNoiseControlProfile {
+/** Wire-level noise-control dialect owned by a concrete Bose adapter. */
+sealed interface BoseNoiseControlConfig {
     val supportedModes: Set<NoiseMode>
 
     data class AudioModes(
@@ -101,7 +146,7 @@ sealed interface BoseNoiseControlProfile {
         val modeConfigLayout: BoseBmapWireCodec.ModeConfigLayout? = null,
         val windModeFromConfig: Boolean = false,
         override val supportedModes: Set<NoiseMode>,
-    ) : BoseNoiseControlProfile
+    ) : BoseNoiseControlConfig
 
     data class Anr(
         val offValue: Int = 0,
@@ -112,7 +157,7 @@ sealed interface BoseNoiseControlProfile {
             NoiseMode.OFF,
             NoiseMode.WIND,
         ),
-    ) : BoseNoiseControlProfile
+    ) : BoseNoiseControlConfig
 
     data class Cnc(
         val maximumRawLevel: Int = 10,
@@ -121,30 +166,30 @@ sealed interface BoseNoiseControlProfile {
             NoiseMode.OFF,
             NoiseMode.TRANSPARENCY,
         ),
-    ) : BoseNoiseControlProfile
+    ) : BoseNoiseControlConfig
 }
 
 /**
- * Immutable Bose session behavior.
+ * Immutable wire configuration embedded in a Bose adapter.
  *
  * [productId] is present for a concrete model confirmed by `[0.3]`. It is absent only for a
  * family fallback whose wire dialect was established by a successful read-only capability probe.
  */
-data class BoseBmapProfile(
+data class BoseWireConfig(
     val productId: Int?,
     val modelId: String,
-    val noiseControl: BoseNoiseControlProfile? = null,
+    val noiseControl: BoseNoiseControlConfig? = null,
 )
 
 /** Common concrete-model behavior for Bose products represented as TWS/in-ear devices. */
 abstract class BoseBmapModelAdapter(
     final override val id: String,
     product: BoseProductCatalog.Product,
-    noiseControl: BoseNoiseControlProfile? = null,
+    noiseControl: BoseNoiseControlConfig? = null,
     final override val miLinkCardPresentationId: MiLinkCardPresentationId? = null,
 ) : BoseEarbudAdapter() {
     final override val displayName: String = product.displayName
-    final override val bmapProfile: BoseBmapProfile = BoseBmapProfile(
+    final override val wireConfig: BoseWireConfig = BoseWireConfig(
         productId = product.productId,
         modelId = id,
         noiseControl = noiseControl,
@@ -152,6 +197,7 @@ abstract class BoseBmapModelAdapter(
     final override val supportedNoiseModes: Set<NoiseMode> =
         noiseControl?.supportedModes.orEmpty()
     final override val capabilities: EarbudCapabilities = super.capabilities.copy(
+        battery = true,
         noiseControl = supportedNoiseModes.isNotEmpty(),
         windNoiseControl = NoiseMode.WIND in supportedNoiseModes,
     )
@@ -164,11 +210,11 @@ abstract class BoseBmapModelAdapter(
 abstract class BoseBmapHeadphonesModelAdapter(
     final override val id: String,
     product: BoseProductCatalog.Product,
-    noiseControl: BoseNoiseControlProfile? = null,
+    noiseControl: BoseNoiseControlConfig? = null,
     final override val miLinkCardPresentationId: MiLinkCardPresentationId? = null,
 ) : BoseHeadphonesAdapter() {
     final override val displayName: String = product.displayName
-    final override val bmapProfile: BoseBmapProfile = BoseBmapProfile(
+    final override val wireConfig: BoseWireConfig = BoseWireConfig(
         productId = product.productId,
         modelId = id,
         noiseControl = noiseControl,
@@ -176,12 +222,118 @@ abstract class BoseBmapHeadphonesModelAdapter(
     final override val supportedNoiseModes: Set<NoiseMode> =
         noiseControl?.supportedModes.orEmpty()
     final override val capabilities: EarbudCapabilities = super.capabilities.copy(
+        battery = true,
         noiseControl = supportedNoiseModes.isNotEmpty(),
         windNoiseControl = NoiseMode.WIND in supportedNoiseModes,
     )
 
     /** Concrete Bose models are selected by BMAP product ID, never by a mutable display name. */
     final override fun matches(identity: EarbudIdentity): Boolean = false
+}
+
+private class BoseConfirmedEarbudAdapter(
+    private val configuration: BoseWireConfig,
+    override val displayName: String,
+    override val miLinkCardPresentationId: MiLinkCardPresentationId?,
+    session: BoseBmapProtocolSession,
+    runtimeState: AdapterRuntimeState,
+) : BoseEarbudAdapter(session, runtimeState) {
+    override val id: String = configuration.modelId
+    override val wireConfig: BoseWireConfig = configuration
+    override val resolution: AdapterResolution = AdapterResolution.PROTOCOL_CONFIRMED
+    override val supportedNoiseModes: Set<NoiseMode> =
+        configuration.noiseControl?.supportedModes.orEmpty()
+    override val capabilities: EarbudCapabilities = super.capabilities.copy(
+        battery = true,
+        noiseControl = supportedNoiseModes.isNotEmpty(),
+        windNoiseControl = NoiseMode.WIND in supportedNoiseModes,
+    )
+    override fun matches(identity: EarbudIdentity): Boolean = false
+
+    init {
+        session.configure(configuration)
+    }
+}
+
+private class BoseConfirmedHeadphonesAdapter(
+    private val configuration: BoseWireConfig,
+    override val displayName: String,
+    override val miLinkCardPresentationId: MiLinkCardPresentationId?,
+    session: BoseBmapProtocolSession,
+    runtimeState: AdapterRuntimeState,
+) : BoseHeadphonesAdapter(session, runtimeState) {
+    override val id: String = configuration.modelId
+    override val wireConfig: BoseWireConfig = configuration
+    override val resolution: AdapterResolution = AdapterResolution.PROTOCOL_CONFIRMED
+    override val supportedNoiseModes: Set<NoiseMode> =
+        configuration.noiseControl?.supportedModes.orEmpty()
+    override val capabilities: EarbudCapabilities = super.capabilities.copy(
+        battery = true,
+        noiseControl = supportedNoiseModes.isNotEmpty(),
+        windNoiseControl = NoiseMode.WIND in supportedNoiseModes,
+    )
+    override fun matches(identity: EarbudIdentity): Boolean = false
+
+    init {
+        session.configure(configuration)
+    }
+}
+
+internal object BoseRuntimeAdapterFactory {
+    fun create(
+        productId: Int,
+        protocolSession: BoseBmapProtocolSession,
+        runtimeState: AdapterRuntimeState,
+    ): EarbudAdapter? {
+        val definition = BoseBmapModelRegistry.adapters.firstOrNull { adapter ->
+            val config = when (adapter) {
+                is BoseBmapModelAdapter -> adapter.wireConfig
+                is BoseBmapHeadphonesModelAdapter -> adapter.wireConfig
+                else -> null
+            }
+            config?.productId == productId
+        }
+            ?: return null
+        val configuration = when (definition) {
+            is BoseBmapModelAdapter -> definition.wireConfig
+            is BoseBmapHeadphonesModelAdapter -> definition.wireConfig
+            is BoseEarbudAdapter -> definition.wireConfig
+            else -> null
+        } ?: return null
+        return create(
+            configuration = configuration,
+            formFactor = definition.formFactor,
+            displayName = definition.displayName,
+            presentationId = definition.miLinkCardPresentationId,
+            protocolSession = protocolSession,
+            runtimeState = runtimeState,
+        )
+    }
+
+    fun create(
+        configuration: BoseWireConfig,
+        formFactor: HeadsetFormFactor,
+        displayName: String,
+        presentationId: MiLinkCardPresentationId?,
+        protocolSession: BoseBmapProtocolSession,
+        runtimeState: AdapterRuntimeState,
+    ): EarbudAdapter = if (formFactor == HeadsetFormFactor.HEADPHONES) {
+            BoseConfirmedHeadphonesAdapter(
+                configuration,
+                displayName,
+                presentationId,
+                protocolSession,
+                runtimeState,
+            )
+        } else {
+            BoseConfirmedEarbudAdapter(
+                configuration,
+                displayName,
+                presentationId,
+                protocolSession,
+                runtimeState,
+            )
+        }
 }
 
 /** Opaque presentation contracts shared by models with the same native-card semantics. */

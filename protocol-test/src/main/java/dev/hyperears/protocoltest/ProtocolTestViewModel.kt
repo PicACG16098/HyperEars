@@ -16,7 +16,7 @@ import dev.hyperears.protocol.edifier.EdifierWireCodec
 import dev.hyperears.protocol.starring.StarRingWireCodec
 import dev.hyperears.protocol.vivo.VivoTwsProtocol
 import dev.hyperears.protocol.vivo.VivoTwsProtocol.NoiseMode
-import dev.hyperears.protocol.vivo.VivoTwsProtocol.Profile
+import dev.hyperears.protocol.vivo.VivoTwsProtocol.WireConfig
 import dev.hyperears.protocol.vivo.VivoFastPairIdentity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -91,8 +91,8 @@ internal data class ProtocolUiState(
     val phase: ConnectionPhase = ConnectionPhase.DISCONNECTED,
     val connectionMessage: String = "尚未连接",
     val endpoint: String? = null,
-    val selectedProfile: Profile = Profile.AIR3_PRO_CAPTURED,
-    val detectedProfile: Profile? = null,
+    val selectedWireConfig: WireConfig = WireConfig.AIR3_PRO_CAPTURED,
+    val detectedWireConfig: WireConfig? = null,
     val battery: BatteryObservation? = null,
     val noise: VivoTwsProtocol.NoiseState? = null,
     val starRingNoise: StarRingWireCodec.NoiseMode? = null,
@@ -193,7 +193,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
             selectedAddress = selected?.address ?: current.selectedAddress,
             selectedName = selected?.name ?: current.selectedName,
             selectedTarget = selected?.suggestedTarget ?: current.selectedTarget,
-            selectedProfile = selected?.suggestedVivoProfile() ?: current.selectedProfile,
+            selectedWireConfig = selected?.suggestedVivoWireConfig() ?: current.selectedWireConfig,
         )
         addLog(
             "SYS",
@@ -208,7 +208,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
             selectedAddress = device.address,
             selectedName = device.name,
             selectedTarget = device.suggestedTarget ?: mutableState.value.selectedTarget,
-            selectedProfile = device.suggestedVivoProfile(),
+            selectedWireConfig = device.suggestedVivoWireConfig(),
             battery = null,
             noise = null,
             starRingNoise = null,
@@ -225,8 +225,8 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
             selectedAddress = address.trim().uppercase(Locale.US),
             selectedName = paired?.name.orEmpty(),
             selectedTarget = paired?.suggestedTarget ?: mutableState.value.selectedTarget,
-            selectedProfile = paired?.suggestedVivoProfile()
-                ?: mutableState.value.selectedProfile,
+            selectedWireConfig = paired?.suggestedVivoWireConfig()
+                ?: mutableState.value.selectedWireConfig,
         )
     }
 
@@ -244,9 +244,9 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
         addLog("SYS", "选择实验协议：${target.label}")
     }
 
-    fun selectProfile(profile: Profile) {
-        mutableState.value = mutableState.value.copy(selectedProfile = profile)
-        addLog("SYS", "选择协议画像：${profile.label}")
+    fun selectWireConfig(wireConfig: WireConfig) {
+        mutableState.value = mutableState.value.copy(selectedWireConfig = wireConfig)
+        addLog("SYS", "选择线格式：${wireConfig.label}")
     }
 
     fun updateRawCommand(value: String) {
@@ -285,7 +285,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                     "正在探测 ${target.label} RFCOMM 入口…"
                 },
                 endpoint = null,
-                detectedProfile = null,
+                detectedWireConfig = null,
                 battery = null,
                 noise = null,
                 starRingNoise = null,
@@ -391,12 +391,12 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
         send(VivoTwsProtocol.handshake(), "v4 握手")
         delay(PROBE_GAP_MS)
         send(
-            VivoTwsProtocol.queryNoiseMode(Profile.AIR3_PRO_CAPTURED),
+            VivoTwsProtocol.queryNoiseMode(WireConfig.AIR3_PRO_CAPTURED),
             "查询降噪（Air3 Pro v3）",
         )
         delay(PROBE_GAP_MS)
         send(
-            VivoTwsProtocol.queryNoiseMode(Profile.FAMILY_DEFAULT_V4),
+            VivoTwsProtocol.queryNoiseMode(WireConfig.FAMILY_DEFAULT_V4),
             "查询降噪（公开资料 v4）",
         )
         delay(PROBE_GAP_MS)
@@ -417,9 +417,9 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
         viewModelScope.launch {
             if (!ensureConnected()) return@launch
             if (!ensureVivoTarget()) return@launch
-            val profile = mutableState.value.selectedProfile
+            val wireConfig = mutableState.value.selectedWireConfig
             mutableState.value = mutableState.value.copy(noiseApiStatus = "等待响应")
-            send(VivoTwsProtocol.queryNoiseMode(profile), "查询降噪（${profile.label}）")
+            send(VivoTwsProtocol.queryNoiseMode(wireConfig), "查询降噪（${wireConfig.label}）")
             markTimeoutsLater()
         }
     }
@@ -449,11 +449,11 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
         viewModelScope.launch {
             if (!ensureConnected()) return@launch
             if (!ensureVivoTarget()) return@launch
-            val profile = mutableState.value.selectedProfile
+            val wireConfig = mutableState.value.selectedWireConfig
             mutableState.value = mutableState.value.copy(noiseApiStatus = "等待设置确认")
             send(
-                VivoTwsProtocol.setNoiseMode(mode, profile),
-                "设置${mode.label}（${profile.label}）",
+                VivoTwsProtocol.setNoiseMode(mode, wireConfig),
+                "设置${mode.label}（${wireConfig.label}）",
             )
             markTimeoutsLater()
         }
@@ -626,10 +626,10 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                 )
             }
             VivoTwsProtocol.parseNoiseState(frame)?.let { noise ->
-                val inferred = inferProfile(noise)
+                val inferred = inferWireConfig(noise)
                 mutableState.value = mutableState.value.copy(
                     noise = noise,
-                    detectedProfile = inferred ?: mutableState.value.detectedProfile,
+                    detectedWireConfig = inferred ?: mutableState.value.detectedWireConfig,
                     noiseApiStatus = "可用 · ${noise.mode.label} · 响应 v${noise.version}",
                 )
             }
@@ -859,19 +859,19 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
         }
     }
 
-    private fun inferProfile(noise: VivoTwsProtocol.NoiseState): Profile? = when {
+    private fun inferWireConfig(noise: VivoTwsProtocol.NoiseState): WireConfig? = when {
         noise.noiseEffect == 4 && noise.transparencyEffect == 0 ->
-            Profile.AIR3_PRO_CAPTURED
+            WireConfig.AIR3_PRO_CAPTURED
         noise.noiseEffect == 3 && noise.transparencyEffect == 1 ->
-            Profile.FAMILY_DEFAULT_V4
+            WireConfig.FAMILY_DEFAULT_V4
         else -> null
     }
 
-    private fun PairedDevice.suggestedVivoProfile(): Profile {
+    private fun PairedDevice.suggestedVivoWireConfig(): WireConfig {
         val normalized = name.lowercase().filter(Char::isLetterOrDigit)
         return when (normalized) {
-            "vivotws3e" -> Profile.TWS_3E_V3
-            else -> Profile.AIR3_PRO_CAPTURED
+            "vivotws3e" -> WireConfig.TWS_3E_V3
+            else -> WireConfig.AIR3_PRO_CAPTURED
         }
     }
 
