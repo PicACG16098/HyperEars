@@ -12,6 +12,7 @@ import android.widget.Switch
 import android.widget.TextView
 import androidx.core.view.isVisible
 import dev.hyperears.integration.EarbudState
+import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.NoiseMode
 import dev.hyperears.integration.StarRingUltraAdapter
 import java.lang.ref.WeakReference
@@ -24,8 +25,10 @@ import java.lang.ref.WeakReference
  * not as a fourth peer mode. The switch is enabled only while the authoritative device state is
  * ANC or WIND; its checked state is always rendered from [EarbudState].
  */
-internal object StarRingUltraMiLinkCardAdapter : MiLinkCardAdapter {
-    override val presentationId = StarRingUltraAdapter.PRESENTATION_ID
+internal open class WindNoiseToggleMiLinkCardAdapter(
+    final override val presentationId: MiLinkCardPresentationId,
+    private val modelLabel: String,
+) : MiLinkCardAdapter {
 
     override fun bind(
         root: View,
@@ -94,7 +97,7 @@ internal object StarRingUltraMiLinkCardAdapter : MiLinkCardAdapter {
             environment = environment,
         ).also { binding ->
             toggle.setOnCheckedChangeListener(binding::onToggleChanged)
-            ModuleLog.debug("MiLinkUi", "bound StarRing Ultra wind-noise switch")
+            ModuleLog.debug("MiLinkUi", "bound $modelLabel wind-noise switch")
         }
     }
 
@@ -192,14 +195,21 @@ internal object StarRingUltraMiLinkCardAdapter : MiLinkCardAdapter {
     private fun Context.dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
-    private const val ANC_CARD_TITLE_ID = "anc_card_title"
-    private const val ANC_CARD_ID = "anc_card"
-    private const val MIUIX_SLIDING_BUTTON = "miuix.slidingwidget.widget.SlidingButton"
-    private const val WIND_LABEL = "抗风噪"
-    private const val LABEL_END_PADDING_DP = 8
-    private const val ENABLED_ALPHA = 1.0f
-    private const val DISABLED_ALPHA = 0.45f
+    private companion object {
+        const val ANC_CARD_TITLE_ID = "anc_card_title"
+        const val ANC_CARD_ID = "anc_card"
+        const val MIUIX_SLIDING_BUTTON = "miuix.slidingwidget.widget.SlidingButton"
+        const val WIND_LABEL = "抗风噪"
+        const val LABEL_END_PADDING_DP = 8
+        const val ENABLED_ALPHA = 1.0f
+        const val DISABLED_ALPHA = 0.45f
+    }
 }
+
+internal object StarRingUltraMiLinkCardAdapter : WindNoiseToggleMiLinkCardAdapter(
+    presentationId = StarRingUltraAdapter.PRESENTATION_ID,
+    modelLabel = "StarRing Ultra",
+)
 
 /** Pure four-state-to-switch policy; UI code contains no independent mode state. */
 internal object StarRingWindControlPolicy {

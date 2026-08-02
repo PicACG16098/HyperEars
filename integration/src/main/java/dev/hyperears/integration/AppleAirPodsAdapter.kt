@@ -1,0 +1,132 @@
+package dev.hyperears.integration
+
+import dev.hyperears.protocol.apple.AppleAapWireCodec
+
+/** Apple AAP family selected by its published SDP service UUID, never by the display name alone. */
+open class AppleAirPodsAdapter : StandardEarbudAdapter() {
+    override val id: String = ID
+    override val displayName: String = "Apple AirPods"
+    override val privateProtocolRequired: Boolean = true
+    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
+    override val capabilities: EarbudCapabilities = EarbudCapabilities(
+        battery = true,
+        audioHandoff = true,
+    )
+    override val transports: List<EarbudTransportSpec> = listOf(
+        L2capEndpointSpec(
+            psm = AAP_PSM,
+            serviceUuid = AAP_SERVICE_UUID,
+            id = "apple-aap-l2cap",
+        ),
+    )
+
+    override fun matches(identity: EarbudIdentity): Boolean =
+        !identity.nativeSystemEarbud && identity.serviceUuids.any(AAP_SERVICE_UUIDS::contains)
+
+    override fun createProtocol(): EarbudProtocol = AppleAapProtocol()
+
+    companion object {
+        const val ID = "apple-airpods-family"
+        const val AAP_SERVICE_UUID = "74ec2172-0bad-4d01-8f77-997b2be0722a"
+        const val AAP_PSM = 0x1001
+        val AAP_SERVICE_UUIDS = setOf(
+            AAP_SERVICE_UUID,
+            "2a72e02b-7b99-778f-014d-ad0b7221ec74",
+        )
+    }
+}
+
+object AppleAirPodsProAdapter : AppleAirPodsAdapter() {
+    const val ID = "apple-airpods-pro"
+
+    override val id: String = ID
+    override val displayName: String = "Apple AirPods Pro"
+    override val capabilities: EarbudCapabilities = super.capabilities.copy(
+        noiseControl = true,
+    )
+    override val supportedNoiseModes: Set<NoiseMode> = setOf(
+        NoiseMode.ANC,
+        NoiseMode.OFF,
+        NoiseMode.TRANSPARENCY,
+    )
+
+    override fun matches(identity: EarbudIdentity): Boolean =
+        super.matches(identity) &&
+            normalizeDeviceName(identity.deviceName.orEmpty()).contains("airpodspro")
+}
+
+object AppleAirPodsMaxAdapter : AppleAirPodsAdapter() {
+    const val ID = "apple-airpods-max"
+
+    override val id: String = ID
+    override val displayName: String = "Apple AirPods Max"
+    override val formFactor: HeadsetFormFactor = HeadsetFormFactor.HEADPHONES
+    override val capabilities: EarbudCapabilities = super.capabilities.copy(
+        noiseControl = true,
+    )
+    override val supportedNoiseModes: Set<NoiseMode> = setOf(
+        NoiseMode.ANC,
+        NoiseMode.OFF,
+        NoiseMode.TRANSPARENCY,
+    )
+
+    override fun matches(identity: EarbudIdentity): Boolean =
+        super.matches(identity) &&
+            normalizeDeviceName(identity.deviceName.orEmpty()).contains("airpodsmax")
+}
+
+private class AppleAapProtocol : EarbudProtocol {
+    private val decoder = AppleAapWireCodec.Decoder()
+
+    override fun initialReadCommands(): List<ByteArray> = listOf(
+        AppleAapWireCodec.handshake,
+        AppleAapWireCodec.enableSpecificFeatures,
+        AppleAapWireCodec.requestNotifications,
+    )
+
+    override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
+        ControlRequest.Refresh -> listOf(AppleAapWireCodec.requestNotifications)
+        is ControlRequest.SetNoiseMode -> listOf(
+            AppleAapWireCodec.setNoiseMode(request.mode.toWireMode()),
+        )
+    }
+
+    override fun offer(bytes: ByteArray): List<EarbudEvent> =
+        decoder.offer(bytes).map { state ->
+            when (state) {
+                is AppleAapWireCodec.State.Battery -> EarbudEvent.BatteryChanged(
+                    EarbudBattery(
+                        left = state.left.toDomainReading(),
+                        right = state.right.toDomainReading(),
+                        case = state.case.toDomainReading(),
+                    ),
+                )
+
+                is AppleAapWireCodec.State.Noise -> EarbudEvent.NoiseModeChanged(
+                    mode = state.mode.toDomainMode(),
+                    acknowledged = true,
+                )
+            }
+        }
+
+    override fun reset() = decoder.reset()
+
+    private fun NoiseMode.toWireMode(): AppleAapWireCodec.NoiseMode = when (this) {
+        NoiseMode.ANC -> AppleAapWireCodec.NoiseMode.ANC
+        NoiseMode.OFF -> AppleAapWireCodec.NoiseMode.OFF
+        NoiseMode.TRANSPARENCY -> AppleAapWireCodec.NoiseMode.TRANSPARENCY
+        NoiseMode.WIND -> error("Apple AAP does not expose a wind-noise mode")
+    }
+
+    private fun AppleAapWireCodec.NoiseMode.toDomainMode(): NoiseMode = when (this) {
+        AppleAapWireCodec.NoiseMode.OFF -> NoiseMode.OFF
+        AppleAapWireCodec.NoiseMode.ANC,
+        AppleAapWireCodec.NoiseMode.ADAPTIVE,
+        -> NoiseMode.ANC
+
+        AppleAapWireCodec.NoiseMode.TRANSPARENCY -> NoiseMode.TRANSPARENCY
+    }
+
+    private fun AppleAapWireCodec.Component.toDomainReading(): BatteryReading =
+        BatteryReading(percent, charging)
+}

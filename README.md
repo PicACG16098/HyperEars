@@ -9,43 +9,46 @@
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
 HyperEars 是面向 Xiaomi HyperOS 的第三方蓝牙耳机系统集成模块。它让受支持的
-vivo/iQOO、OPPO Enco、Bose 和 StarRing 耳机进入 MiLink 融合设备中心，并在不接管
+vivo/iQOO、OPPO Enco、Bose、Edifier、StarRing、ROSESELSA、NiceHCK、Apple 和 Sony 耳机进入 MiLink 融合设备中心，并在不接管
 Android 音频路由的前提下补充电量、降噪状态和设备流转所需的兼容信息。
 
 > [!WARNING]
 > HyperEars 依赖 root、LSPosed 和 HyperOS 私有接口。安装前请确认能够恢复系统；ROM
-> 更新可能暂时破坏兼容性。本项目与 Xiaomi、vivo、iQOO、OPPO、Bose、Edifier
+> 更新可能暂时破坏兼容性。本项目与 Xiaomi、vivo、iQOO、OPPO、Bose、Edifier、
+> ROSESELSA、NiceHCK、Apple、Sony
 > 及相关品牌无关。
 
 ## 能做什么
 
 - 把符合条件的第三方耳机发布为 MiLink 耳机设备，复用系统原生流转与音量控制。
-- 为已验证型号读取左右耳/充电盒或头戴式整机电量。
+- 按适配器声明读取左右耳/充电盒或头戴式整机电量；标准耳机回退到 Android 整机电量。
 - 把耳机私有降噪协议映射为系统卡片支持的降噪、关闭、通透和型号专属模式。
 - 在“更多设置”中打开真实蓝牙设备详情，而不是借用载体型号的厂商页面。
 - 为没有私有适配的标准 A2DP/HFP 耳机提供流转、音量和系统整机电量回退。
 - 在应用内按设备会话展示识别、通道、协议和 MiLink 发布状态，便于诊断生命周期。
 
 HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频流经过模块，也不会
-持续扫描蓝牙。私有 GATT/RFCOMM 控制通道只对需要协议遥测的具体适配器建立，并按
+持续扫描蓝牙。私有 GATT、RFCOMM 或 BR/EDR L2CAP 控制通道只对需要协议遥测的适配器建立，并按
 设备会话管理。
 
 ## 兼容性概览
 
 | 设备或家族 | 状态 | 电量 | 噪声控制 | MiLink 流转 |
 |---|---|---|---|---|
-| vivo TWS Air3 Pro | 实机验证 | 左/右/盒 | 降噪/关闭/通透 | 是 |
-| vivo TWS 3e | 公开实现画像 | 左/右/盒 | 降噪/关闭/通透 | 是 |
-| 其他 vivo/iQOO TWS | 实验性家族画像 | 视协议响应 | 三态，视协议响应 | 是 |
-| StarRing Ultra | 实机验证 | 左/右 | 降噪/正常/通透/风噪 | 是 |
-| Bose QuietComfort Headphones (`prince/0x4075`) | 实机验证 | 整机 | 安静/感知/含风噪预设 | 是 |
-| 其他 Bose BMAP 耳机 | 保守回退 | 视 BMAP 响应 | 不声明未验证模式 | 是 |
-| OPPO Enco 家族 | 参考协议盲适配 | 左/右/盒 | 降噪/关闭/通透 | 是 |
-| Edifier W860NB PRO | 实机验证 | 整机 | 深度/舒适降噪、风噪、环境声、关闭 | 是 |
-| 其他 Edifier 头戴 | 推测性家族回退 | 协议响应时整机电量 | 不开放未验证控制 | 协议可用时 |
-| 其他标准蓝牙耳机 | 通用回退 | 系统整机电量 | 无私有控制 | 是 |
+| vivo / iQOO TWS | 实机、公开画像与家族外推 | 左/右/盒 | ANC/OFF/通透 | 是 |
+| OPPO Enco | 参考协议画像 | 左/右/盒 | ANC/OFF/通透 | 是 |
+| StarRing / 籁特易耳 | Ultra 实机；其他标准回退 | 左/右或系统整机 | Ultra 四态 | 是 |
+| Bose | QuietComfort Headphones 实机；BMAP 产品画像与能力探测 | 整机或组件 | AudioModes/ANR/CNC，按产品开放 | 是 |
+| Edifier / 漫步者 | W860NB PRO 实机；头戴家族外推 | 整机 | W860NB PRO 四态；家族不开放未验证控制 | 是 |
+| ROSESELSA / 弱水时砂 | i5/MK2 公开画像；协议产品线外推 | 左/右/盒或系统整机 | 确认协议后四态 | 是 |
+| NiceHCK / YuanDao | OriG in 公开画像；其他标准回退 | 左/右/盒或系统整机 | OriG in 确认协议后四态 | 是 |
+| Apple AirPods | AAP 公开画像与家族外推 | 动态组件 | Pro/Max 三态 | 是 |
+| Sony | WH/WF/WI/LinkBuds 公开画像与家族外推 | 按型号为整机或组件 | 按 Profile 开放 | 是 |
+| 标准 A2DP/HFP 耳机 | 通用回退 | Android 系统整机 | 无私有控制 | 是 |
 
-“公开实现画像”和“盲适配”不等于实机验证。完整型号、证据级别和已知限制见
+“公开实现画像”“参考协议盲适配”和“家族外推”均不等于实机验证。家族名称只用于
+选择候选协议；需要确认的 Adapter 还会校验服务、线端身份或合法状态帧。完整型号、
+证据级别、传输和已知限制见
 [兼容性文档](docs/compatibility.md)。
 
 ## 系统要求
@@ -65,12 +68,13 @@ HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频�
 2. 校验 SHA-256：
 
    ```powershell
-    Get-FileHash .\HyperEars-v0.11.0.apk -Algorithm SHA256
+    Get-FileHash .\HyperEars-v1.0.0.apk -Algorithm SHA256
    ```
 
 3. 安装 APK，在 LSPosed 中启用 HyperEars，并确认两个静态作用域均已选中。
 4. 重启设备。仅强停 MiLink 不一定会让两个目标进程同时重新加载模块。
-5. 连接耳机后打开 HyperEars，确认对应会话依次达到识别、通道、协议和发布状态。
+5. 连接耳机后打开 HyperEars，确认对应会话显示正确的 Profile、形态、传输和能力，
+   并观察 MiLink 的状态接收、身份查询、能力查询与通知阶段。
 
 从早期开发测试包迁移到首个公开 Release 时，若 Android 提示签名不一致，需要先在
 LSPosed 禁用旧模块、卸载旧 APK，再安装公开版并重新启用。详细升级和卸载步骤见
@@ -148,6 +152,7 @@ CI 会验证单元测试、Lint 和 Release 编译；带 `v*` 标签的发布工
 - [vivo/iQOO 家族画像](docs/vivo-family-support.md)
 - [OPPO Enco 协议](docs/oppo-enco-protocol.md)
 - [Bose BMAP 协议](docs/bose-bmap-protocol.md)
+- [Sony Headphones 协议](docs/sony-headphones-protocol.md)
 - [StarRing Ultra 协议](docs/starring-ultra-protocol.md)
 - [Edifier (BES) 协议](docs/edifier-bes-protocol.md)
 
@@ -161,6 +166,10 @@ CI 会验证单元测试、Lint 和 Release 编译；带 `v*` 标签的发布工
 
 HyperEars 以 [GNU GPL-3.0-only](LICENSE) 发布。协议研究参考了
 [1812z/OppoPods](https://github.com/1812z/OppoPods)、
+[DOHEX/HyperRose](https://github.com/DOHEX/HyperRose)、
+[Art-Chen/HyperPods](https://github.com/Art-Chen/HyperPods)、
+[ZaeXT/NiceHCK_Controller](https://github.com/ZaeXT/NiceHCK_Controller)、
+[Plutoberth/SonyHeadphonesClient](https://github.com/Plutoberth/SonyHeadphonesClient)、
 [Star-ZER0/Pods-Protocol-Reverse-Engineering](https://github.com/Star-ZER0/Pods-Protocol-Reverse-Engineering)
 和 [moculll/ScrewVivoTWS](https://github.com/moculll/ScrewVivoTWS)，并包含本项目的实机
 抓包与验证结果。具体来源及许可说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

@@ -14,13 +14,43 @@
 
 - 顶部运行时卡片：Bluetooth 进程 Hook 回执、MiLink 各进程 Hook 回执，
   以及 MiLink 状态接收、身份查询和能力查询的实际会话数量。
-- 设备会话列表：每个活动地址独立一张卡片。
+- 设备会话列表：每个活动地址独立一张统一卡片，不按品牌或型号选择页面布局。
 - 每设备卡片分为两组状态：
-  - 耳机链路：A2DP 会话，以及具体型号需要时的 GATT/RFCOMM 通道和协议握手；
-    身份级回退显示身份桥就绪且无需私有通道。
+  - Profile 摘要：Adapter 显示名与稳定 ID、耳机形态、电量来源、声明的传输类别和
+    控制能力；这些值来自状态投影，不由 Compose 查询 Adapter。
+  - 耳机链路：A2DP 会话，以及具体型号需要时的 GATT、RFCOMM 或 BR/EDR L2CAP
+    私有通道。要求协议握手的 Adapter 显示“协议确认”；声明
+    `TransportReadiness.CONNECTED` 的 Adapter 显示“连接即就绪”。身份级回退显示
+    身份桥就绪且无需私有通道。
   - MiLink 处理：状态接收、身份查询、卡片能力查询和运行时状态通知。
-  卡片同时显示型号、完整蓝牙地址、电量和噪声模式。
+  - 遥测指标：TWS 显示左/右/盒，头戴设备显示整机；缺失字段显示 `—`，不复用旧值
+    或伪造组件。模式能力未声明时明确显示“不支持”。
+  卡片同时显示真实蓝牙名称和本机完整蓝牙地址。地址只在本地界面显示。
 - 手机使用单列，宽屏设备使用双列。
+
+## 视图边界
+
+`DashboardScreen` 只接收 `DeviceSessionUiModel`。它不导入或查询
+`EarbudAdapterRegistry`，也不识别具体 Adapter、Protocol、传输实现或电池拓扑。
+
+```text
+EarbudState + BridgeReceipt
+             │
+             ▼
+DeviceSessionSnapshot       会话与 MiLink 回执语义
+             │
+             ▼
+DeviceSessionUiProjector    唯一允许读取通用 Adapter 元数据的 UI 边界
+             │
+             ▼
+DeviceSessionUiModel        文本、阶段、指标等纯呈现数据
+             │
+             ▼
+DashboardScreen             单一布局、无型号分支
+```
+
+新增型号只修改 Adapter/Profile/Protocol。除非增加全新的跨设备通用信息类型，否则
+主界面不需要跟随型号改动。
 
 ## 性能边界
 
@@ -31,6 +61,11 @@
 回执后成立。身份查询、能力查询和状态通知来自相应 Hook 的首次真实调用，
 在同一会话内去重；页面打开和手动同步不会伪造这些阶段。旧会话或旧状态
 回执不会污染新会话。
+
+`EarbudState.connected` 表示当前 Adapter 已达到自己声明的集成就绪条件，而不是简单的
+Socket 状态。`privateChannelConnected` 表示已选择的厂商传输可用；
+`handshakeAccepted` 只对要求协议握手的 Adapter 有诊断意义。界面不能把所有私有协议
+统一解释为必须出现握手帧。
 
 ## 卡片重建竞态
 

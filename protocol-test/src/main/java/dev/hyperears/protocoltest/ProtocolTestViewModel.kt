@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.hyperears.protocol.bose.BoseBmapWireCodec
+import dev.hyperears.protocol.bose.BoseProductCatalog
 import dev.hyperears.protocol.edifier.EdifierWireCodec
 import dev.hyperears.protocol.starring.StarRingWireCodec
 import dev.hyperears.protocol.vivo.VivoTwsProtocol
@@ -696,11 +697,9 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                 BoseBmapWireCodec.run { frame.bytes.hex() },
             )
             BoseBmapWireCodec.parseProductIdentity(frame)?.let { identity ->
-                val model = if (identity.productId == 0x4075) {
-                    "QuietComfort Headphones / prince"
-                } else {
-                    "未登记 Bose 型号"
-                }
+                val model = BoseProductCatalog.find(identity.productId)
+                    ?.let { "${it.displayName} / ${it.codename}" }
+                    ?: "未登记 Bose 型号"
                 mutableState.value = mutableState.value.copy(
                     handshakeStatus =
                         "可用 · product=0x${identity.productId.hex4()} · variant=${identity.variant}",

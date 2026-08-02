@@ -2,6 +2,9 @@ package dev.hyperears.ui.dashboard
 
 import dev.hyperears.bridge.BridgeReceipt
 import dev.hyperears.bridge.BridgeStage
+import dev.hyperears.integration.AppleAirPodsMaxAdapter
+import dev.hyperears.integration.BatteryReading
+import dev.hyperears.integration.EarbudBattery
 import dev.hyperears.integration.EarbudState
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -125,6 +128,54 @@ class DashboardUiStateTest {
         val session = updated.sessions.getValue("02:00:00:00:00:01")
         assertEquals(false, session.bridgeObserved)
         assertEquals(DevicePhase.WAITING_FOR_MILINK, session.phase)
+    }
+
+    @Test
+    fun `connected readiness does not require a synthetic handshake`() {
+        val state = activeState("02:00:00:00:00:01", "Connected-ready device").copy(
+            connected = true,
+            privateProtocolRequired = true,
+            privateChannelConnected = true,
+            handshakeAccepted = false,
+        )
+
+        val session = DeviceSessionSnapshot(state = state, sessionToken = "token-1")
+
+        assertEquals(DevicePhase.WAITING_FOR_MILINK, session.phase)
+        assertEquals(true, session.miLinkLifecycle.first().active)
+    }
+
+    @Test
+    fun `private transport is reported as preparing until adapter readiness`() {
+        val state = activeState("02:00:00:00:00:01", "Private device").copy(
+            privateProtocolRequired = true,
+            privateChannelConnected = true,
+            connected = false,
+        )
+
+        val session = DeviceSessionSnapshot(state = state, sessionToken = "token-1")
+
+        assertEquals(DevicePhase.PREPARING_PRIVATE_CHANNEL, session.phase)
+    }
+
+    @Test
+    fun `projector owns headset battery topology and readiness labels`() {
+        val state = activeState("02:00:00:00:00:01", "AirPods Max").copy(
+            modelId = AppleAirPodsMaxAdapter.ID,
+            connected = true,
+            privateProtocolRequired = true,
+            privateChannelConnected = true,
+            battery = EarbudBattery(left = BatteryReading(82, charging = false)),
+        )
+
+        val card = DeviceSessionUiProjector.project(
+            DeviceSessionSnapshot(state = state, sessionToken = "token-1"),
+        )
+
+        assertEquals("Apple AirPods Max", card.profileName)
+        assertEquals(DeviceMetric("整机", "82%"), card.metrics.first())
+        assertEquals("连接即就绪", card.headsetLifecycle.last().label)
+        assertEquals(true, card.headsetLifecycle.last().complete)
     }
 
     @Test

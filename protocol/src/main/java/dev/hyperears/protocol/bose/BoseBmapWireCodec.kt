@@ -75,6 +75,42 @@ object BoseBmapWireCodec {
         val wind: Boolean,
     )
 
+    data class AnrState(
+        val level: Int,
+        val capabilities: Int?,
+    )
+
+    data class CncState(
+        val steps: Int,
+        val rawLevel: Int,
+        val enabled: Boolean,
+    ) {
+        val maximumRawLevel: Int = (steps - 1).coerceAtLeast(0)
+    }
+
+    /** Product-specific offsets for AudioModes ModeConfig STATUS payloads. */
+    data class ModeConfigLayout(
+        val minimumPayloadSize: Int,
+        val nameOffset: Int,
+        val nameSize: Int,
+        val cncOffset: Int,
+        val autoCncOffset: Int,
+        val spatialOffset: Int,
+        val windOffset: Int,
+    ) {
+        init {
+            require(minimumPayloadSize > 0)
+            require(nameOffset >= 0 && nameSize > 0)
+            require(
+                listOf(cncOffset, autoCncOffset, spatialOffset, windOffset)
+                    .all { it in 0 until minimumPayloadSize },
+            )
+        }
+    }
+
+    val queryFunctionBlockInfo: ByteArray =
+        packet(PRODUCT_INFO_BLOCK, FUNCTION_BLOCK_INFO, Operator.GET)
+
     val queryProductIdentity: ByteArray =
         packet(PRODUCT_INFO_BLOCK, PRODUCT_ID_VARIANTS, Operator.GET)
 
@@ -86,6 +122,32 @@ object BoseBmapWireCodec {
 
     val queryModeConfigs: ByteArray =
         packet(AUDIO_MODES_BLOCK, MODE_CONFIG, Operator.START)
+
+    val queryAnr: ByteArray =
+        packet(SETTINGS_BLOCK, ANR, Operator.GET)
+
+    val queryCnc: ByteArray =
+        packet(SETTINGS_BLOCK, CNC, Operator.GET)
+
+    fun setAnr(level: Int): ByteArray {
+        require(level in 0..0xFF)
+        return packet(
+            SETTINGS_BLOCK,
+            ANR,
+            Operator.SET_GET,
+            byteArrayOf(level.toByte()),
+        )
+    }
+
+    fun setCnc(rawLevel: Int, enabled: Boolean): ByteArray {
+        require(rawLevel in 0..0xFF)
+        return packet(
+            SETTINGS_BLOCK,
+            CNC,
+            Operator.SET_GET,
+            byteArrayOf(rawLevel.toByte(), if (enabled) 1 else 0),
+        )
+    }
 
     fun switchMode(index: Int, voicePrompt: Boolean = false): ByteArray {
         require(index in 0..0xFF)
@@ -122,6 +184,9 @@ object BoseBmapWireCodec {
             variant = frame.payload[2].unsigned(),
         )
     }
+
+    fun isFunctionBlockInfo(frame: Frame): Boolean =
+        frame.isStatus(PRODUCT_INFO_BLOCK, FUNCTION_BLOCK_INFO)
 
     /**
      * Parses the official repeating four-byte battery layout:
@@ -166,22 +231,45 @@ object BoseBmapWireCodec {
      * The corresponding write layout is shorter and deliberately remains outside this codec
      * until HyperEars exposes editable Bose mode parameters.
      */
-    fun parseModeConfig(frame: Frame): ModeConfig? {
+    fun parseModeConfig(
+        frame: Frame,
+        layout: ModeConfigLayout = PRINCE_MODE_CONFIG_LAYOUT,
+    ): ModeConfig? {
         if (!frame.isStatus(AUDIO_MODES_BLOCK, MODE_CONFIG)) return null
-        if (frame.payload.size < PRINCE_MODE_CONFIG_STATUS_SIZE) return null
-        val nameEnd = (MODE_NAME_OFFSET until MODE_NAME_END_EXCLUSIVE)
+        if (frame.payload.size < layout.minimumPayloadSize) return null
+        val nameEndExclusive = layout.nameOffset + layout.nameSize
+        val nameEnd = (layout.nameOffset until nameEndExclusive)
             .firstOrNull { frame.payload[it] == 0.toByte() }
-            ?: MODE_NAME_END_EXCLUSIVE
+            ?: nameEndExclusive
         return ModeConfig(
             index = frame.payload[0].unsigned(),
             prompt = (frame.payload[1].unsigned() shl 8) or frame.payload[2].unsigned(),
             name = frame.payload
-                .copyOfRange(MODE_NAME_OFFSET, nameEnd)
+                .copyOfRange(layout.nameOffset, nameEnd)
                 .toString(Charsets.UTF_8),
-            rawCnc = frame.payload[MODE_CNC_OFFSET].unsigned(),
-            autoCnc = frame.payload[MODE_AUTO_CNC_OFFSET] != 0.toByte(),
-            spatial = frame.payload[MODE_SPATIAL_OFFSET].unsigned(),
-            wind = frame.payload[MODE_WIND_OFFSET] != 0.toByte(),
+            rawCnc = frame.payload[layout.cncOffset].unsigned(),
+            autoCnc = frame.payload[layout.autoCncOffset] != 0.toByte(),
+            spatial = frame.payload[layout.spatialOffset].unsigned(),
+            wind = frame.payload[layout.windOffset] != 0.toByte(),
+        )
+    }
+
+    fun parseAnrState(frame: Frame): AnrState? {
+        if (!frame.isStatus(SETTINGS_BLOCK, ANR)) return null
+        val level = frame.payload.firstOrNull()?.unsigned() ?: return null
+        return AnrState(
+            level = level,
+            capabilities = frame.payload.getOrNull(1)?.unsigned(),
+        )
+    }
+
+    fun parseCncState(frame: Frame): CncState? {
+        if (!frame.isStatus(SETTINGS_BLOCK, CNC)) return null
+        if (frame.payload.size < CNC_STATUS_SIZE) return null
+        return CncState(
+            steps = frame.payload[0].unsigned(),
+            rawLevel = frame.payload[1].unsigned(),
+            enabled = frame.payload[2] != 0.toByte(),
         )
     }
 
@@ -241,7 +329,11 @@ object BoseBmapWireCodec {
     private fun Byte.unsigned(): Int = toInt() and 0xFF
 
     private const val PRODUCT_INFO_BLOCK = 0x00
+    private const val FUNCTION_BLOCK_INFO = 0x01
     private const val PRODUCT_ID_VARIANTS = 0x03
+    private const val SETTINGS_BLOCK = 0x01
+    private const val CNC = 0x05
+    private const val ANR = 0x06
     private const val STATUS_BLOCK = 0x02
     private const val BATTERY_LEVEL = 0x02
     private const val AUDIO_MODES_BLOCK = 0x1F
@@ -256,11 +348,25 @@ object BoseBmapWireCodec {
     private const val PRODUCT_IDENTITY_SIZE = 3
     private const val BATTERY_GROUP_SIZE = 4
     private const val UNKNOWN_MINUTES = 0xFFFF
-    private const val PRINCE_MODE_CONFIG_STATUS_SIZE = 47
-    private const val MODE_NAME_OFFSET = 6
-    private const val MODE_NAME_END_EXCLUSIVE = 38
-    private const val MODE_CNC_OFFSET = 42
-    private const val MODE_AUTO_CNC_OFFSET = 43
-    private const val MODE_SPATIAL_OFFSET = 44
-    private const val MODE_WIND_OFFSET = 46
+    private const val CNC_STATUS_SIZE = 3
+
+    val PRINCE_MODE_CONFIG_LAYOUT = ModeConfigLayout(
+        minimumPayloadSize = 47,
+        nameOffset = 6,
+        nameSize = 32,
+        cncOffset = 42,
+        autoCncOffset = 43,
+        spatialOffset = 44,
+        windOffset = 46,
+    )
+
+    val ULTRA_2_MODE_CONFIG_LAYOUT = ModeConfigLayout(
+        minimumPayloadSize = 48,
+        nameOffset = 6,
+        nameSize = 32,
+        cncOffset = 42,
+        autoCncOffset = 43,
+        spatialOffset = 44,
+        windOffset = 45,
+    )
 }

@@ -4,13 +4,13 @@
 
 当前版本在 HyperOS 3 / Android 16 上提供：
 
-- 跟随系统 A2DP 连接，为需要私有协议的具体 Adapter 建立其声明的 GATT 或
-  RFCOMM 控制链路。
+- 跟随系统 A2DP 连接，为需要私有协议的具体 Adapter 建立其声明的 GATT、RFCOMM
+  或 BR/EDR L2CAP 控制链路。
 - 向 MiLink 暴露最小兼容身份，使融合设备中心识别目标耳机。
 - 在融合卡片读取左右耳/充电盒电量和当前降噪状态。
 - 将融合卡片的控制操作交给具体型号 Adapter，翻译为已实机验证的厂商命令。
-- 通过 `Standard → 厂商家族 → 具体型号` 继承链接入 vivo、StarRing、OPPO
-  和 Bose，并保留其他型号的稳定扩展点。
+- 通过 `Standard → 厂商家族 → 协议家族 → 具体型号` 继承链接入各品牌，并保留其他
+  型号的稳定扩展点。
 
 首版不伪造尚未验证的能力。空间音频、自适应降噪、入耳检测、查找耳机等
 能力默认关闭；`0x820D`、`0x8224` 在语义确认前只记录，不参与系统状态。
@@ -33,7 +33,7 @@ HyperEars 仅复用融合设备中心所需边界，不注入
 
 ```text
 protocol
-  └─ vivo / StarRing / OPPO / Bose WireCodec、流式分帧与纯字节编解码
+  └─ vivo / StarRing / OPPO / Bose / Sony 等 WireCodec、流式分帧与纯字节编解码
 
 integration
   ├─ 通用耳机模型与控制事件
@@ -50,7 +50,8 @@ system-module
   ├─ 可替换的厂商控制通道
   ├─ MiLink 运行时兼容桥
   ├─ 跨进程定向广播契约
-  └─ 模块状态/诊断界面
+  ├─ 领域状态到统一界面模型的单向投影
+  └─ 模块状态/诊断界面（不感知具体 Adapter）
 
 protocol-test
   └─ 独立协议实验室，不参与系统 Hook
@@ -86,11 +87,27 @@ EarbudAdapter
        │    ├─ OppoEncoX3Adapter
        │    └─ OppoEncoAir5Adapter
        ├─ BoseEarbudAdapter
+       │    ├─ BoseBmapModelAdapter
+       │    │    └─ QuietComfort Earbuds / Ultra 等具体型号
        │    └─ BoseHeadphonesAdapter
-       │        └─ BoseQuietComfortHeadphonesAdapter
-       └─ EdifierEarbudAdapter
-            └─ EdifierHeadphonesAdapter
-                └─ EdifierW860NBProAdapter
+       │         └─ BoseBmapHeadphonesModelAdapter
+       │              └─ QC35 / NC700 / QC45 / QuietComfort / Ultra 等具体型号
+       ├─ EdifierEarbudAdapter
+       │    └─ EdifierHeadphonesAdapter
+       │         └─ EdifierW860NBProAdapter
+       ├─ RoseEarbudAdapter
+       │    ├─ RoseEarfreeProtocolFamilyAdapter
+       │    │    └─ RoseEarfreeI5Adapter
+       │    └─ RoseBudsFeelProtocolFamilyAdapter
+       │         └─ RoseBudsFeelMk2Adapter
+       ├─ NiceHckEarbudAdapter
+       │    └─ NiceHckYuanDaoOrigAdapter
+       ├─ AppleAirPodsAdapter
+       │    ├─ AppleAirPodsProAdapter
+       │    └─ AppleAirPodsMaxAdapter
+       └─ SonyEarbudAdapter
+            └─ SonyProtocolFamilyAdapter
+                 └─ WH / WF / WI / LinkBuds 具体型号 Profile
 ```
 
 子类继承父类的通用能力，只覆盖经实机确认的差异：
@@ -107,13 +124,30 @@ EarbudAdapter
 - `OppoEarbudAdapter` 继承标准层，增加 OPPO/Enco 名称规则、固定 RFCOMM
   UUID、电量和标准三态降噪；具体 OPPO Adapter 只声明型号 Profile，
   `Air2 Pro` 覆盖其相反的 ANC/关闭编码。
-- `BoseEarbudAdapter` 使用已连接耳机的名称/Bose OUI 做无扫描初筛，创建
-  BMAP 会话后以 `[0.3]` 确认产品 ID，以 `[2.2]` 读取组件电量。名称只允许
-  进入家族层；只有协议内产品 ID 才能升级到具体 Bose 型号。
+- `BoseEarbudAdapter` 使用已连接耳机的名称、Bose OUI 或 Android 已缓存的 BMAP
+  服务做无扫描初筛，创建 BMAP 会话后以 `[0.3]` 确认产品 ID，以 `[2.2]`
+  读取组件电量。名称只允许进入家族层；只有协议内产品 ID 才能升级到具体型号。
+  `BoseBmapModelRegistry` 集中登记产品 ID、头戴/TWS 形态和协议画像；具体型号按
+  `AudioModes / ANR / CNC` 三种已知线协议分派。型号画像缺失时只读探测这三个功能块，
+  合法 STATUS 通过 Codec 校验后升级到 `BoseCapabilityAdapterRegistry` 的对应家族
+  能力 Adapter；探测失败不开放写入，但仍保留 BMAP 电量和流转。
 - `EdifierEarbudAdapter` 使用名称命中 Edifier/漫步者系标志，连接 SPP
   `EDF00000-...` 或 channel 1，读取电量、ANC 状态和设备能力。头戴家族按
   Bluetooth Class 区分形态；W860NB PRO 具体型号使用经实机确认的
   XOR `0xA5` 加密 ANC 写入，一次设置即生效（不额外回查）。
+- `RoseEarbudAdapter` 保留品牌级标准蓝牙回退；EARFREE/EARFEEL 与 BudsFeel 分别由
+  独立协议家族 Adapter 声明其 GATT/RFCOMM 传输、组件电量和四态噪声能力。具体 i5、
+  MK2 仍优先匹配；其他同产品线型号只有在捕获的服务/特征存在且合法状态帧完成握手后
+  才进入完整能力。`NiceHckEarbudAdapter` 仍仅由 YuanDao OriG in 的精确规范化名称声明
+  私有能力，并要求其 RFCOMM 端点返回合法电量或模式帧后才确认就绪。
+- `AppleAirPodsAdapter` 以 AAP SDP UUID 判定协议家族并声明 PSM `0x1001` 的 BR/EDR
+  L2CAP 端点。Pro/Max 名称只在 UUID 已确认后细化噪声控制与物理形态，普通家族
+  Profile 只发布 AAP 组件电量和流转。电量帧按包内计数动态解析一至三个组件，缺失
+  组件保持未知；Android 版本间不同的公开隐藏 `BluetoothSocket` 构造签名集中封装在
+  L2CAP 通道工厂，并始终以 `fd=-1` 创建新 Socket。
+- `SonyEarbudAdapter` 提供保守标准回退；`SonyProtocolFamilyAdapter` 统一声明 v1/v2
+  RFCOMM、协议握手、ACK 队列和读写语义。具体 Profile 只声明头戴/TWS 形态、电池
+  拓扑、环境声方言和服务优先级；未知产品线必须先返回合法初始化响应才获得私有能力。
 
 Registry 固定按“具体型号 → 厂商家族 → 标准耳机”解析：
 
@@ -141,11 +175,20 @@ Adapter 与有状态协议组件采用组合关系。每个私有通道会话从
 - 给出连接后的只读初始化命令。
 - 把统一控制请求翻译成厂商字节帧。
 - 增量消费任意分片/粘包并产生统一领域事件。
+- 在 `offer` 后提供一次性即时响应；Sony 等 ACK 驱动协议据此回 ACK 并串行推进请求，
+  其他协议保留空实现。
 - 在权威型号事件后给出该型号才允许执行的后续只读命令。
 - 给出控制成功后需要执行的权威只读回查。
 
+Adapter 还声明 `TransportReadiness`。唯一且可由服务/特征明确确认的端点可以使用
+`CONNECTED`；需要在线验证协议的 Bose、Sony、ROSE 家族外推和 NiceHCK 画像使用
+`PROTOCOL_HANDSHAKE`。此类候选只有收到协议定义的合法确认帧才进入会话，能连接但不
+说目标协议的端点会在有界超时后自动关闭并继续尝试。
+
 厂商原始帧由 `VivoTwsProtocol`、`StarRingWireCodec`、`OppoWireCodec`、
-`BoseBmapWireCodec` 等纯字节组件负责。`EarbudProtocol` 不拥有 Socket，
+`BoseBmapWireCodec`、`Rose*WireCodec`、`NiceHckWireCodec`、`AppleAapWireCodec` 和
+`SonyHeadphonesWireCodec`
+等纯字节组件负责。`EarbudProtocol` 不拥有 Socket，
 WireCodec 不认识 Adapter、MiLink 或生命周期。
 
 具体型号拥有自己的不可变协议画像。例如
@@ -153,11 +196,13 @@ WireCodec 不认识 Adapter、MiLink 或生命周期。
 `mode 04 00` 和 `mode 03` Profile；通用 vivo 协议实例只消费所选 Profile，
 没有零售型号分支。`VivoEarbudAdapter` 默认选择公开 v4 Profile；发现具体
 型号不兼容时，由该型号 Adapter 覆盖 Profile，而不修改家族状态机。
-`BoseQuietComfortHeadphonesAdapter.bmapProfile` 声明产品 ID、Quiet/Aware
-槽位、模式解释阈值，以及从 ModeConfig 的 `wind=true` 动态发现通勤槽的策略；
-Bose 家族协议在产品 ID 未确认前只读型号与电量，不发送 AudioModes 查询，也
-不暴露具体型号能力。产品画像 Registry 是唯一组合根，
-通用协议中没有具体产品常量。
+每个 Bose 具体 Adapter 的 `BoseBmapProfile` 声明产品 ID 和一种
+`BoseNoiseControlProfile`。AudioModes Profile 声明 Quiet/Aware 槽位、额外 ANC
+槽位、可选 ModeConfig 布局和风噪发现策略；ANR Profile 声明 QC35 的离散值；CNC
+Profile 声明 NC700 的级别端点。Bose 家族协议先只读初始化、型号与电量；静态画像
+缺失时额外发出 AudioModes、CNC、ANR 三个 GET，只有合法 STATUS 才创建运行时画像。
+产品画像 Registry 与能力画像 Registry 是两个明确的组合根，协议按画像类型分派，
+不包含零售名称判断，也不会因名称命中就获得控制写权限。
 
 控制确认策略由 Adapter 声明为
 `DEVICE_REPORT / PUBLISH_AFTER_WRITE / PUBLISH_AFTER_WRITE_THEN_REFRESH`。
@@ -202,7 +247,8 @@ EarbudSessionService
        └─ Map<address, EarbudDeviceSession>
             └─ EarbudChannel
                  ├─ Android BLE GATT
-                 └─ Android RFCOMM BluetoothSocket
+                 ├─ Android RFCOMM BluetoothSocket
+                 └─ Android BR/EDR L2CAP BluetoothSocket
 ```
 
 各层职责：
@@ -216,7 +262,7 @@ EarbudSessionService
 - `EarbudDeviceSession` 每台设备一个实例，拥有协议 adapter、连接循环、
   串行写入和接收循环；通道故障只在有限恢复周期内重建通道，不重建设备
   会话。
-- `EarbudChannel` 把 BLE GATT 通知和 RFCOMM 流统一为有序字节通道；
+- `EarbudChannel` 把 BLE GATT 通知、RFCOMM 流和 BR/EDR L2CAP 流统一为有序字节通道；
   Adapter 通过 `EarbudTransportSpec` 声明候选顺序，服务、会话与协议不包含
   型号传输分支。
 
@@ -225,10 +271,11 @@ EarbudSessionService
 1. Hook `A2dpService.handleConnectionStateChanged`。
 2. A2DP 进入 connected 且 Registry 解析到允许接入的 Adapter 时，向
    连接管理器注册设备并创建一个设备会话。
-3. 若 Adapter 要求私有协议，会话按 Adapter 声明的候选传输建立 GATT 或 RFCOMM，
-   通道成功后向 MiLink 发布 MMA connected，并发送家族安全的初始只读查询；
-   权威型号事件可在同一串行事务中解锁具体型号后续查询。身份级回退则立即
-   就绪，不创建任何私有通道。
+3. 若 Adapter 要求私有协议，会话按 Adapter 声明的候选传输建立 GATT、RFCOMM 或
+   BR/EDR L2CAP。`CONNECTED` 画像在链路连接后进入就绪并发送初始只读查询；
+   `PROTOCOL_HANDSHAKE` 画像先发送只读探测，只有合法确认帧返回后才发布
+   `ChannelConnected`。权威型号事件可在同一串行事务中解锁具体型号后续查询。
+   身份级回退立即就绪，不创建任何私有通道。
 4. Reader 在单独 IO 协程中持续解码，Reducer 更新状态。
 5. 只有发生实际变化的新状态才通过显式、定向广播同步给
    `com.milink.service`；模块 App 仅在前台打开时按需请求快照。
@@ -294,9 +341,10 @@ MiLink 的设备 ID 只承担“进入官方耳机路径并选择物理形态”
 - detach 或根 View 改绑时调用 `unbind` 恢复原生 View，避免重复监听、残留
   布局和跨型号污染。
 
-Bose QuietComfort 的具体卡片 Adapter 一次性把不受支持的“关闭”按钮替换为
-同 ID、同布局参数的原生 `HeadsetControlAncItemView`，用于切换协议动态发现的
-“抗风噪”模式槽。StarRing Ultra 保留 MiLink 的通透、降噪、关闭三态卡片，
+Bose 卡片呈现按能力复用三种配置：Quiet/Aware 隐藏不受支持的关闭项；
+Quiet/Aware/Wind 把关闭槽替换为风噪；QC35 的 High/Wind/Off 把通透槽替换为
+风噪。替换项始终复用同 ID、同布局参数的原生 `HeadsetControlAncItemView`。
+StarRing Ultra 保留 MiLink 的通透、降噪、关闭三态卡片，
 具体卡片 Adapter 只在降噪分支旁加入“抗风噪”开关；布局、字体、开关尺寸和选中
 动画继续由宿主控件负责。通用 MiLink Hook 不包含这两种型号的 UI 分支。
 
@@ -332,6 +380,20 @@ Xiaomi 耳机和非 HyperEars 卡片继续执行原方法。若具体详情 Inte
 - `REQUEST_STATE`：请求 Bluetooth 进程立即查询并重发快照。
 - `CONTROL`：携带统一控制类型及参数。
 - `STATE_CHANGED`：完整状态快照，避免只发增量造成进程重启后缺字段。
+
+## 6.1 运行看板投影边界
+
+模块应用不会从 Compose 直接查询 Adapter。`DeviceSessionUiProjector` 是唯一读取
+`EarbudAdapterRegistry` 的界面边界，将领域状态转换为通用 `DeviceSessionUiModel`：
+
+- Profile 显示名和稳定 ID；
+- 形态、电量来源、传输类别和控制能力摘要；
+- 已按 `TransportReadiness` 解释的链路阶段；
+- 已按电池拓扑选择的整机或组件指标；
+- 与具体型号无关的 MiLink 生命周期阶段。
+
+`DashboardScreen` 只渲染该模型，不导入 Adapter、Protocol、传输类型或厂商枚举。
+因此新增型号不会给主界面增加条件分支，设备间只存在数据差异，不存在布局分叉。
 
 ## 7. HyperOS 映射
 

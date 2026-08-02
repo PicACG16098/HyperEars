@@ -150,18 +150,44 @@ sealed interface RfcommEndpointSpec : EarbudTransportSpec {
 }
 
 /**
+ * Bluetooth Classic L2CAP endpoint identified by a fixed protocol/service multiplexer.
+ *
+ * Apple Accessory Protocol uses the BR/EDR socket type with PSM `0x1001`; keeping that detail in
+ * the transport declaration prevents Apple-specific reflection from leaking into the protocol or
+ * device adapter layers.
+ */
+data class L2capEndpointSpec(
+    val psm: Int,
+    val serviceUuid: String,
+    val authenticated: Boolean = true,
+    val encrypted: Boolean = true,
+    override val id: String,
+) : EarbudTransportSpec {
+    init {
+        require(psm in 1..0xFFFF)
+        require(serviceUuid.isNotBlank())
+    }
+}
+
+/**
  * BLE GATT transport whose characteristics carry the protocol's unmodified business frames.
  *
  * UUIDs are authoritative. Optional instance IDs pin a captured attribute table when a device
  * exposes duplicate characteristic UUIDs; runtimes still validate characteristic properties.
  */
 data class GattTransportSpec(
+    /** Optional service boundary used to disambiguate otherwise common characteristic UUIDs. */
+    val serviceUuid: String? = null,
     val writeCharacteristicUuid: String,
     val notifyCharacteristicUuid: String,
     val writeInstanceId: Int? = null,
     val notifyInstanceId: Int? = null,
     override val id: String,
-) : EarbudTransportSpec
+) : EarbudTransportSpec {
+    init {
+        require(serviceUuid == null || serviceUuid.isNotBlank())
+    }
+}
 
 data class EarbudCapabilities(
     val battery: Boolean = false,
@@ -203,6 +229,15 @@ value class MiLinkCardPresentationId(
 interface EarbudProtocol {
     fun initialReadCommands(): List<ByteArray>
     fun encode(request: ControlRequest): List<ByteArray>
+
+    /**
+     * Protocol-generated writes produced while decoding incoming bytes.
+     *
+     * ACK-driven protocols use this to advance their request queue without owning the transport.
+     * The runtime drains this exactly once after each [offer] call. Most protocols are passive and
+     * retain the empty default.
+     */
+    fun drainImmediateCommands(): List<ByteArray> = emptyList()
 
     /**
      * Optional commands unlocked by an authoritative protocol event.

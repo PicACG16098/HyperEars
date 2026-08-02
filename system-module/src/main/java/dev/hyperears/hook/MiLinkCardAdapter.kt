@@ -58,8 +58,14 @@ internal data class MiLinkCardEnvironment(
 internal object MiLinkCardAdapterRegistry {
     private val adapters = listOf(
         StarRingUltraMiLinkCardAdapter,
+        RoseEarfreeI5MiLinkCardAdapter,
+        RoseBudsFeelMk2MiLinkCardAdapter,
+        NiceHckOrigMiLinkCardAdapter,
         BoseQuietComfortMiLinkCardAdapter,
+        BoseAnrMiLinkCardAdapter,
+        BoseTwoModeMiLinkCardAdapter,
         EdifierW860NBProMiLinkCardAdapter,
+        SonyAmbientOnlyMiLinkCardAdapter,
     )
     private val byId = adapters.associateBy(MiLinkCardAdapter::presentationId)
 

@@ -1,138 +1,145 @@
-# Bose BMAP 型号与电量协议
+# Bose BMAP 家族适配
 
-## 已验证设备
+## 1. 设计边界
 
-- 市场名称：Bose QuietComfort Headphones
-- 内部代号：`prince`
-- 产品 ID：`0x4075`
-- 实测固件：`1.0.6-80+f5f219b`
-- 当前设备蓝牙地址 OUI：`BC:87:FA`（Bose 注册）
+HyperEars 只在 Android 已确认设备属于标准耳机、且名称、Bose OUI 或已缓存的 BMAP
+服务 UUID 命中时创建 Bose 家族会话。最终型号不依赖蓝牙名称，而由只读 BMAP
+`ProductInfo.ProductIdVariants [0.3]` 响应确认。
 
-设备名称可以被用户改成“电音耳罩”，所以名称只能用于初筛，不能作为最终
-型号判据。
+产品 ID 未登记，或已登记但没有静态控制画像时，家族协议会依次读取 AudioModes、
+CNC、ANR 状态。只有某个精确的 STATUS 响应通过对应 Codec 校验后，才把会话升级到
+该线协议的家族能力 Adapter；无有效响应时仍只提供 BMAP 电量和 MiLink 流转。
 
-## 传输与分帧
+## 2. 传输与初始化
 
-BMAP 直接承载在 RFCOMM 字节流上：
+BMAP 帧直接承载于 RFCOMM：
 
 ```text
 [functionBlock, function, flags, payloadLength, payload...]
 ```
 
-`flags` 低四位为操作符：`GET=1`、`SET_GET=2`、`STATUS=3`、
-`ERROR=4`、`START=5`、`RESULT=6`。
+`flags` 低四位为操作符：`GET=1`、`SETGET=2`、`STATUS=3`、`START=5`。
+端点按以下顺序尝试：
 
-当前型号的端点顺序为：
+1. RFCOMM channel 8（本地 `prince` 及公开 QC35/35 II 实现）；
+2. 标准 SPP UUID；
+3. BMAP 服务 UUID `00000000-deca-fade-deca-deafdecacaff`；
+4. RFCOMM channel 2（较新 BMAP 设备）。
 
-1. RFCOMM channel 8（实机确认）
-2. 标准 SPP UUID
-3. `00000000-deca-fade-deca-deafdecacaff`
-4. RFCOMM channel 2（兼容回退）
+RFCOMM `connect()` 成功不代表业务端点正确：部分 UUID 可以建立 Socket 却不返回
+BMAP。每个候选端点必须在 2.5 秒内对 `[0.3]` 返回合法且接受的协议握手，否则关闭
+该 Socket 并尝试下一端点。只有验证成功的候选才发布“通道已连接”，避免假连接使
+卡片永久退化为音量。
 
-`deca-fade` UUID 也被 iAP2 等协议使用，不能单独作为 Bose 判型依据。
+每个会话先发送 `GET [0.1]`。QC35/35 II 需要该初始化请求才会响应后续 BMAP
+命令；其他已知设备将其作为普通只读查询处理。随后读取产品 ID `[0.3]` 和电量
+`[2.2]`，具体型号确认后才读取或写入对应噪声控制功能块。
 
-## 产品判型 `[0.3]`
+## 3. 产品目录与能力分级
+
+产品 ID 与代号来自公开的 Bose BMAP 产品目录；控制能力按证据单独分级。
+
+| 产品 | 代号 / ID | 形态 | HyperEars 控制画像 | 证据 |
+|---|---|---|---|---|
+| QuietComfort 35 | `wolfcastle/0x400C` | 头戴 | ANR：高/风噪/关闭 | 公开实机实现 |
+| QuietComfort 35 II | `baywolf/0x4020` | 头戴 | ANR：高/风噪/关闭 | 公开实机实现 |
+| Noise Cancelling Headphones 700 | `goodyear/0x4024` | 头戴 | CNC：降噪/通透端点/关闭 | 公开实机实现 |
+| QuietComfort 45 | `duran/0x4039` | 头戴 | AudioModes：安静/感知 | 公开实机实现 |
+| QuietComfort Ultra Headphones | `lonestarr/0x4066` | 头戴 | AudioModes：安静/感知 | 同代协议盲配 |
+| QuietComfort Headphones | `prince/0x4075` | 头戴 | AudioModes：安静/感知/已发现风噪预设 | HyperEars 实机验证 |
+| QuietComfort Ultra Headphones (2nd Gen) | `wolverine/0x4082` | 头戴 | AudioModes：安静/感知 | 公开实机实现 |
+| QuietComfort Earbuds | `lando/0x402F` | TWS | AudioModes：安静/感知 | 公开实机实现 |
+| QuietComfort Earbuds II | `smalls/0x4064` | TWS | AudioModes：安静/感知 | 同代协议盲配 |
+| QuietComfort Ultra Earbuds | `scotty/0x4072` | TWS | AudioModes：安静/感知 | 同代协议盲配 |
+| QuietComfort Ultra Earbuds (2nd Gen) | `edith/0x4062` | TWS | AudioModes：安静/感知 | 公开配置盲配 |
+
+以下产品没有预置写画像，只登记产品 ID、形态和通用 BMAP 电量；若设备实际响应第 4
+节所列只读能力探测，则运行时开放该协议确认支持的模式：Hearphones、
+Hearphones II、ProFlight、SoundSport、SoundSport Pulse、QuietControl 30、SoundSport
+Free、Sport Earbuds、Sport Open Earbuds、Ultra Open Earbuds。
+
+“公开实机实现”表示存在可检查的第三方开源实现，不表示 HyperEars 已持有对应设备；
+“同代协议盲配”需要社区实机继续验证。
+
+## 4. 三种噪声控制画像
+
+未知画像只发送以下三个 GET：`[31.3]`、`[1.5]`、`[1.6]`。ERROR、无响应和格式不符
+均不产生能力；首次合法 STATUS 决定当前会话画像，之后写入和回读都只走该画像。
+探测不修改设备配置，也不增加轮询。
+
+### 4.1 QC35 ANR `[1.6]`
 
 ```text
-TX  00 03 01 00
-RX  00 03 03 03 40 75 02
+GET:    01 06 01 00
+SETGET: 01 06 02 01 <level>
+STATUS: 01 06 03 02 <level> <capabilities>
 ```
 
-响应 payload：
+公开实现给出的值为 `0=关闭`、`1=高降噪`、`2=风噪`、`3=低降噪`。MiLink
+没有“低降噪”语义，HyperEars 不把它误报成通透；当前只发布高降噪、风噪和关闭。
+具体卡片呈现用 MiLink 自己的 ANC item 把不适用的“通透”槽替换为“抗风噪”。
 
-| 偏移 | 长度 | 字段 |
-|---:|---:|---|
-| 0 | 2 | 大端产品 ID；当前设备为 `0x4075` |
-| 2 | 1 | 产品变体；当前设备为 `2` |
-
-运行时先通过已连接设备的耳机类型、名称或 Bose OUI 做无扫描初筛，始终先
-进入 Bose 家族/头戴 Adapter，再由该只读请求确认协议内产品 ID。收到
-`0x4075` 后，才把会话细化为 `BoseQuietComfortHeadphonesAdapter`。BMAP
-响应是型号事实，用户可修改的蓝牙名称不会提前放开具体型号能力。
-
-## 电量 `[2.2]`
-
-只读请求：
+### 4.2 NC700 CNC `[1.5]`
 
 ```text
-TX  02 02 01 00
+GET:    01 05 01 00
+SETGET: 01 05 02 02 <10-level> <enabled>
+STATUS: 01 05 03 03 <steps> <10-level> <enabled>
 ```
 
-当前头戴式设备 80% 的实机响应：
+HyperEars 只映射系统卡片能准确表达的三个端点：最大降噪、完全感知和关闭。NC700
+从关闭重新启用时会先恢复最大降噪；仅当当前状态明确为关闭、目标为完全感知时，
+协议会按公开实现发送第二个相同 SETGET，使最终级别落到感知端点。其他切换只写一次。
+
+### 4.3 AudioModes `[31.3]` / `[31.6]`
 
 ```text
-RX  02 02 03 04 50 FF FF 00
+GET current:   1F 03 01 00
+START switch:  1F 03 05 02 <modeIndex> <voicePrompt>
+START configs: 1F 06 05 00
 ```
 
-payload 由一个或多个四字节组件组组成：
+已知 Quiet/Aware 索引分别为 `0/1`。没有可靠关闭命令的产品只发布这两种状态，卡片
+隐藏不受支持的“关闭”入口。`prince/0x4075` 额外读取 ModeConfig，并只切换设备实际
+返回且 `wind=true` 的预设，不修改用户模式参数。不同代 ModeConfig 的字段偏移由
+Profile 提供，Codec 不写死成一个型号布局。
+
+## 5. 电量 `[2.2]`
+
+```text
+GET: 02 02 01 00
+```
+
+STATUS payload 按四字节组件重复：
 
 ```text
 [percent, remainingMinutesHi, remainingMinutesLo, componentId]
 ```
 
-组件 ID：
+`componentId` 为 `0=整机`、`1=左`、`2=右`、`3=盒`、`4=系统`。头戴型号发布整机
+电量；支持组件分组的入耳式产品优先发布真实左右耳和充电盒，不把整机值伪装成盒电量。
 
-| ID | 组件 |
-|---:|---|
-| 0 | 整机 |
-| 1 | 左耳 |
-| 2 | 右耳 |
-| 3 | 充电盒 |
-| 4 | 系统/整机 |
+## 6. 运行时结构
 
-`0xFFFF` 表示剩余分钟未知。百分比只有 `0..100` 有效。
+- `BoseEarbudAdapter`：无扫描家族初筛、端点顺序和通用 BMAP 会话入口。
+- `BoseBmapModelRegistry`：产品 ID 到具体 Adapter/Profile 的唯一查找表。
+- `BoseCapabilityAdapterRegistry`：型号画像缺失时，由合法 STATUS 选择的运行时家族
+  能力 Adapter；分别保留头戴/TWS 形态。
+- 具体型号 Adapter：只声明产品 ID、形态、能力、噪声控制画像和可选卡片呈现。
+- `BoseBmapEarbudProtocol`：同一字节流上的型号升级、电量、画像分派和状态回读。
+- `BoseBmapWireCodec`：纯 BMAP 分帧，以及 Product、Battery、ANR、CNC、AudioModes
+  的无状态编解码。
 
-对于当前单电池头戴设备，HyperEars 保留整机电量语义，并由 MiLink 桥接层把
-适配器的 `HEADPHONES` 语义映射为 MiLink 17.2.4 的原生通用头戴式类型 `7`。
-MiLink 自己负责头戴式图标、单电池布局和 ANC 生命周期，不显示左右耳/充电盒，
-HyperEars 不改写其卡片形态。具体型号呈现适配器只移除协议确认不支持的操作入口。
-17.2.0 尚未实现该类型，需要升级 MiLink。
-支持多组件上报的 Bose 入耳式设备则优先使用真实左右耳和充电盒分组。
+未知产品 ID 不会伪装成具体型号；只有协议能力探测成功才得到对应写命令。电量 `[2.2]`
+始终独立解析，因此噪声控制探测失败不会使电量退化。协议响应、设备会话和 UI 状态仍
+按蓝牙地址隔离，不增加扫描、轮询或额外常驻服务。
 
-## 模式 `[31.3]` / `[31.6]`
+## 7. 研究来源
 
-只有 `0x4075` 确认成功后，当前型号才在同一 BMAP 字节流上启用 AudioModes：
+- HyperEars 对 `prince/0x4075` 的实机抓包和 Bose Music China 12.4.2 APK 行为核对。
+- [aaronsb/bosectl](https://github.com/aaronsb/bosectl)：BMAP 产品目录、QC35/35 II
+  ANR、QC Ultra 二代 AudioModes 和不同 RFCOMM 通道的公开实机实现。
+- [danielgjackson/noisecancel](https://github.com/danielgjackson/noisecancel)：NC700、
+  QC35、QC45 与 QC Earbuds 的公开 Android 控制帧实现。
 
-```text
-读取当前模式  1F 03 01 00
-切换 Quiet    1F 03 05 02 00 00
-切换 Aware    1F 03 05 02 01 00
-读取模式配置  1F 06 05 00
-```
-
-Quiet 映射为 MiLink“降噪”，Aware 映射为“通透”。后续自定义模式槽仍由
-ModeConfig 动态发现；其中非内置槽且 `wind=true` 的通勤模式映射为
-MiLink“抗风噪”。切换三者都只发送 CurrentMode START，随后再次读取
-CurrentMode；HyperEars 不修改模式名称、CNC、空间音频或风噪参数。
-
-该固件没有已验证的免鉴权“关闭降噪”指令，因此不会伪造第三种状态。HyperEars
-使用 MiLink 17.2.4 原生头戴式 ANC 卡片，具体可用模式仍由
-`BoseQuietComfortHeadphonesAdapter.supportedNoiseModes` 和协议能力共同约束。
-其他未呈现的自定义模式槽按设备返回的 CNC 配置折叠为“降噪”或“通透”状态。
-
-卡片生命周期入口按四个稳定参数类型定位，不依赖被混淆为 `m`（17.2.0）或
-`p`（17.2.4）的函数名。
-
-ANC 能力从 MiLink 稳定的
-`QueryLocal/QueryServer.getSupportAncMode(targetAddress, deviceId)` 边界发布：
-原始能力位 `3` 表示不含通透，`7` 表示完整原生三态集合；MiLink 自己再把它们
-标准化为 UI 值 `1/2` 并执行异步加载。这样无需依赖在 17.2.0 中被混淆为
-`b0.L()` 的 Controller。Bose 仍发布完整的原生三项能力集合，具体 Adapter
-在卡片绑定时以 MiLink 自己的 ANC item 把设备不支持的“关闭”入口替换为
-“抗风噪”；它只切换动态发现的通勤槽，不提供 ModeConfig 参数编辑。
-
-## 实现边界
-
-- `BoseBmapWireCodec`：BMAP 分帧、型号、电量与 AudioModes 编解码。
-- `BoseEarbudAdapter`：Bose 家族初筛、端点和家族通用电量能力。
-- `BoseQuietComfortHeadphonesAdapter`：`prince/0x4075` 具体型号能力、
-  BMAP 模式画像与 MiLink 呈现 ID。
-- `BoseBmapEarbudProtocol`：每设备会话中的型号确认、电量、模式与读回事件。
-
-## 证据
-
-- 本地 Bose Music China 12.4.2 APK 反编译：
-  `StatusBatteryLevelGetPacket`、`StatusBatteryLevelResponse`、
-  `ProductInfoProductIdVariants`。
-- 当前项目既有 QuietComfort Headphones 实机抓包。
-- `aaronsb/bosectl` 的 `qc_prince` 配置与捕获测试。
+HyperEars 独立实现互操作所需的协议事实，不分发上述项目的程序、抓包或品牌资源。

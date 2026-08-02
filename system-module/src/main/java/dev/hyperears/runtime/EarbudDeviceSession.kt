@@ -15,6 +15,7 @@ import dev.hyperears.integration.EarbudAdapter
 import dev.hyperears.integration.EarbudAdapterRegistry
 import dev.hyperears.integration.EarbudEvent
 import dev.hyperears.integration.EarbudProtocol
+import dev.hyperears.integration.TransportReadiness
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -198,16 +199,15 @@ internal class EarbudDeviceSession(
             var connectedAt = 0L
             var wasConnected = false
             try {
-                val activeChannel = connectFirstEndpoint()
+                val connectedTransport = connectFirstTransport()
+                val activeChannel = connectedTransport.channel
+                val activeProtocol = connectedTransport.protocol
                 currentCoroutineContext().ensureActive()
                 if (closed.get()) {
                     activeChannel.close()
                     return
                 }
 
-                val activeProtocol = requireNotNull(earbudAdapter.createProtocol()) {
-                    "integrated adapter ${earbudAdapter.id} has no private protocol"
-                }
                 synchronized(transportLock) {
                     channel = activeChannel
                     protocol = activeProtocol
@@ -221,13 +221,18 @@ internal class EarbudDeviceSession(
                         "address=${maskBluetoothAddress(address)}",
                 )
 
-                transactionMutex.withLock {
-                    sendCommands(
-                        activeChannel = activeChannel,
-                        commands = activeProtocol.initialReadCommands(),
-                        gapMs = INITIAL_COMMAND_GAP_MS,
-                        description = "initial read",
-                    )
+                if (!connectedTransport.initialReadSent) {
+                    transactionMutex.withLock {
+                        sendCommands(
+                            activeChannel = activeChannel,
+                            commands = activeProtocol.initialReadCommands(),
+                            gapMs = INITIAL_COMMAND_GAP_MS,
+                            description = "initial read",
+                        )
+                    }
+                }
+                connectedTransport.bufferedEvents.forEach { event ->
+                    dispatchProtocolEvent(activeChannel, activeProtocol, event)
                 }
                 readFrames(activeChannel, activeProtocol)
                 throw IOException("vendor channel stream ended")
@@ -277,22 +282,45 @@ internal class EarbudDeviceSession(
         onSystemBatteryChanged(BluetoothSystemBattery.cachedLevel(device))
     }
 
-    private suspend fun connectFirstEndpoint(): EarbudChannel {
+    private suspend fun connectFirstTransport(): ConnectedTransport {
         return connectionCoordinator.run {
-            connectFirstEndpointSerially()
+            connectFirstTransportSerially()
         }
     }
 
-    private suspend fun connectFirstEndpointSerially(): EarbudChannel {
+    private suspend fun connectFirstTransportSerially(): ConnectedTransport {
         var lastError: Throwable? = null
         earbudAdapter.transports.forEach { transport ->
             currentCoroutineContext().ensureActive()
             val candidate = channelFactory.create(context, device, transport)
+            val candidateProtocol = requireNotNull(earbudAdapter.createProtocol()) {
+                "integrated adapter ${earbudAdapter.id} has no private protocol"
+            }
             synchronized(transportLock) { channel = candidate }
             try {
                 withTimeout(CONNECT_TIMEOUT_MS) { candidate.connect() }
-                return candidate
+                if (earbudAdapter.transportReadiness == TransportReadiness.CONNECTED) {
+                    return ConnectedTransport(
+                        channel = candidate,
+                        protocol = candidateProtocol,
+                    )
+                }
+
+                sendCommands(
+                    activeChannel = candidate,
+                    commands = candidateProtocol.initialReadCommands(),
+                    gapMs = INITIAL_COMMAND_GAP_MS,
+                    description = "transport probe",
+                )
+                val bufferedEvents = awaitAcceptedHandshake(candidate, candidateProtocol)
+                return ConnectedTransport(
+                    channel = candidate,
+                    protocol = candidateProtocol,
+                    initialReadSent = true,
+                    bufferedEvents = bufferedEvents,
+                )
             } catch (error: Throwable) {
+                candidateProtocol.reset()
                 candidate.close()
                 synchronized(transportLock) {
                     if (channel === candidate) channel = null
@@ -312,6 +340,33 @@ internal class EarbudDeviceSession(
         throw IOException("all vendor-channel endpoints failed", lastError)
     }
 
+    private suspend fun awaitAcceptedHandshake(
+        candidate: EarbudChannel,
+        candidateProtocol: EarbudProtocol,
+    ): List<EarbudEvent> = withTimeout(PROTOCOL_HANDSHAKE_TIMEOUT_MS) {
+        val buffer = ByteArray(READ_BUFFER_SIZE)
+        val bufferedEvents = mutableListOf<EarbudEvent>()
+        while (true) {
+            val count = candidate.read(buffer)
+            if (count < 0) throw IOException("vendor channel ended before protocol handshake")
+            val events = offerProtocolBytes(candidate, candidateProtocol, buffer.copyOf(count))
+            events.forEach { event ->
+                if (event is EarbudEvent.UnknownFrame) {
+                    logUnknownFrame(event)
+                } else {
+                    bufferedEvents += event
+                }
+            }
+            val handshake = events.filterIsInstance<EarbudEvent.Handshake>().lastOrNull()
+            if (handshake != null) {
+                if (!handshake.accepted) throw IOException("protocol handshake rejected")
+                return@withTimeout bufferedEvents
+            }
+        }
+        @Suppress("UNREACHABLE_CODE")
+        bufferedEvents
+    }
+
     private suspend fun readFrames(
         activeChannel: EarbudChannel,
         activeProtocol: EarbudProtocol,
@@ -320,28 +375,56 @@ internal class EarbudDeviceSession(
         while (currentCoroutineContext().isActive && !closed.get()) {
             val count = activeChannel.read(buffer)
             if (count < 0) return
-            activeProtocol.offer(buffer.copyOf(count)).forEach { event ->
-                if (event is EarbudEvent.UnknownFrame) {
-                    logUnknownFrame(event)
-                } else {
-                    if (event is EarbudEvent.ModelIdentified) {
-                        EarbudAdapterRegistry.integratedById(event.modelId)?.let {
-                            effectiveAdapter = it
-                        }
-                    }
-                    listener.onEvent(this, event)
-                    val followUp = activeProtocol.followUpCommands(event)
-                    if (followUp.isNotEmpty()) {
-                        transactionMutex.withLock {
-                            sendCommands(
-                                activeChannel = activeChannel,
-                                commands = followUp,
-                                gapMs = INITIAL_COMMAND_GAP_MS,
-                                description = "model follow-up",
-                            )
-                        }
-                    }
-                }
+            offerProtocolBytes(activeChannel, activeProtocol, buffer.copyOf(count)).forEach { event ->
+                dispatchProtocolEvent(activeChannel, activeProtocol, event)
+            }
+        }
+    }
+
+    private suspend fun offerProtocolBytes(
+        activeChannel: EarbudChannel,
+        activeProtocol: EarbudProtocol,
+        bytes: ByteArray,
+    ): List<EarbudEvent> {
+        val events = activeProtocol.offer(bytes)
+        val immediateCommands = activeProtocol.drainImmediateCommands()
+        if (immediateCommands.isNotEmpty()) {
+            transactionMutex.withLock {
+                sendCommands(
+                    activeChannel = activeChannel,
+                    commands = immediateCommands,
+                    gapMs = 0L,
+                    description = "protocol response",
+                )
+            }
+        }
+        return events
+    }
+
+    private suspend fun dispatchProtocolEvent(
+        activeChannel: EarbudChannel,
+        activeProtocol: EarbudProtocol,
+        event: EarbudEvent,
+    ) {
+        if (event is EarbudEvent.UnknownFrame) {
+            logUnknownFrame(event)
+            return
+        }
+        if (event is EarbudEvent.ModelIdentified) {
+            EarbudAdapterRegistry.integratedById(event.modelId)?.let {
+                effectiveAdapter = it
+            }
+        }
+        listener.onEvent(this, event)
+        val followUp = activeProtocol.followUpCommands(event)
+        if (followUp.isNotEmpty()) {
+            transactionMutex.withLock {
+                sendCommands(
+                    activeChannel = activeChannel,
+                    commands = followUp,
+                    gapMs = INITIAL_COMMAND_GAP_MS,
+                    description = "model follow-up",
+                )
             }
         }
     }
@@ -418,8 +501,16 @@ internal class EarbudDeviceSession(
         joinToString(separator = " ") { "%02X".format(it.toInt() and 0xFF) }
 
     private companion object {
+        data class ConnectedTransport(
+            val channel: EarbudChannel,
+            val protocol: EarbudProtocol,
+            val initialReadSent: Boolean = false,
+            val bufferedEvents: List<EarbudEvent> = emptyList(),
+        )
+
         const val COMPONENT = "DeviceSession"
         const val CONNECT_TIMEOUT_MS = 60_000L
+        const val PROTOCOL_HANDSHAKE_TIMEOUT_MS = 2_500L
         const val INITIAL_COMMAND_GAP_MS = 150L
         const val COMMAND_GAP_MS = 120L
         const val CONTROL_READBACK_DELAY_MS = 120L
