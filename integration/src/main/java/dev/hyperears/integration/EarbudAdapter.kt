@@ -124,6 +124,7 @@ object EarbudAdapterRegistry {
         add(boseHeadphonesAdapter)
         add(boseFamilyAdapter)
         add(EdifierW860NBProAdapter)
+        add(EdifierEvoProAdapter)
         add(edifierHeadphonesAdapter)
         add(edifierFamilyAdapter)
         add(RoseEarfreeI5Adapter)

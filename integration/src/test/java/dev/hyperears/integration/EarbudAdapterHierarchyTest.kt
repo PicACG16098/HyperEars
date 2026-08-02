@@ -135,6 +135,7 @@ class EarbudAdapterHierarchyTest {
                 BoseMiLinkPresentationIds.WIND_REPLACES_OFF,
                 BoseMiLinkPresentationIds.WIND_REPLACES_TRANSPARENCY,
                 EdifierW860NBProAdapter.PRESENTATION_ID,
+                EdifierEvoProAdapter.PRESENTATION_ID,
                 RoseEarfreeI5Adapter.PRESENTATION_ID,
                 RoseBudsFeelMk2Adapter.PRESENTATION_ID,
                 NiceHckYuanDaoOrigAdapter.PRESENTATION_ID,
@@ -151,10 +152,69 @@ class EarbudAdapterHierarchyTest {
         assertNull(EdifierEarbudAdapter().miLinkCardPresentationId)
         assertNull(EdifierHeadphonesAdapter().miLinkCardPresentationId)
         assertEquals(
+            EdifierEvoProAdapter.PRESENTATION_ID,
+            EdifierEvoProAdapter.miLinkCardPresentationId,
+        )
+        assertEquals(
             BoseQuietComfortHeadphonesAdapter.PRESENTATION_ID,
             BoseQuietComfortHeadphonesAdapter.miLinkCardPresentationId,
         )
         assertNull(StandardEarbudAdapter().miLinkCardPresentationId)
+    }
+
+    @Test
+    fun edifierEvoProResolvesAsTwsWithShiftedAncMapping() {
+        val concrete = identity(
+            name = "漫步者•花再 Evo Pro",
+            standardHeadset = true,
+        )
+        assertEquals(EdifierEvoProAdapter, EarbudAdapterRegistry.resolve(concrete))
+        assertEquals(HeadsetFormFactor.TWS, EdifierEvoProAdapter.formFactor)
+        assertTrue(EdifierEvoProAdapter.capabilities.battery)
+        assertTrue(EdifierEvoProAdapter.capabilities.noiseControl)
+        assertFalse(EdifierEvoProAdapter.capabilities.windNoiseControl)
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.TRANSPARENCY, NoiseMode.OFF),
+            EdifierEvoProAdapter.supportedNoiseModes,
+        )
+        assertEquals(0x1B, EdifierEvoProAdapter.ancIndex)
+        assertTrue(EdifierEvoProAdapter.batteryFromDeviceState)
+
+        val protocol = requireNotNull(EdifierEvoProAdapter.createProtocol())
+        // Evo Pro initial reads include device-state query (0xF2) for battery
+        assertEquals(
+            listOf("AA EC D0 00 00 66", "AA EC CC 00 00 62", "AA EC D8 00 00 6E", "AA EC F2 00 00 88"),
+            protocol.initialReadCommands().map { it.hex() },
+        )
+        // Evo Pro ANC set uses ancIndex=0x1B (27) and shifted ancValue mapping
+        // plaintext [0x1B 0x01] ANC -> encrypted [0xBE 0xA4]
+        assertEquals(
+            "AA EC C1 00 02 BE A4 BB",
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.ANC)).single().hex(),
+        )
+        // plaintext [0x1B 0x05] TRANSPARENCY -> encrypted [0xBE 0xA0]
+        assertEquals(
+            "AA EC C1 00 02 BE A0 B7",
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY)).single().hex(),
+        )
+        // plaintext [0x1B 0x06] OFF -> encrypted [0xBE 0xA3]
+        assertEquals(
+            "AA EC C1 00 02 BE A3 BA",
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.OFF)).single().hex(),
+        )
+        // Evo Pro ANC response parsing (ancIndex=0x1B, shifted values)
+        // BB EC CC 00 02 BE A3 D6 -> payload BE A3 -> XOR A5 -> 1B 06 -> ancIndex=27, ancValue=6 (OFF)
+        assertEquals(
+            listOf(EarbudEvent.NoiseModeChanged(NoiseMode.OFF, acknowledged = true)),
+            protocol.offer(hex("BB EC CC 00 02 BE A3 D6")),
+        )
+        // 0xF2 battery push
+        assertEquals(
+            listOf(EarbudEvent.BatteryChanged(
+                EarbudBattery(overall = BatteryReading(3, false)),
+            )),
+            protocol.offer(hex("BB EC F2 00 06 A6 C1 C7 A5 A6 B4 CC")),
+        )
     }
 
     @Test

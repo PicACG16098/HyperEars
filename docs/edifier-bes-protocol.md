@@ -1,10 +1,13 @@
 # Edifier (BES/恒玄) Bluetooth Protocol Analysis
 
 > Verified on real hardware: Edifier W860NB PRO via LSPosed hook of Edifier Connect v8.4.39
+> Evo Pro (花再) verified via protocol-test BES probe, 2026-08-02
 > Initial analysis from APK reverse engineering; frame format and ANC mapping confirmed by live capture.
 >
 > **Evidence levels:**
 > - **W860NB PRO** — Full real-device verification (ANC, battery, capabilities, SPP framing)
+> - **花再 Evo Pro** — Real-device verification (BES protocol, ancIndex=0x1B, battery via 0xF2,
+>   ANC value mapping: 1/2/3→ANC, 4→WIND, 5→TRANSPARENCY, 6→OFF)
 > - **Other Edifier models (W820NB, W830NB, STAX, etc.)** — Based on BES/Edifier family protocol
 >   speculation, **not yet verified on real hardware**. The same SPP UUID, channel 1, XOR 0xA5
 >   encryption, and D0/CC/D8 commands are shared across the family, but individual firmware versions
