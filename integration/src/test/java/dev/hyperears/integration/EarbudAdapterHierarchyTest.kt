@@ -1,6 +1,7 @@
 package dev.hyperears.integration
 
 import dev.hyperears.protocol.bose.BoseBmapWireCodec
+import dev.hyperears.protocol.nicehck.NiceHckWireCodec
 import dev.hyperears.protocol.oppo.OppoWireCodec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -123,16 +124,21 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun onlyConcreteModelsDeclareUniqueMiLinkCardPresentations() {
+    fun concreteModelsMayShareAReusableMiLinkCardPresentation() {
         val presentationIds = EarbudAdapterRegistry.adapters
             .mapNotNull(EarbudAdapter::miLinkCardPresentationId)
 
-        assertEquals(presentationIds.size, presentationIds.distinct().size)
         assertEquals(
             setOf(
                 StarRingUltraAdapter.PRESENTATION_ID,
-                BoseQuietComfortHeadphonesAdapter.PRESENTATION_ID,
+                BoseMiLinkPresentationIds.TWO_MODE,
+                BoseMiLinkPresentationIds.WIND_REPLACES_OFF,
+                BoseMiLinkPresentationIds.WIND_REPLACES_TRANSPARENCY,
                 EdifierW860NBProAdapter.PRESENTATION_ID,
+                RoseEarfreeI5Adapter.PRESENTATION_ID,
+                RoseBudsFeelMk2Adapter.PRESENTATION_ID,
+                NiceHckYuanDaoOrigAdapter.PRESENTATION_ID,
+                SonyMiLinkPresentationIds.AMBIENT_ONLY,
             ),
             presentationIds.toSet(),
         )
@@ -610,6 +616,7 @@ class EarbudAdapterHierarchyTest {
         assertTrue(adapter.capabilities.battery)
         assertTrue(adapter.capabilities.audioHandoff)
         assertFalse(adapter.capabilities.noiseControl)
+        assertEquals(TransportReadiness.PROTOCOL_HANDSHAKE, adapter.transportReadiness)
         assertEquals(
             listOf("rfcomm-8", "spp-uuid", "bmap-uuid", "rfcomm-2"),
             adapter.transports.map(EarbudTransportSpec::id),
@@ -618,6 +625,7 @@ class EarbudAdapterHierarchyTest {
         val protocol = requireNotNull(adapter.createProtocol())
         assertEquals(
             listOf(
+                "00 01 01 00",
                 "00 03 01 00",
                 "02 02 01 00",
             ),
@@ -714,16 +722,233 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun unknownBoseProductNeverUnlocksConcreteModeCommands() {
+    fun unknownBoseProductUnlocksAudioModesOnlyAfterAValidStatusProbe() {
         val protocol = requireNotNull(BoseEarbudAdapter().createProtocol())
         val events = protocol.offer(hex("00 03 03 03 12 34 00"))
 
         assertEquals(listOf(EarbudEvent.Handshake(true)), events)
-        assertTrue(events.flatMap(protocol::followUpCommands).isEmpty())
-        assertTrue(protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.ANC)).isEmpty())
-        assertTrue(
-            protocol.readback(ControlRequest.SetNoiseMode(NoiseMode.ANC)).isEmpty(),
+        assertEquals(
+            listOf("1F 03 01 00", "01 05 01 00", "01 06 01 00"),
+            events.flatMap(protocol::followUpCommands).map { it.hex() },
         )
+        assertEquals(
+            EarbudEvent.BatteryChanged(
+                EarbudBattery(overall = BatteryReading(80, false)),
+            ),
+            protocol.offer(hex("02 02 03 04 50 FF FF 00")).single(),
+        )
+        assertTrue(protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.ANC)).isEmpty())
+
+        val discoveredProfile = BoseCapabilityAdapterRegistry.profile(
+            HeadsetFormFactor.TWS,
+            BoseDiscoveredDialect.AUDIO_MODES,
+        )
+        assertEquals(
+            listOf(
+                EarbudEvent.ModelIdentified(discoveredProfile.modelId),
+                EarbudEvent.NoiseModeChanged(NoiseMode.TRANSPARENCY, acknowledged = true),
+            ),
+            protocol.offer(hex("1F 03 03 01 01")),
+        )
+        val adapter = requireNotNull(EarbudAdapterRegistry.byId(discoveredProfile.modelId))
+        assertEquals(HeadsetFormFactor.TWS, adapter.formFactor)
+        assertTrue(adapter.capabilities.battery)
+        assertTrue(adapter.capabilities.noiseControl)
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.TRANSPARENCY),
+            adapter.supportedNoiseModes,
+        )
+        assertEquals(
+            "1F 03 05 02 00 00",
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.ANC)).single().hex(),
+        )
+    }
+
+    @Test
+    fun unknownBoseHeadphonesKeepTheirFormAndUseTheReportedCncRange() {
+        val protocol = requireNotNull(BoseHeadphonesAdapter().createProtocol())
+        val handshake = protocol.offer(hex("00 03 03 03 12 35 00")).single()
+        protocol.followUpCommands(handshake)
+
+        val discoveredProfile = BoseCapabilityAdapterRegistry.profile(
+            HeadsetFormFactor.HEADPHONES,
+            BoseDiscoveredDialect.CNC,
+        )
+        assertEquals(
+            listOf(
+                EarbudEvent.ModelIdentified(discoveredProfile.modelId),
+                EarbudEvent.NoiseModeChanged(NoiseMode.ANC, acknowledged = true),
+            ),
+            protocol.offer(hex("01 05 03 03 06 02 01")),
+        )
+        val adapter = requireNotNull(EarbudAdapterRegistry.byId(discoveredProfile.modelId))
+        assertEquals(HeadsetFormFactor.HEADPHONES, adapter.formFactor)
+        assertTrue(adapter.capabilities.battery)
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
+            adapter.supportedNoiseModes,
+        )
+        assertEquals(
+            "01 05 02 02 05 01",
+            protocol
+                .encode(ControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY))
+                .single()
+                .hex(),
+        )
+    }
+
+    @Test
+    fun knownBoseProductWithoutAWriteProfileCanStillUpgradeByDialect() {
+        val protocol = requireNotNull(BoseEarbudAdapter().createProtocol())
+        val events = protocol.offer(boseProductIdentity(0x4014))
+
+        assertEquals(
+            listOf(
+                EarbudEvent.ModelIdentified("bose-quietcontrol-30-4014"),
+                EarbudEvent.Handshake(true),
+            ),
+            events,
+        )
+        assertEquals(
+            listOf("1F 03 01 00", "01 05 01 00", "01 06 01 00"),
+            protocol.followUpCommands(events.first()).map { it.hex() },
+        )
+
+        val discoveredProfile = BoseCapabilityAdapterRegistry.profile(
+            HeadsetFormFactor.TWS,
+            BoseDiscoveredDialect.ANR,
+        )
+        assertEquals(
+            listOf(
+                EarbudEvent.ModelIdentified(discoveredProfile.modelId),
+                EarbudEvent.NoiseModeChanged(NoiseMode.WIND, acknowledged = true),
+            ),
+            protocol.offer(hex("01 06 03 02 02 0B")),
+        )
+        assertEquals(
+            "01 06 02 01 01",
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.ANC)).single().hex(),
+        )
+    }
+
+    @Test
+    fun boseProductCatalogRefinesKnownHeadphonesAndEarbudsByWireIdentity() {
+        val cases = listOf(
+            Triple(0x400C, BoseQuietComfort35Adapter, HeadsetFormFactor.HEADPHONES),
+            Triple(0x4020, BoseQuietComfort35IIAdapter, HeadsetFormFactor.HEADPHONES),
+            Triple(
+                0x4024,
+                BoseNoiseCancellingHeadphones700Adapter,
+                HeadsetFormFactor.HEADPHONES,
+            ),
+            Triple(0x4039, BoseQuietComfort45Adapter, HeadsetFormFactor.HEADPHONES),
+            Triple(
+                0x4066,
+                BoseQuietComfortUltraHeadphonesAdapter,
+                HeadsetFormFactor.HEADPHONES,
+            ),
+            Triple(0x402F, BoseQuietComfortEarbudsAdapter, HeadsetFormFactor.TWS),
+            Triple(0x4064, BoseQuietComfortEarbudsIIAdapter, HeadsetFormFactor.TWS),
+            Triple(0x4072, BoseQuietComfortUltraEarbudsAdapter, HeadsetFormFactor.TWS),
+            Triple(0x4062, BoseQuietComfortUltraEarbuds2Adapter, HeadsetFormFactor.TWS),
+        )
+
+        cases.forEach { (productId, adapter, formFactor) ->
+            assertEquals(adapter, EarbudAdapterRegistry.byId(adapter.id))
+            assertEquals(formFactor, adapter.formFactor)
+            val protocol = requireNotNull(BoseEarbudAdapter().createProtocol())
+            assertEquals(
+                EarbudEvent.ModelIdentified(adapter.id),
+                protocol.offer(boseProductIdentity(productId)).first(),
+            )
+        }
+    }
+
+    @Test
+    fun qc35UsesAnrDialectAfterProductConfirmation() {
+        val adapter = BoseQuietComfort35IIAdapter
+        val protocol = requireNotNull(adapter.createProtocol())
+
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.WIND),
+            adapter.supportedNoiseModes,
+        )
+        val identity = protocol.offer(boseProductIdentity(0x4020)).first()
+        assertEquals(
+            listOf("01 06 01 00"),
+            protocol.followUpCommands(identity).map { it.hex() },
+        )
+        assertEquals(
+            "01 06 02 01 01",
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.ANC)).single().hex(),
+        )
+        assertEquals(
+            "01 06 02 01 02",
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.WIND)).single().hex(),
+        )
+        assertEquals(
+            EarbudEvent.NoiseModeChanged(NoiseMode.WIND, acknowledged = true),
+            protocol.offer(hex("01 06 03 02 02 0B")).single(),
+        )
+        assertEquals(
+            "01 06 01 00",
+            protocol.readback(ControlRequest.SetNoiseMode(NoiseMode.OFF)).single().hex(),
+        )
+    }
+
+    @Test
+    fun nc700UsesCncEndpointsAndRepeatsAwareOnlyWhenReEnabling() {
+        val protocol = requireNotNull(BoseNoiseCancellingHeadphones700Adapter.createProtocol())
+        protocol.offer(boseProductIdentity(0x4024))
+
+        assertEquals(
+            EarbudEvent.NoiseModeChanged(NoiseMode.OFF, acknowledged = true),
+            protocol.offer(hex("01 05 03 03 0B 00 00")).single(),
+        )
+        assertEquals(
+            listOf("01 05 02 02 0A 01", "01 05 02 02 0A 01"),
+            protocol
+                .encode(ControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY))
+                .map { it.hex() },
+        )
+        assertEquals(
+            EarbudEvent.NoiseModeChanged(NoiseMode.TRANSPARENCY, acknowledged = true),
+            protocol.offer(hex("01 05 03 03 0B 0A 01")).single(),
+        )
+        assertEquals(
+            listOf("01 05 02 02 0A 01"),
+            protocol
+                .encode(ControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY))
+                .map { it.hex() },
+        )
+        assertEquals(
+            "01 05 02 02 00 00",
+            protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.OFF)).single().hex(),
+        )
+    }
+
+    @Test
+    fun qc45UsesQuietAwareAudioModesWithoutInventingOff() {
+        val adapter = BoseQuietComfort45Adapter
+        val protocol = requireNotNull(adapter.createProtocol())
+        val identity = protocol.offer(boseProductIdentity(0x4039)).first()
+
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.TRANSPARENCY),
+            adapter.supportedNoiseModes,
+        )
+        assertEquals(
+            listOf("1F 03 01 00"),
+            protocol.followUpCommands(identity).map { it.hex() },
+        )
+        assertEquals(
+            "1F 03 05 02 01 00",
+            protocol
+                .encode(ControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY))
+                .single()
+                .hex(),
+        )
+        assertTrue(protocol.encode(ControlRequest.SetNoiseMode(NoiseMode.OFF)).isEmpty())
     }
 
     @Test
@@ -782,6 +1007,149 @@ class EarbudAdapterHierarchyTest {
         assertEquals("FF 03 00 03 00 1B 01 30 02 04 00", transparency.hex())
     }
 
+    @Test
+    fun roseModelsResolveThroughConcreteProtocolFamilyAndVendorFallbackLayers() {
+        assertEquals(
+            RoseEarfreeI5Adapter,
+            EarbudAdapterRegistry.resolve(identity("ROSESELSA EARFREE i5", true)),
+        )
+        assertEquals(
+            RoseBudsFeelMk2Adapter,
+            EarbudAdapterRegistry.resolve(identity("ROSE BudsFeel MK2", true)),
+        )
+        assertTrue(
+            EarbudAdapterRegistry.resolve(identity("ROSE EARFREE Future", true)) is
+                RoseEarfreeProtocolFamilyAdapter,
+        )
+        assertTrue(
+            EarbudAdapterRegistry.resolve(identity("ROSE BudsFeel Future", true)) is
+                RoseBudsFeelProtocolFamilyAdapter,
+        )
+        assertTrue(
+            EarbudAdapterRegistry.resolve(identity("ROSESELSA Neckband", true)) is
+                RoseEarbudAdapter,
+        )
+        assertEquals(
+            NiceHckYuanDaoOrigAdapter,
+            EarbudAdapterRegistry.resolve(identity("YUANDAO OriG in", true)),
+        )
+        assertTrue(
+            EarbudAdapterRegistry.resolve(identity("YUANDAO Future", true)) is
+                NiceHckEarbudAdapter,
+        )
+        assertFalse(
+            EarbudAdapterRegistry.resolve(identity("YUANDAO Future", true)) ===
+                NiceHckYuanDaoOrigAdapter,
+        )
+        assertTrue(
+            EarbudAdapterRegistry.resolve(identity("NiceHCK Future", true)) is
+                NiceHckEarbudAdapter,
+        )
+    }
+
+    @Test
+    fun niceHckOrigRequiresAValidProtocolFrameBeforeBecomingReady() {
+        assertEquals(
+            TransportReadiness.PROTOCOL_HANDSHAKE,
+            NiceHckYuanDaoOrigAdapter.transportReadiness,
+        )
+        val protocol = requireNotNull(NiceHckYuanDaoOrigAdapter.createProtocol())
+        assertTrue(protocol.offer(byteArrayOf(0x4E, 0, 0)).isEmpty())
+
+        val events = protocol.offer(
+            NiceHckWireCodec.command(
+                opcode = 0x0005,
+                parameters = byteArrayOf(80, 75, 60),
+            ),
+        )
+
+        assertEquals(EarbudEvent.Handshake(accepted = true), events.first())
+        assertEquals(
+            80,
+            events.filterIsInstance<EarbudEvent.BatteryChanged>().single().battery.left.percent,
+        )
+        assertTrue(
+            protocol.offer(
+                NiceHckWireCodec.command(0x0101, byteArrayOf(0x02)),
+            ).none { it is EarbudEvent.Handshake },
+        )
+    }
+
+    @Test
+    fun roseProtocolFamiliesExposeFullControlsOnlyAfterTransportEvidence() {
+        val earfree = requireNotNull(
+            EarbudAdapterRegistry.resolve(identity("ROSE EARFREE Future", true)),
+        )
+        assertTrue(earfree.capabilities.battery)
+        assertTrue(earfree.capabilities.noiseControl)
+        assertTrue(earfree.capabilities.windNoiseControl)
+        assertEquals(TransportReadiness.PROTOCOL_HANDSHAKE, earfree.transportReadiness)
+        val gatt = earfree.transports.single() as GattTransportSpec
+        assertEquals(RoseEarfreeProtocolFamilyAdapter.SERVICE_UUID, gatt.serviceUuid)
+
+        val earfreeEvents = requireNotNull(earfree.createProtocol()).offer(
+            roseEarfreeResponse(
+                group = 0x06,
+                command = 0x02,
+                payload = byteArrayOf(1, 0, 0, 0),
+            ),
+        )
+        assertTrue(earfreeEvents.first() is EarbudEvent.Handshake)
+        assertEquals(
+            NoiseMode.ANC,
+            earfreeEvents.filterIsInstance<EarbudEvent.NoiseModeChanged>().single().mode,
+        )
+
+        val budsFeel = requireNotNull(
+            EarbudAdapterRegistry.resolve(identity("ROSE BudsFeel Future", true)),
+        )
+        assertTrue(budsFeel.capabilities.noiseControl)
+        assertEquals(TransportReadiness.PROTOCOL_HANDSHAKE, budsFeel.transportReadiness)
+        val endpoint = budsFeel.transports.single() as RfcommEndpointSpec.ServiceUuid
+        assertEquals(RoseBudsFeelProtocolFamilyAdapter.DATA_CHANNEL_UUID, endpoint.uuid)
+
+        val body = byteArrayOf(
+            0xDD.toByte(), 0x2A, 0x15,
+            0x04, 0x0C, 90, 81, 55,
+            0x02, 0x09, 0x04,
+        )
+        val budsFeelEvents = requireNotNull(budsFeel.createProtocol()).offer(
+            body + byteArrayOf(body.roseChecksum(), 0xAA.toByte()),
+        )
+        assertTrue(budsFeelEvents.first() is EarbudEvent.Handshake)
+        assertEquals(
+            NoiseMode.WIND,
+            budsFeelEvents.filterIsInstance<EarbudEvent.NoiseModeChanged>().single().mode,
+        )
+    }
+
+    @Test
+    fun airPodsUseAuthoritativeAapServiceAndModelNameOnlyRefinesCapabilities() {
+        val service = setOf(AppleAirPodsAdapter.AAP_SERVICE_UUID)
+        assertEquals(
+            AppleAirPodsProAdapter,
+            EarbudAdapterRegistry.resolve(identity("AirPods Pro", true, serviceUuids = service)),
+        )
+        assertEquals(
+            AppleAirPodsMaxAdapter,
+            EarbudAdapterRegistry.resolve(identity("AirPods Max", true, serviceUuids = service)),
+        )
+        assertTrue(
+            EarbudAdapterRegistry.resolve(
+                identity("AirPods (3rd generation)", true, serviceUuids = service),
+            ) is AppleAirPodsAdapter,
+        )
+        assertTrue(
+            EarbudAdapterRegistry.resolve(identity("AirPods Pro", true)) is StandardEarbudAdapter,
+        )
+
+        assertTrue(AppleAirPodsProAdapter.capabilities.noiseControl)
+        assertFalse(AppleAirPodsAdapter().capabilities.noiseControl)
+        val transport = AppleAirPodsProAdapter.transports.single() as L2capEndpointSpec
+        assertEquals(0x1001, transport.psm)
+        assertEquals(AppleAirPodsAdapter.AAP_SERVICE_UUID, transport.serviceUuid)
+    }
+
     private fun hex(value: String): ByteArray {
         val compact = value.filter { it.isDigit() || it.lowercaseChar() in 'a'..'f' }
         return ByteArray(compact.length / 2) { index ->
@@ -789,8 +1157,43 @@ class EarbudAdapterHierarchyTest {
         }
     }
 
+    private fun roseEarfreeResponse(
+        group: Int,
+        command: Int,
+        payload: ByteArray,
+    ): ByteArray {
+        val size = 10 + payload.size
+        val body = byteArrayOf(
+            0x09,
+            0xFF.toByte(),
+            0,
+            0,
+            1,
+            group.toByte(),
+            command.toByte(),
+            size.toByte(),
+            0,
+        ) + payload
+        return body + byteArrayOf(body.roseChecksum())
+    }
+
+    private fun ByteArray.roseChecksum(): Byte =
+        sumOf { it.toInt() and 0xFF }.and(0xFF).toByte()
+
     private fun ByteArray.hex(): String =
         joinToString(" ") { "%02X".format(it.toInt() and 0xFF) }
+
+    private fun boseProductIdentity(productId: Int): ByteArray =
+        BoseBmapWireCodec.packet(
+            functionBlock = 0x00,
+            function = 0x03,
+            operator = BoseBmapWireCodec.Operator.STATUS,
+            payload = byteArrayOf(
+                (productId ushr 8).toByte(),
+                productId.toByte(),
+                0x00,
+            ),
+        )
 
     private fun boseModeConfigStatus(
         index: Int,
@@ -823,11 +1226,13 @@ class EarbudAdapterHierarchyTest {
         nativeSystemEarbud: Boolean = false,
         deviceAddress: String? = null,
         bluetoothDeviceClass: Int? = null,
+        serviceUuids: Set<String> = emptySet(),
     ): EarbudIdentity = EarbudIdentity(
         deviceName = name,
         standardHeadset = standardHeadset,
         nativeSystemEarbud = nativeSystemEarbud,
         deviceAddress = deviceAddress,
         bluetoothDeviceClass = bluetoothDeviceClass,
+        serviceUuids = serviceUuids,
     )
 }

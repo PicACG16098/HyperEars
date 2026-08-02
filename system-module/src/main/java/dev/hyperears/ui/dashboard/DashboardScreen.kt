@@ -39,8 +39,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.hyperears.R
-import dev.hyperears.integration.BatteryReading
-import dev.hyperears.integration.NoiseMode
 import java.text.DateFormat
 import java.util.Date
 
@@ -108,10 +106,10 @@ fun DashboardScreen(
                         title = "设备会话",
                         count = uiState.sessions.size,
                     )
-                    if (uiState.sessions.isEmpty()) {
+                    if (uiState.deviceCards.isEmpty()) {
                         EmptySessionsCard()
                     } else if (wideLayout) {
-                        uiState.sessions.chunked(2).forEach { rowSessions ->
+                        uiState.deviceCards.chunked(2).forEach { rowSessions ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -129,7 +127,7 @@ fun DashboardScreen(
                             }
                         }
                     } else {
-                        uiState.sessions.forEach { session ->
+                        uiState.deviceCards.forEach { session ->
                             DeviceSessionCard(session)
                         }
                     }
@@ -290,7 +288,7 @@ private fun EmptySessionsCard() {
 
 @Composable
 private fun DeviceSessionCard(
-    session: DeviceSessionSnapshot,
+    session: DeviceSessionUiModel,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -311,21 +309,28 @@ private fun DeviceSessionCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = session.state.deviceName ?: "未命名耳机",
+                        text = session.deviceName,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "Adapter  ${session.state.modelId ?: "—"}",
+                        text = "Profile  ${session.profileName}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "蓝牙  ${session.state.address ?: "—"}",
+                        text = "ID  ${session.profileId}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "蓝牙  ${session.address}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -335,12 +340,14 @@ private fun DeviceSessionCard(
                 PhasePill(session.phase)
             }
 
+            ProfileFacts(session)
+
             Text(
                 text = "耳机链路",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            EarbudLinkStrip(session)
+            EarbudLinkStrip(session.headsetLifecycle)
 
             Text(
                 text = "MiLink 处理",
@@ -351,56 +358,57 @@ private fun DeviceSessionCard(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                CompactMetric(
-                    label = "左耳",
-                    value = session.state.battery.left.displayValue(),
-                    modifier = Modifier.weight(1f),
-                )
-                CompactMetric(
-                    label = "右耳",
-                    value = session.state.battery.right.displayValue(),
-                    modifier = Modifier.weight(1f),
-                )
-                CompactMetric(
-                    label = "充电盒",
-                    value = session.state.battery.case.displayValue(),
-                    modifier = Modifier.weight(1f),
-                )
-                CompactMetric(
-                    label = "模式",
-                    value = session.state.noiseMode.displayName(),
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            MetricStrip(session.metrics)
         }
     }
 }
 
 @Composable
-private fun EarbudLinkStrip(session: DeviceSessionSnapshot) {
+private fun ProfileFacts(session: DeviceSessionUiModel) {
+    if (!session.profileResolved) {
+        Text(
+            text = session.profileSummary,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(
+            text = session.profileSummary,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "控制  ${session.controlSummary}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun EarbudLinkStrip(
+    stages: List<DeviceLinkStage>,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        LinkState("A2DP 会话", session.state.sessionActive, Modifier.weight(1f))
-        if (session.state.privateProtocolRequired) {
-            LinkState(
-                "RFCOMM",
-                session.state.privateChannelConnected,
-                Modifier.weight(1f),
-            )
-            LinkState(
-                "握手应答",
-                session.state.handshakeAccepted,
-                Modifier.weight(1f),
-            )
-        } else {
-            LinkState("身份桥", session.state.connected, Modifier.weight(1f))
-            LinkState("无私有通道", true, Modifier.weight(1f))
+        stages.forEach { stage ->
+            LinkState(stage.label, stage.complete, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun MetricStrip(metrics: List<DeviceMetric>) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        metrics.forEach { metric ->
+            CompactMetric(metric.label, metric.value, Modifier.weight(1f))
         }
     }
 }
@@ -520,7 +528,7 @@ private fun CompactMetric(
 private fun PhasePill(phase: DevicePhase) {
     val color = when (phase) {
         DevicePhase.CONNECTING -> MaterialTheme.colorScheme.tertiary
-        DevicePhase.SYNCHRONIZING -> MaterialTheme.colorScheme.secondary
+        DevicePhase.PREPARING_PRIVATE_CHANNEL -> MaterialTheme.colorScheme.secondary
         DevicePhase.WAITING_FOR_MILINK -> MaterialTheme.colorScheme.tertiary
         DevicePhase.STATE_ACCEPTED,
         DevicePhase.IDENTITY_QUERIED,
@@ -548,17 +556,6 @@ private fun StatusDot(color: Color) {
             .size(8.dp)
             .background(color, CircleShape),
     )
-}
-
-private fun BatteryReading.displayValue(): String =
-    percent?.let { value -> if (charging) "$value%+" else "$value%" } ?: "—"
-
-private fun NoiseMode?.displayName(): String = when (this) {
-    NoiseMode.ANC -> "降噪"
-    NoiseMode.OFF -> "关闭"
-    NoiseMode.TRANSPARENCY -> "通透"
-    NoiseMode.WIND -> "抗风噪"
-    null -> "—"
 }
 
 private fun formatTime(timestamp: Long): String =

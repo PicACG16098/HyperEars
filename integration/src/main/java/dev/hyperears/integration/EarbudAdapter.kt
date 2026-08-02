@@ -45,6 +45,9 @@ abstract class EarbudAdapter {
     /** Ordered transport candidates owned by this model adapter. */
     open val transports: List<EarbudTransportSpec> = emptyList()
 
+    /** Evidence required before a transport candidate becomes the session's active channel. */
+    open val transportReadiness: TransportReadiness = TransportReadiness.CONNECTED
+
     /** Minimum ms between ANC switch commands; 0 = no cooldown. */
     open val ancSwitchCooldownMs: Long = 0L
 
@@ -55,6 +58,14 @@ abstract class EarbudAdapter {
 
     protected fun normalizeDeviceName(value: String): String =
         value.lowercase().filter(Char::isLetterOrDigit)
+}
+
+enum class TransportReadiness {
+    /** A successful link-layer connection is sufficient. */
+    CONNECTED,
+
+    /** The candidate must also return an accepted protocol handshake. */
+    PROTOCOL_HANDSHAKE,
 }
 
 /**
@@ -90,33 +101,55 @@ object EarbudAdapterRegistry {
     private val boseHeadphonesAdapter = BoseHeadphonesAdapter()
     private val edifierFamilyAdapter = EdifierEarbudAdapter()
     private val edifierHeadphonesAdapter = EdifierHeadphonesAdapter()
+    private val roseEarfreeFamilyAdapter = RoseEarfreeProtocolFamilyAdapter()
+    private val roseBudsFeelFamilyAdapter = RoseBudsFeelProtocolFamilyAdapter()
+    private val roseFamilyAdapter = RoseEarbudAdapter()
+    private val niceHckFamilyAdapter = NiceHckEarbudAdapter()
+    private val appleAirPodsFamilyAdapter = AppleAirPodsAdapter()
     private val standardAdapter = StandardEarbudAdapter()
 
-    val adapters: List<EarbudAdapter> = listOf(
-        VivoTwsAir3ProAdapter,
-        VivoTws3eAdapter,
-        vivoFamilyAdapter,
-        StarRingUltraAdapter,
-        starRingFamilyAdapter,
-        OppoEncoAir2ProAdapter,
-        OppoEncoFree4Adapter,
-        OppoEncoX3Adapter,
-        OppoEncoAir5Adapter,
-        oppoFamilyAdapter,
-        BoseQuietComfortHeadphonesAdapter,
-        boseHeadphonesAdapter,
-        boseFamilyAdapter,
-        EdifierW860NBProAdapter,
-        edifierHeadphonesAdapter,
-        edifierFamilyAdapter,
-        standardAdapter,
-    )
+    val adapters: List<EarbudAdapter> = buildList {
+        add(VivoTwsAir3ProAdapter)
+        add(VivoTws3eAdapter)
+        add(vivoFamilyAdapter)
+        add(StarRingUltraAdapter)
+        add(starRingFamilyAdapter)
+        add(OppoEncoAir2ProAdapter)
+        add(OppoEncoFree4Adapter)
+        add(OppoEncoX3Adapter)
+        add(OppoEncoAir5Adapter)
+        add(oppoFamilyAdapter)
+        addAll(BoseBmapModelRegistry.adapters)
+        addAll(BoseCapabilityAdapterRegistry.adapters)
+        add(boseHeadphonesAdapter)
+        add(boseFamilyAdapter)
+        add(EdifierW860NBProAdapter)
+        add(edifierHeadphonesAdapter)
+        add(edifierFamilyAdapter)
+        add(RoseEarfreeI5Adapter)
+        add(roseEarfreeFamilyAdapter)
+        add(RoseBudsFeelMk2Adapter)
+        add(roseBudsFeelFamilyAdapter)
+        add(roseFamilyAdapter)
+        add(NiceHckYuanDaoOrigAdapter)
+        add(niceHckFamilyAdapter)
+        add(AppleAirPodsProAdapter)
+        add(AppleAirPodsMaxAdapter)
+        add(appleAirPodsFamilyAdapter)
+        addAll(SonyAdapterRegistry.adapters)
+        add(standardAdapter)
+    }
 
     private val byAdapterId = adapters.associateBy(EarbudAdapter::id)
 
     init {
         require(byAdapterId.size == adapters.size) {
-            "Earbud adapter IDs must be unique"
+            val duplicates = adapters
+                .groupingBy(EarbudAdapter::id)
+                .eachCount()
+                .filterValues { it > 1 }
+                .keys
+            "Earbud adapter IDs must be unique: $duplicates"
         }
     }
 

@@ -1,6 +1,7 @@
 package dev.hyperears.runtime
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
@@ -10,12 +11,16 @@ import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothSocket
 import android.bluetooth.BluetoothStatusCodes
+import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.os.ParcelUuid
 import dev.hyperears.integration.EarbudTransportSpec
 import dev.hyperears.integration.GattTransportSpec
+import dev.hyperears.integration.L2capEndpointSpec
 import dev.hyperears.integration.RfcommEndpointSpec
 import java.io.Closeable
 import java.io.IOException
+import java.lang.reflect.InvocationTargetException
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
@@ -56,8 +61,13 @@ internal object AndroidEarbudChannelFactory : EarbudChannelFactory {
         device: BluetoothDevice,
         transport: EarbudTransportSpec,
     ): EarbudChannel = when (transport) {
-        is RfcommEndpointSpec -> AndroidRfcommChannel(
+        is RfcommEndpointSpec -> AndroidBluetoothSocketChannel(
             socket = createSocket(device, transport),
+            endpointId = transport.id,
+        )
+
+        is L2capEndpointSpec -> AndroidBluetoothSocketChannel(
+            socket = createL2capSocket(context, device, transport),
             endpointId = transport.id,
         )
 
@@ -85,9 +95,111 @@ internal object AndroidEarbudChannelFactory : EarbudChannelFactory {
                 .invoke(device, endpoint.number) as BluetoothSocket
         }
     }
+
+    /**
+     * Creates the hidden BR/EDR L2CAP socket used by Apple's AAP service.
+     *
+     * The hidden constructor changed several times: older releases used a type-first signature
+     * with an explicit file descriptor, later releases moved [BluetoothDevice] first, and Android
+     * 16 QPR3 additionally passes [BluetoothAdapter]. Keep the known AOSP signatures explicit and
+     * fail closed when none exists; no constructor scanning or obfuscated ROM class is involved.
+     */
+    private fun createL2capSocket(
+        context: Context,
+        device: BluetoothDevice,
+        endpoint: L2capEndpointSpec,
+    ): BluetoothSocket {
+        val uuid = ParcelUuid.fromString(endpoint.serviceUuid)
+        val adapter = context.getSystemService(BluetoothManager::class.java).adapter
+        val candidates = listOf(
+            socketConstructorCandidate(
+                adapter,
+                device,
+                BLUETOOTH_SOCKET_TYPE_L2CAP,
+                endpoint.authenticated,
+                endpoint.encrypted,
+                endpoint.psm,
+                uuid,
+            ),
+            socketConstructorCandidate(
+                device,
+                BLUETOOTH_SOCKET_TYPE_L2CAP,
+                endpoint.authenticated,
+                endpoint.encrypted,
+                endpoint.psm,
+                uuid,
+            ),
+            socketConstructorCandidate(
+                device,
+                BLUETOOTH_SOCKET_TYPE_L2CAP,
+                INVALID_FILE_DESCRIPTOR,
+                endpoint.authenticated,
+                endpoint.encrypted,
+                endpoint.psm,
+                uuid,
+            ),
+            socketConstructorCandidate(
+                BLUETOOTH_SOCKET_TYPE_L2CAP,
+                INVALID_FILE_DESCRIPTOR,
+                endpoint.authenticated,
+                endpoint.encrypted,
+                device,
+                endpoint.psm,
+                uuid,
+            ),
+            socketConstructorCandidate(
+                BLUETOOTH_SOCKET_TYPE_L2CAP,
+                endpoint.authenticated,
+                endpoint.encrypted,
+                device,
+                endpoint.psm,
+                uuid,
+            ),
+        )
+
+        candidates.forEach { candidate ->
+            val constructor = try {
+                BluetoothSocket::class.java.getDeclaredConstructor(*candidate.parameterTypes)
+            } catch (_: NoSuchMethodException) {
+                return@forEach
+            }
+            try {
+                return constructor
+                    .apply { isAccessible = true }
+                    .newInstance(*candidate.arguments) as BluetoothSocket
+            } catch (error: InvocationTargetException) {
+                throw error.cause ?: error
+            }
+        }
+        throw NoSuchMethodException("No supported BluetoothSocket L2CAP constructor")
+    }
+
+    private class SocketConstructorCandidate(val arguments: Array<out Any>) {
+        val parameterTypes: Array<Class<*>> = arguments
+            .map { argument ->
+                when (argument) {
+                    is Int -> INT_TYPE
+                    is Boolean -> BOOLEAN_TYPE
+                    is BluetoothAdapter -> BluetoothAdapter::class.java
+                    is BluetoothDevice -> BluetoothDevice::class.java
+                    is ParcelUuid -> ParcelUuid::class.java
+                    else -> error("Unsupported BluetoothSocket argument: ${argument.javaClass.name}")
+                }
+            }
+            .toTypedArray()
+    }
+
+    private fun socketConstructorCandidate(vararg arguments: Any): SocketConstructorCandidate =
+        SocketConstructorCandidate(arguments)
+
+    private val INT_TYPE = requireNotNull(Int::class.javaPrimitiveType)
+    private val BOOLEAN_TYPE = requireNotNull(Boolean::class.javaPrimitiveType)
+    private const val BLUETOOTH_SOCKET_TYPE_L2CAP = 3
+    private const val INVALID_FILE_DESCRIPTOR = -1
 }
 
-private class AndroidRfcommChannel(
+/** Ordered byte-stream channel shared by RFCOMM and BR/EDR L2CAP sockets. */
+private class AndroidBluetoothSocketChannel(
     private val socket: BluetoothSocket,
     override val endpointId: String,
 ) : EarbudChannel {
@@ -161,7 +273,11 @@ private class AndroidGattChannel(
                 return
             }
 
-            val characteristics = gatt.services.flatMap(BluetoothGattService::getCharacteristics)
+            val characteristics = if (spec.serviceUuid != null) {
+                gatt.getService(UUID.fromString(spec.serviceUuid))?.characteristics.orEmpty()
+            } else {
+                gatt.services.flatMap(BluetoothGattService::getCharacteristics)
+            }
             val write = characteristics.resolve(
                 uuid = UUID.fromString(spec.writeCharacteristicUuid),
                 instanceId = spec.writeInstanceId,

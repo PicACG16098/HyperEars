@@ -10,13 +10,14 @@
 
 HyperEars integrates selected third-party Bluetooth headsets with Xiaomi HyperOS and the MiLink
 device center. It complements Android's existing audio stack with device identity, battery,
-noise-control state and handoff metadata for supported vivo/iQOO, OPPO Enco, Bose and StarRing
-devices.
+noise-control state and handoff metadata for supported vivo/iQOO, OPPO Enco, Bose, Edifier,
+StarRing, ROSESELSA, NiceHCK, Apple and Sony devices.
 
 > [!WARNING]
 > HyperEars requires root, LSPosed and private HyperOS APIs. Be prepared to recover your system
 > before installing it. ROM updates may temporarily break compatibility. This project is not
-> affiliated with Xiaomi, vivo, iQOO, OPPO, Bose or any other device vendor.
+> affiliated with Xiaomi, vivo, iQOO, OPPO, Bose, Edifier, ROSESELSA, NiceHCK, Apple, Sony or any
+> other device vendor.
 
 ## Scope
 
@@ -27,8 +28,9 @@ devices.
 - Exposes a per-device lifecycle dashboard for recognition, channel, protocol and publication.
 
 HyperEars does not proxy audio, continuously scan for Bluetooth devices, inject the HyperOS
-Settings UI or poll MiLink views. A private RFCOMM channel is created only for adapters that need
-vendor telemetry, and its lifetime is bound to the physical device session.
+Settings UI or poll MiLink views. Private GATT, RFCOMM or BR/EDR L2CAP channels are created only
+for adapters that need vendor telemetry, and their lifetime is bound to the physical device
+session.
 
 ## Requirements
 
@@ -37,9 +39,33 @@ vendor telemetry, and its lifetime is bound to the physical device session.
 - static scopes `com.android.bluetooth` and `com.milink.service`;
 - a headset already paired through Android Bluetooth settings.
 
-See the Chinese [compatibility matrix](docs/compatibility.md) for evidence levels and known
-limitations. Broad family profiles and protocol-derived OPPO support are experimental unless a
-model is explicitly marked as hardware-verified.
+## Compatibility overview
+
+| Device or family | Evidence | Battery | Noise control |
+|---|---|---|---|
+| vivo / iQOO TWS | verified, public and family profiles | left/right/case | ANC/off/transparency |
+| OPPO Enco | reference profiles | left/right/case | ANC/off/transparency |
+| StarRing / LightYear | Ultra verified; other models standard fallback | left/right or Android aggregate | Ultra four-state |
+| Bose | one verified model plus BMAP product/capability profiles | aggregate or components | product-specific AudioModes/ANR/CNC |
+| Edifier | W860NB PRO verified; headphones family extrapolation | aggregate | verified model four-state |
+| ROSESELSA / ROSE | two public profiles plus protocol-line extrapolation | left/right/case or Android aggregate | four-state after confirmation |
+| NiceHCK / YuanDao | one public profile; other models standard fallback | left/right/case or Android aggregate | OriG in four-state after confirmation |
+| Apple AirPods | public AAP profiles and family extrapolation | dynamic components | Pro/Max three-state |
+| Sony | public WH/WF/WI/LinkBuds profiles and family extrapolation | model-specific topology | profile-specific ambient control |
+| standard A2DP/HFP headset | standard fallback | Android aggregate | none |
+
+Public profiles, reference-derived profiles and family extrapolations are not hardware
+verification. A family name selects only a candidate protocol; adapters that require confirmation
+also validate a service, on-wire identity or accepted state frame. Bose devices are refined by
+their on-wire BMAP product ID. Unknown BMAP devices retain battery telemetry and use GET-only
+AudioModes, ANR and CNC discovery; no write is exposed before a valid status response.
+
+AirPods are selected by the AAP service UUID, not by a display name alone. Battery packets carry a
+dynamic one-to-three component set; only Pro and Max refinements expose confirmed ANC controls.
+Sony private profiles require a valid RFCOMM v1/v2 initialization response. Exact profiles select
+battery topology and ambient-control dialect; unknown product-line models use conservative family
+fallbacks. The exhaustive model list, transports, evidence and known limits are maintained in the
+[compatibility matrix](docs/compatibility.md).
 
 ## Install
 

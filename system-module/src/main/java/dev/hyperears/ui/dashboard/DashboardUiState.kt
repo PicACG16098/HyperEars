@@ -24,9 +24,9 @@ data class DeviceSessionSnapshot(
 
     val phase: DevicePhase
         get() = when {
+            !state.connected && state.privateProtocolRequired ->
+                DevicePhase.PREPARING_PRIVATE_CHANNEL
             !state.connected -> DevicePhase.CONNECTING
-            state.privateProtocolRequired &&
-                !state.handshakeAccepted -> DevicePhase.SYNCHRONIZING
             !bridgeObserved -> DevicePhase.WAITING_FOR_MILINK
             capabilitiesQueried -> DevicePhase.CAPABILITIES_QUERIED
             identityQueried -> DevicePhase.IDENTITY_QUERIED
@@ -39,7 +39,7 @@ data class DeviceSessionSnapshot(
                 label = "状态接收",
                 value = if (bridgeObserved) "已接收" else "未观测",
                 complete = bridgeObserved,
-                active = state.handshakeAccepted && !bridgeObserved,
+                active = state.connected && !bridgeObserved,
             ),
             DeviceLifecycleStage(
                 label = "身份查询",
@@ -80,6 +80,10 @@ data class DashboardUiState(
     val miLinkProcesses: Set<String> = emptySet(),
     val lastUpdatedAtMillis: Long? = null,
 ) {
+    val deviceCards: List<DeviceSessionUiModel> by lazy(LazyThreadSafetyMode.NONE) {
+        sessions.map(DeviceSessionUiProjector::project)
+    }
+
     val connectedCount: Int
         get() = sessions.count { it.state.connected }
 
@@ -98,7 +102,7 @@ data class DashboardUiState(
 
 enum class DevicePhase(val label: String) {
     CONNECTING("接入准备中"),
-    SYNCHRONIZING("等待协议应答"),
+    PREPARING_PRIVATE_CHANNEL("验证私有通道"),
     WAITING_FOR_MILINK("等待 MiLink 接收"),
     STATE_ACCEPTED("MiLink 已接收状态"),
     IDENTITY_QUERIED("MiLink 已查询身份"),

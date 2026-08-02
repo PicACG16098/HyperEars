@@ -1,10 +1,15 @@
 package dev.hyperears.hook
 
 import dev.hyperears.integration.BoseQuietComfortHeadphonesAdapter
+import dev.hyperears.integration.BoseMiLinkPresentationIds
 import dev.hyperears.integration.EdifierW860NBProAdapter
 import dev.hyperears.integration.MiLinkCardPresentationId
+import dev.hyperears.integration.NiceHckYuanDaoOrigAdapter
 import dev.hyperears.integration.NoiseMode
+import dev.hyperears.integration.RoseBudsFeelMk2Adapter
+import dev.hyperears.integration.RoseEarfreeI5Adapter
 import dev.hyperears.integration.StarRingUltraAdapter
+import dev.hyperears.integration.SonyMiLinkPresentationIds
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -26,16 +31,42 @@ class MiLinkCardAdapterRegistryTest {
             MiLinkCardAdapterRegistry.resolve(StarRingUltraAdapter.PRESENTATION_ID),
         )
         assertSame(
+            RoseEarfreeI5MiLinkCardAdapter,
+            MiLinkCardAdapterRegistry.resolve(RoseEarfreeI5Adapter.PRESENTATION_ID),
+        )
+        assertSame(
+            RoseBudsFeelMk2MiLinkCardAdapter,
+            MiLinkCardAdapterRegistry.resolve(RoseBudsFeelMk2Adapter.PRESENTATION_ID),
+        )
+        assertSame(
+            NiceHckOrigMiLinkCardAdapter,
+            MiLinkCardAdapterRegistry.resolve(NiceHckYuanDaoOrigAdapter.PRESENTATION_ID),
+        )
+        assertSame(
             BoseQuietComfortMiLinkCardAdapter,
             MiLinkCardAdapterRegistry.resolve(
                 BoseQuietComfortHeadphonesAdapter.PRESENTATION_ID,
             ),
         )
         assertSame(
+            BoseAnrMiLinkCardAdapter,
+            MiLinkCardAdapterRegistry.resolve(
+                BoseMiLinkPresentationIds.WIND_REPLACES_TRANSPARENCY,
+            ),
+        )
+        assertSame(
+            BoseTwoModeMiLinkCardAdapter,
+            MiLinkCardAdapterRegistry.resolve(BoseMiLinkPresentationIds.TWO_MODE),
+        )
+        assertSame(
             EdifierW860NBProMiLinkCardAdapter,
             MiLinkCardAdapterRegistry.resolve(
                 EdifierW860NBProAdapter.PRESENTATION_ID,
             ),
+        )
+        assertSame(
+            SonyAmbientOnlyMiLinkCardAdapter,
+            MiLinkCardAdapterRegistry.resolve(SonyMiLinkPresentationIds.AMBIENT_ONLY),
         )
         assertNull(
             MiLinkCardAdapterRegistry.resolve(

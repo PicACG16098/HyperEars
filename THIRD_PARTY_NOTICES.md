@@ -12,6 +12,87 @@ HyperEars 的原创代码整体按 GNU GPL-3.0-only 发布。以下项目为协�
 README 声明 GPL-3.0。HyperEars 选择 GPL-3.0-only，以保证相关修改和派生实现继续
 提供源代码。
 
+## HyperRose / ROSESELSA protocol profiles
+
+- DOHEX/HyperRose: https://github.com/DOHEX/HyperRose
+- Reviewed revision: `635c0dd89ee07aab95c4138ca1275e44fd666165`
+- Revision link:
+  https://github.com/DOHEX/HyperRose/tree/635c0dd89ee07aab95c4138ca1275e44fd666165
+- Declared license: GNU GPL-3.0（README 声明；该固定提交未包含其链接指向的
+  `LICENSE` 文件）
+
+用于核对 ROSESELSA EARFREE i5 的 BLE GATT 特征、电量和四态噪声控制帧，以及 ROSE
+BudsFeel MK2 的 RFCOMM、校验帧和 LTV 状态字段。HyperEars 在自身 Protocol/Adapter
+边界内重新组织实现，不分发 HyperRose 的应用、界面、图片或其他品牌资源。上游提交
+缺少许可证文件的问题在此如实记录；其 README 的 GPL-3.0 声明与 HyperEars 的
+GPL-3.0-only 发布方式兼容。
+
+## HyperPods and LibrePods / Apple AAP
+
+- Art-Chen/HyperPods:
+  https://github.com/Art-Chen/HyperPods/tree/9796d947daa18a379948349442632510424a1a15
+- Upstream license: GNU GPL-3.0
+- Copyright: Copyright (C) 2024 Art_Chen
+- kavishdevar/aln（现 LibrePods）:
+  https://github.com/kavishdevar/aln/tree/b5a3eaee8fbe5a0c83c360bb0fdcd6705a59cc25
+- Upstream license: GNU GPL version 3 or later
+- Copyright: Copyright (C) 2025 LibrePods contributors
+
+用于交叉核对 Apple Accessory Protocol 的 SDP UUID、BR/EDR L2CAP PSM、初始化帧、
+组件电量通知和降噪状态。HyperEars 只实现 MiLink 所需的最小 AAP 子集，不使用或分发
+上述项目的名称、图标、图片、界面和其他品牌资产。
+
+## NiceHCK Controller
+
+- ZaeXT/NiceHCK_Controller:
+  https://github.com/ZaeXT/NiceHCK_Controller/tree/f1348a8d09fc57e3b7098a4f15bae5f926475771
+- Upstream license: MIT
+
+用于核对 NiceHCK/YuanDao OriG in 的 RFCOMM UUID、帧长度、操作码、电量字段和噪声
+模式枚举。保留其上游 MIT 声明如下：
+
+```text
+MIT License
+
+Copyright (c) 2025 Zhang Xinlin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## HyperOriG behavioral reference
+
+- KiriChen-Wind/HyperOriG:
+  https://github.com/KiriChen-Wind/HyperOriG/tree/d2f2a4b1111e085f9720cc32ed072abb343778d0
+- License status at reviewed revision: no license file or explicit software license found
+
+该项目只作为 YuanDao OriG in 用户可见行为的交叉参考。由于上游没有明确授予程序代码
+许可，HyperEars 不复制其程序代码、界面或资源；协议实现依据 MIT 许可的
+NiceHCK_Controller 及可互操作协议事实独立完成。
+
+## Community research index
+
+- 酷安帖子“HyperRose - 为你的弱水时砂耳机接入澎湃超级岛”：
+  https://www.coolapk.com/feed/71349652
+
+该帖子用于发现相关开源项目。实际协议采用、许可证判断和归属均以上述固定提交与其
+仓库文件为准，帖子本身不作为程序代码来源。
+
 ## Pods Protocol Reverse Engineering
 
 - Star-ZER0/Pods-Protocol-Reverse-Engineering:
@@ -27,6 +108,32 @@ README 声明 GPL-3.0。HyperEars 选择 GPL-3.0-only，以保证相关修改和
 
 用于 vivo TWS 3e 的公开协议画像。该仓库当前未被 GitHub 识别出标准许可证；本项目
 只记录可互操作的协议事实和独立实现，不复制其程序或资源。
+
+## Bose BMAP research
+
+- aaronsb/bosectl: https://github.com/aaronsb/bosectl
+- danielgjackson/noisecancel: https://github.com/danielgjackson/noisecancel
+- Upstream licenses: MIT
+
+用于交叉核对 Bose BMAP 产品 ID、RFCOMM 通道，以及 QC35/35 II、NC700、QC45、
+QuietComfort Earbuds 和 QuietComfort Ultra 二代的控制帧。HyperEars 只独立实现互操作
+所需的协议事实，不随 APK 分发上述项目的源代码、抓包、二进制或品牌资源。
+
+## Sony Headphones protocol research
+
+- Plutoberth/SonyHeadphonesClient:
+  https://github.com/Plutoberth/SonyHeadphonesClient/tree/5620e8ed5deccb957338b54e371b215146080819
+- Upstream license: MIT
+- Gadgetbridge Sony Headphones implementation:
+  https://codeberg.org/Freeyourgadget/Gadgetbridge/src/commit/15d45691c7eed5195fb7020dfefda49ff2be8a68/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/sony/headphones
+- Upstream license: GNU AGPL-3.0-or-later
+- Sony protocol documentation:
+  https://ohm-app.github.io/sony-headphones-bluetooth-documentation/Protocol/Specification/
+
+用于交叉核对 Sony RFCOMM 服务、帧转义、ACK 序号、v1/v2 初始化、电量类型及环境声
+控制语义。HyperEars 根据可互操作协议事实独立实现 MiLink 所需的最小子集，不复制
+Gadgetbridge 的 AGPL 程序代码，也不分发 SonyHeadphonesClient、厂商应用、图片或品牌
+资源。SonyHeadphonesClient 的 MIT 许可文本由其固定提交中的 `LICENSE` 提供。
 
 ## Android and LSPosed APIs
 
