@@ -32,6 +32,7 @@ class EarbudAdapterHierarchyTest {
         assertTrue(resolve("StarRing Future") is StarRingEarbudAdapter)
         assertTrue(resolve("OPPO Enco Air2 Pro", standard = true) is OppoEncoAir2ProAdapter)
         assertTrue(resolve("OPPO Enco Buds2", standard = true) is OppoEarbudAdapter)
+        assertTrue(resolve("漫步者・花再 Evo Pro", standard = true) is EdifierEvoProAdapter)
         assertTrue(resolve("Unknown headset", standard = true) is StandardEarbudAdapter)
     }
 
@@ -131,9 +132,9 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun edifierFamilyUsesTheAncIndexObservedDuringReadOnlyProbe() {
+    fun edifierFamilyUsesTheKnownDialectObservedDuringReadOnlyProbe() {
         val adapter = EdifierEarbudAdapter()
-        adapter.receive(hex("BB EC CC 00 02 B4 A0 C9"))
+        adapter.receive(hex("BB EC CC 00 02 B5 A0 CA"))
 
         val result = adapter.executeControl(ControlRequest.SetNoiseMode(NoiseMode.ANC))
 
@@ -141,9 +142,73 @@ class EarbudAdapterHierarchyTest {
         assertEquals(
             EdifierWireCodec.setAnc(
                 ancValue = EdifierWireCodec.ANC_VALUE_DEEP,
-                ancIndex = 0x11,
+                ancIndex = 0x10,
             ).toList(),
             result.commands.single().toList(),
+        )
+    }
+
+    @Test
+    fun edifierEvoProUsesItsVerifiedDialectAndAggregateTwsBattery() {
+        val adapter = EdifierEvoProAdapter()
+
+        assertEquals(AdapterResolution.EXACT_MATCH, adapter.snapshot().resolution)
+        assertEquals(HeadsetFormFactor.TWS, adapter.snapshot().formFactor)
+        assertEquals(
+            EdifierMiLinkPresentationIds.FOUR_MODE,
+            adapter.snapshot().presentationId,
+        )
+        assertEquals(
+            listOf(
+                EdifierWireCodec.queryDeviceState.toList(),
+                EdifierWireCodec.queryAnc.toList(),
+                EdifierWireCodec.queryFunction.toList(),
+            ),
+            adapter.beginHandshake().commands.map(ByteArray::toList),
+        )
+
+        adapter.receive(hex("BB EC F2 00 06 A6 C1 C7 A5 A6 B4 CC"))
+        val battery = adapter.runtimeState().battery
+        assertEquals(3, battery.left.percent)
+        assertEquals(3, battery.right.percent)
+        assertEquals(3, battery.overall.percent)
+        assertEquals(null, battery.case.percent)
+
+        val state = adapter.receive(hex("BB EC CC 00 02 BE A3 D6"))
+        assertTrue(state.stateChanged)
+        assertEquals(NoiseMode.OFF, adapter.runtimeState().noiseMode)
+
+        mapOf(
+            NoiseMode.ANC to 1,
+            NoiseMode.WIND to 4,
+            NoiseMode.TRANSPARENCY to 5,
+            NoiseMode.OFF to 6,
+        ).forEach { (mode, value) ->
+            val control = adapter.executeControl(ControlRequest.SetNoiseMode(mode))
+            assertTrue(control.accepted)
+            assertEquals(
+                EdifierWireCodec.setAnc(value, ancIndex = 0x1B).toList(),
+                control.commands.single().toList(),
+            )
+        }
+    }
+
+    @Test
+    fun edifierFamilySelectsTheEvoDialectFromReadOnlyAncEvidence() {
+        val adapter = EdifierEarbudAdapter()
+
+        val evidence = adapter.receive(hex("BB EC CC 00 02 BE A3 D6"))
+        assertEquals(HandshakeResult.Ready, evidence.handshake)
+        assertEquals(NoiseMode.OFF, adapter.runtimeState().noiseMode)
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY, NoiseMode.WIND),
+            adapter.snapshot().supportedNoiseModes,
+        )
+
+        val control = adapter.executeControl(ControlRequest.SetNoiseMode(NoiseMode.WIND))
+        assertEquals(
+            EdifierWireCodec.setAnc(ancValue = 4, ancIndex = 0x1B).toList(),
+            control.commands.single().toList(),
         )
     }
 

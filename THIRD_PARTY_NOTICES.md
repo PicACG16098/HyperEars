@@ -122,8 +122,12 @@ QuietComfort Earbuds 和 QuietComfort Ultra 二代的控制帧。HyperEars 只�
 ## Edifier BES protocol research
 
 Edifier W860NB PRO 的 BES RFCOMM 帧、电量和 ANC 槽位来自本项目对 Edifier Connect
-v8.4.39 的互操作行为分析，并由真实设备通信验证。HyperEars 不分发厂商应用、反编译
-产物、图片或品牌资源；其他 Edifier 型号只在合法 BES 响应确认相应能力后开放。
+v8.4.39 的互操作行为分析，并由真实设备通信验证。花再 Evo Pro 的 `0x1B` ANC 槽位、
+`0xF2` 聚合电量帧和六值模式映射由社区贡献者 MYHealer 在
+[PR #17](https://github.com/silverpoetry/HyperEars/pull/17) 中提供实机抓包证据；当前实现依据
+这些互操作协议事实按现有 Adapter/ProtocolSession 架构独立编写。HyperEars 不分发
+厂商应用、反编译产物、图片或品牌资源；其他 Edifier 型号只在合法 BES 响应确认相应
+能力后开放。
 
 ## Sony Headphones protocol research
 

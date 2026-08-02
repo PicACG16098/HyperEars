@@ -10,7 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-class EdifierW860NBProMiLinkCardAdapterTest {
+class EdifierFourModeMiLinkCardAdapterTest {
     private val connected = EarbudState(
         lifecycle = DeviceLifecycle(
             SystemProfileState.CONNECTED,
@@ -23,11 +23,11 @@ class EdifierW860NBProMiLinkCardAdapterTest {
     fun windItemTogglesBetweenWindAndDeepAnc() {
         assertEquals(
             NoiseMode.WIND,
-            EdifierWindControlPolicy.request(connected.copy(noiseMode = NoiseMode.ANC)),
+            EdifierFourModeControlPolicy.request(connected.copy(noiseMode = NoiseMode.ANC)),
         )
         assertEquals(
             NoiseMode.ANC,
-            EdifierWindControlPolicy.request(connected.copy(noiseMode = NoiseMode.WIND)),
+            EdifierFourModeControlPolicy.request(connected.copy(noiseMode = NoiseMode.WIND)),
         )
     }
 
@@ -36,7 +36,7 @@ class EdifierW860NBProMiLinkCardAdapterTest {
         listOf(NoiseMode.TRANSPARENCY, NoiseMode.OFF, null).forEach { mode ->
             assertEquals(
                 NoiseMode.WIND,
-                EdifierWindControlPolicy.request(connected.copy(noiseMode = mode)),
+                EdifierFourModeControlPolicy.request(connected.copy(noiseMode = mode)),
             )
         }
     }
@@ -44,12 +44,12 @@ class EdifierW860NBProMiLinkCardAdapterTest {
     @Test
     fun windItemRejectsRequestsWithoutALiveConnection() {
         assertNull(
-            EdifierWindControlPolicy.request(
+            EdifierFourModeControlPolicy.request(
                 connected.copy(lifecycle = DeviceLifecycle(), noiseMode = NoiseMode.ANC),
             ),
         )
         assertNull(
-            EdifierWindControlPolicy.request(
+            EdifierFourModeControlPolicy.request(
                 connected.copy(lifecycle = DeviceLifecycle(), noiseMode = NoiseMode.WIND),
             ),
         )

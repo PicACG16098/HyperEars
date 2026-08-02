@@ -323,6 +323,7 @@ object EarbudAdapterRegistry {
         add(::BoseHeadphonesAdapter)
         add(::BoseEarbudAdapter)
         add(::EdifierW860NBProAdapter)
+        add(::EdifierEvoProAdapter)
         add(::EdifierHeadphonesAdapter)
         add(::EdifierEarbudAdapter)
         add(::RoseEarfreeI5Adapter)

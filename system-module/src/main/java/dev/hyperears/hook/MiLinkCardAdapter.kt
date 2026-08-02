@@ -64,7 +64,7 @@ internal object MiLinkCardAdapterRegistry {
         BoseQuietComfortMiLinkCardAdapter,
         BoseAnrMiLinkCardAdapter,
         BoseTwoModeMiLinkCardAdapter,
-        EdifierW860NBProMiLinkCardAdapter,
+        EdifierFourModeMiLinkCardAdapter,
         SonyAmbientOnlyMiLinkCardAdapter,
     )
     private val byId = adapters.associateBy(MiLinkCardAdapter::presentationId)

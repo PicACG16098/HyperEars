@@ -25,6 +25,16 @@ data class EarbudBattery(
     val overall: BatteryReading = BatteryReading(null, false),
 ) {
     companion object {
+        /** Projects one authoritative aggregate value without inventing component telemetry. */
+        fun fromAggregate(percent: Int?): EarbudBattery {
+            val reading = BatteryReading(percent?.takeIf { it in 0..100 }, charging = false)
+            return EarbudBattery(
+                left = reading,
+                right = reading,
+                overall = reading,
+            )
+        }
+
         /**
          * Projects Android's single headset battery value onto MiLink's left/right schema.
          *
@@ -32,12 +42,7 @@ data class EarbudBattery(
          * deliberately receive the same aggregate value and the case remains unavailable.
          */
         fun fromSystemAggregate(percent: Int?): EarbudBattery {
-            val reading = BatteryReading(percent?.takeIf { it in 0..100 }, charging = false)
-            return EarbudBattery(
-                left = reading,
-                right = reading,
-                overall = reading,
-            )
+            return fromAggregate(percent)
         }
     }
 }

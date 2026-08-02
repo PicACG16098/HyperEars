@@ -47,7 +47,7 @@ session.
 | OPPO Enco | reference protocol | private components | noise cancellation, off, transparency |
 | StarRing / LightYear | Ultra hardware-verified; others standard fallback | Ultra private components; others Android aggregate | Ultra: noise cancellation, off, transparency, wind-noise reduction |
 | Bose | one hardware-verified model; public implementation, reference protocol and family extrapolation for others | private aggregate or components | explicit subset selected by BMAP product and control dialect |
-| Edifier | W860NB PRO hardware-verified; others family extrapolation | private aggregate after a valid battery response | noise cancellation, off, transparency and wind-noise reduction after a valid mode response |
+| Edifier | W860NB PRO and Huazai Evo Pro hardware-verified; others family extrapolation | headphone aggregate or TWS aggregate | noise cancellation, off, transparency and wind-noise reduction |
 | ROSESELSA / ROSE | two public implementations; product-line extrapolation; others standard fallback | private components after protocol confirmation; Android aggregate on fallback | four modes after protocol confirmation |
 | NiceHCK / YuanDao | OriG in public implementation; others standard fallback | private components after protocol confirmation; Android aggregate on fallback | OriG in: four modes after protocol confirmation |
 | Apple AirPods | public implementation and family extrapolation | private components | Pro / Max: noise cancellation, off, transparency |

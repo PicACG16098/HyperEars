@@ -232,12 +232,21 @@ private val supportBrands = listOf(
                 noiseControl = "降噪、关闭、通透、抗风噪（协议确认后）",
             ),
             SupportEntry(
+                name = "Edifier 花再 Evo Pro",
+                scope = SupportScope.MODEL,
+                evidence = EvidenceLevel.VERIFIED,
+                matchAndConfirmation = "规范化名称包含 Evo Pro；合法 BES 响应确认协议",
+                privateTransport = "Edifier BES RFCOMM；通道 1 回退",
+                battery = "私有聚合（左右同值，盒未知）",
+                noiseControl = "降噪、关闭、通透、抗风噪",
+            ),
+            SupportEntry(
                 name = "其他 Edifier W820 / W830 / W860 系列头戴式耳机",
                 scope = SupportScope.PRODUCT_LINE,
                 evidence = EvidenceLevel.FAMILY_EXTRAPOLATION,
                 matchAndConfirmation = "系列名称与头戴式设备形态匹配；合法 BES 响应确认协议",
                 privateTransport = "Edifier BES RFCOMM；通道 1 回退",
-                battery = "私有整机（合法电量响应后）",
+                battery = "头戴整机或 TWS 聚合（合法电量响应后）",
                 noiseControl = "降噪、关闭、通透、抗风噪（合法模式响应后）",
             ),
             SupportEntry(

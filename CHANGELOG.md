@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- 根据社区贡献者的实机抓包，为 Edifier 花再 Evo Pro 增加具体型号适配：使用 `0x1B`
+  ANC 槽位、`0xF2` 聚合电量响应及六值噪声模式方言，提供左右同值电量和四态控制。
+
+### Architecture
+
+- 将 Edifier ANC 槽位、模式编解码、电量查询来源和电量投影建模为协议方言配置；W860NB
+  PRO、Evo Pro 与家族只读探测复用同一 `ProtocolSession`，四态 MiLink 展示不再绑定单一型号。
+
 ## [1.1.0] - 2026-08-03
 
 ### Architecture
