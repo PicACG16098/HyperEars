@@ -141,8 +141,8 @@ internal enum class ProtocolTarget(
             ),
             RfcommEndpoint.ServiceUuid(
                 uuid = UUID.fromString("00000000-deca-fade-deca-deafdecacaff"),
-                id = "bmap-uuid",
-                label = "BMAP UUID",
+                id = "iap2-accessory-rfcomm",
+                label = "iAP2 accessory UUID（Bose 传输候选）",
             ),
             RfcommEndpoint.Channel(
                 number = 2,

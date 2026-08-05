@@ -4,8 +4,8 @@
 
 HyperEars 实现 Sony Headphones Connect 私有 RFCOMM 协议中 MiLink 所需的最小子集：
 
-- v1 服务 `96cc203e-5068-46ad-b32d-e316f5e069ba`；
-- v2 服务 `956c7b26-d49a-4ba8-b03f-b17d393cb6e2`；
+- Sony 私有 v1 服务 `96cc203e-5068-46ad-b32d-e316f5e069ba`；
+- Sony 私有 v2 服务 `956c7b26-d49a-4ba8-b03f-b17d393cb6e2`；
 - 初始化、序号和 ACK 请求队列；
 - 单整机、双耳和充电盒电量；
 - 降噪、关闭、环境声，以及已登记型号的抗风噪状态。
@@ -40,7 +40,8 @@ LinkBuds S。未知 `WH/WI/MDR` 或 `WF/LinkBuds` 产品先进入协议家族；
 
 协议帧依据公开协议文档、SonyHeadphonesClient 和 Gadgetbridge 的可互操作行为独立
 实现。上述型号当前属于公开实现画像，尚未完成 HyperEars 本地逐型号实机验证。型号名
-用于选择候选 Adapter 配置，RFCOMM 初始化响应用于确认协议和家族能力；`LE_` 广播影子名称
+用于选择候选 Adapter 配置，Sony 私有 RFCOMM 初始化响应用于确认协议和家族能力；公共
+iAP2 accessory UUID 不参与 Sony 品牌判型；`LE_` 广播影子名称
 不会创建第二个设备会话。
 
 完整来源、固定提交和许可证见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。

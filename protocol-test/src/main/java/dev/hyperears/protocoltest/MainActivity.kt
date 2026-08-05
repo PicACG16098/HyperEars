@@ -420,7 +420,7 @@ private fun ConnectionCard(
                                 "将依次探测通道 28、SPP、兼容通道 5"
 
                             ProtocolTarget.BOSE_BMAP ->
-                                "将依次探测通道 8、SPP、BMAP UUID、兼容通道 2"
+                                "将依次探测通道 8、SPP、iAP2 传输 UUID、兼容通道 2"
 
                             ProtocolTarget.EDIFIER_BES ->
                                 "将依次探测 Edifier SPP UUID、通道 1、标准 SPP"

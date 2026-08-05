@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-05
+
 ### Added
 
 - 根据社区贡献者的实机抓包，为 Edifier 花再 Evo Pro 增加具体型号适配：使用 `0x1B`
@@ -13,6 +15,25 @@
 
 - 将 Edifier ANC 槽位、模式编解码、电量查询来源和电量投影建模为协议方言配置；W860NB
   PRO、Evo Pro 与家族只读探测复用同一 `ProtocolSession`，四态 MiLink 展示不再绑定单一型号。
+
+### Fixed
+
+- Bose 家族判型不再把公共 accessory-side UUID 当作品牌身份；改用 Bose 专属服务证据，
+  并保留该 UUID 仅作为传输候选。
+- Sony 家族仅使用 Sony 私有控制服务 UUID 参与服务判型，避免公共 UUID 将其他设备误判为
+  Sony 或 Bose。
+- 增加共享 UUID、Bose 专属服务和标准耳机回退的注册表回归测试。
+
+### Changed
+
+- 默认适配注册表不再注册系统已有原生支持的设备适配；相关协议实现仍保留在源码中供
+  显式测试使用。
+- 协议测试工具的 Bose 传输候选名称与说明改为反映实际端点用途。
+
+### Documentation
+
+- 同步中英文 README、兼容性矩阵、架构说明、贡献规范和应用关于页，使支持范围、单一
+  有状态 Adapter、ProtocolSession 和判型证据与当前实现一致。
 
 ## [1.1.0] - 2026-08-03
 
@@ -155,7 +176,8 @@
 - Release 构建改用独立环境变量签名，不再使用 debug 证书。
 - 增加 CI、标签发布、APK 签名验证和 SHA-256 产物。
 
-[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.2.0
 [1.1.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.1.0
 [1.0.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.0.0
 [0.11.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v0.11.0

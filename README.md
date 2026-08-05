@@ -9,13 +9,13 @@
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
 HyperEars 是面向 Xiaomi HyperOS 的第三方蓝牙耳机系统集成模块。它让受支持的
-vivo/iQOO、OPPO Enco、Bose、Edifier、StarRing、ROSESELSA、NiceHCK、Apple 和 Sony 耳机进入 MiLink 融合设备中心，并在不接管
+vivo/iQOO、OPPO Enco、Bose、Edifier、StarRing、ROSESELSA、NiceHCK 和 Sony 耳机进入 MiLink 融合设备中心，并在不接管
 Android 音频路由的前提下补充电量、降噪状态和设备流转所需的兼容信息。
 
 > [!WARNING]
 > HyperEars 依赖 root、LSPosed 和 HyperOS 私有接口。安装前请确认能够恢复系统；ROM
 > 更新可能暂时破坏兼容性。本项目与 Xiaomi、vivo、iQOO、OPPO、Bose、Edifier、
-> ROSESELSA、NiceHCK、Apple、Sony
+> ROSESELSA、NiceHCK、Sony
 > 及相关品牌无关。
 
 ## 能做什么
@@ -42,7 +42,6 @@ HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频�
 | Edifier / 漫步者 | W860NB PRO、花再 Evo Pro 实机验证；其余家族外推 | 头戴整机或 TWS 聚合电量 | 降噪、关闭、通透、抗风噪 |
 | ROSESELSA / 弱水时砂 | 两个型号公开实现；产品线家族外推；其余标准回退 | 协议确认后私有组件电量；回退设备使用系统整机电量 | 协议确认后支持降噪、关闭、通透、抗风噪 |
 | NiceHCK / YuanDao | OriG in 公开实现；其他标准回退 | 协议确认后私有组件电量；回退设备使用系统整机电量 | OriG in 支持降噪、关闭、通透、抗风噪 |
-| Apple AirPods | 公开实现、家族外推 | 私有组件电量 | Pro / Max 支持降噪、关闭、通透 |
 | Sony | 公开实现、家族外推、标准回退 | 按设备形态提供私有整机、私有组件或系统整机电量 | 按具体型号开放表中明确列出的模式 |
 | 其他标准 A2DP/HFP 耳机 | 标准回退 | 系统整机电量 | 无 |
 
@@ -69,7 +68,7 @@ HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频�
 2. 校验 SHA-256：
 
    ```powershell
-    Get-FileHash .\HyperEars-v1.1.0.apk -Algorithm SHA256
+    Get-FileHash .\HyperEars-v1.2.0.apk -Algorithm SHA256
    ```
 
 3. 安装 APK，在 LSPosed 中启用 HyperEars，并确认两个静态作用域均已选中。

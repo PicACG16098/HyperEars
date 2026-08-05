@@ -325,29 +325,6 @@ private val supportBrands = listOf(
         ),
     ),
     SupportBrand(
-        name = "Apple",
-        entries = listOf(
-            SupportEntry(
-                name = "Apple AirPods Pro / Max",
-                scope = SupportScope.MODEL,
-                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
-                matchAndConfirmation = "AAP SDP UUID 确认家族；规范化名称确认型号配置",
-                privateTransport = "BR/EDR L2CAP PSM 0x1001",
-                battery = "Pro：私有组件；Max：私有整机",
-                noiseControl = "降噪（含 Adaptive 状态映射）、关闭、通透",
-            ),
-            SupportEntry(
-                name = "其他带 AAP SDP UUID 的 AirPods",
-                scope = SupportScope.VENDOR_FAMILY,
-                evidence = EvidenceLevel.FAMILY_EXTRAPOLATION,
-                matchAndConfirmation = "AAP SDP UUID 确认家族；传输连接成功",
-                privateTransport = "BR/EDR L2CAP PSM 0x1001",
-                battery = "私有组件",
-                noiseControl = "无",
-            ),
-        ),
-    ),
-    SupportBrand(
         name = "Sony",
         entries = listOf(
             SupportEntry(
@@ -553,7 +530,7 @@ fun AboutScreen(onBack: () -> Unit) {
                     }
 
                     Text(
-                        text = "© 2026 HyperEars contributors\nHyperEars 与 Xiaomi、vivo、iQOO、OPPO、Bose、Edifier、ROSESELSA、NiceHCK、Apple、Sony 及相关品牌无关。产品名称仅用于兼容性说明。",
+                        text = "© 2026 HyperEars contributors\nHyperEars 与 Xiaomi、vivo、iQOO、OPPO、Bose、Edifier、ROSESELSA、NiceHCK、Sony 及相关品牌无关。产品名称仅用于兼容性说明。",
                         modifier = Modifier.padding(horizontal = 4.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

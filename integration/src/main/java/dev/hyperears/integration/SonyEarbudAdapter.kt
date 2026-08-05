@@ -223,7 +223,8 @@ object SonyAdapterRegistry {
         }
         add {
             SonyProtocolFamilyAdapter(headphonesBatteryFamilyConfig) {
-                it.isSonyHeadphonesForm() && (it.hasSonyModelName() || it.hasSonyService())
+                it.isSonyHeadphonesForm() &&
+                    (it.hasSonyModelName() || it.hasSonyPrivateService())
             }
         }
         add {
@@ -233,7 +234,8 @@ object SonyAdapterRegistry {
         }
         add {
             SonyProtocolFamilyAdapter(twsBatteryFamilyConfig) {
-                !it.isSonyHeadphonesForm() && (it.hasSonyModelName() || it.hasSonyService())
+                !it.isSonyHeadphonesForm() &&
+                    (it.hasSonyModelName() || it.hasSonyPrivateService())
             }
         }
         add(::SonyEarbudAdapter)
@@ -683,7 +685,11 @@ private fun EarbudIdentity.hasSonyModelName(): Boolean = sonyProductName().let {
         name.startsWith("ultwear")
 }
 
-private fun EarbudIdentity.hasSonyService(): Boolean = serviceUuids.any { uuid ->
+/**
+ * Sony's private control-service UUIDs. These are protocol-specific endpoints, not generic
+ * Bluetooth profiles. The common Apple iAP2 accessory UUID is deliberately excluded here.
+ */
+private fun EarbudIdentity.hasSonyPrivateService(): Boolean = serviceUuids.any { uuid ->
     uuid.equals(SonyHeadphonesWireCodec.RFCOMM_SERVICE_V1, ignoreCase = true) ||
         uuid.equals(SonyHeadphonesWireCodec.RFCOMM_SERVICE_V2, ignoreCase = true)
 }

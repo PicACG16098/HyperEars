@@ -65,7 +65,6 @@ EarbudAdapter
        ├─ Edifier
        ├─ ROSESELSA
        ├─ NiceHCK
-       ├─ Apple AAP
        └─ Sony
 ```
 
