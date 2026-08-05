@@ -2,8 +2,9 @@
 
 ## 1. 设计边界
 
-HyperEars 只在 Android 已确认设备属于标准耳机、且名称、Bose OUI 或已缓存的 BMAP
-服务 UUID 命中时创建 Bose 家族会话。最终型号不依赖蓝牙名称，而由只读 BMAP
+HyperEars 只在 Android 已确认设备属于标准耳机、且名称、Bose OUI 或 Bose 专属
+`FEBE` 服务 UUID 命中时创建 Bose 家族会话。公共的 accessory-side UUID
+不参与品牌判型。最终型号不依赖蓝牙名称，而由只读 BMAP
 `ProductInfo.ProductIdVariants [0.3]` 响应确认。
 
 产品 ID 未登记，或已登记但没有静态控制画像时，家族协议会依次读取 AudioModes、
@@ -23,7 +24,8 @@ BMAP 帧直接承载于 RFCOMM：
 
 1. RFCOMM channel 8（本地 `prince` 及公开 QC35/35 II 实现）；
 2. 标准 SPP UUID；
-3. BMAP 服务 UUID `00000000-deca-fade-deca-deafdecacaff`；
+3. 公共 accessory-side RFCOMM UUID `00000000-deca-fade-deca-deafdecacaff`
+   （仅作传输候选，不作 Bose 身份）；
 4. RFCOMM channel 2（较新 BMAP 设备）。
 
 RFCOMM `connect()` 成功不代表业务端点正确：部分 UUID 可以建立 Socket 却不返回
@@ -121,7 +123,7 @@ STATUS payload 按四字节组件重复：
 
 ## 6. 运行时结构
 
-- `BoseEarbudAdapter`：无扫描家族初筛、端点顺序、当前能力和 BMAP 会话所有权。
+- `BoseEarbudAdapter`：无扫描家族初筛、Bose 身份证据、端点顺序、当前能力和 BMAP 会话所有权。
 - `BoseBmapModelRegistry`：产品 ID 到具体 Adapter 线配置的内部目录。
 - `BoseCapabilityConfigRegistry`：型号画像缺失时，由合法 STATUS 选择的只读能力配置；
   分别保留头戴/TWS 形态。

@@ -37,6 +37,22 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
+    fun appleIdentityFallsBackToStandardAdapterWhenAppleIntegrationIsDisabled() {
+        val adapter = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "AirPods Pro",
+                    standardHeadset = true,
+                    serviceUuids = setOf(AppleAirPodsAdapter.AAP_SERVICE_UUID),
+                ),
+            ),
+        )
+
+        assertTrue(adapter is StandardEarbudAdapter)
+        assertEquals(StandardEarbudAdapter.ID, adapter.id)
+    }
+
+    @Test
     fun unconfirmedFamilyDoesNotPublishPrivateNoiseControls() {
         val vivo = VivoEarbudAdapter()
         val oppo = OppoEarbudAdapter()

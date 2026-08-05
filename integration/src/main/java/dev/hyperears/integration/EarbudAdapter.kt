@@ -333,9 +333,8 @@ object EarbudAdapterRegistry {
         add(::RoseEarbudAdapter)
         add(::NiceHckYuanDaoOrigAdapter)
         add(::NiceHckEarbudAdapter)
-        add(::AppleAirPodsProAdapter)
-        add(::AppleAirPodsMaxAdapter)
-        add(::AppleAirPodsAdapter)
+        // Apple devices are handled by the platform; keep AAP code available for explicit use,
+        // but do not add Apple adapters to HyperEars' default matching chain.
         addAll(SonyAdapterRegistry.factories)
         add(::StandardEarbudAdapter)
     }

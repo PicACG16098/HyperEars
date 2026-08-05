@@ -11,12 +11,12 @@
 HyperEars integrates selected third-party Bluetooth headsets with Xiaomi HyperOS and the MiLink
 device center. It complements Android's existing audio stack with device identity, battery,
 noise-control state and handoff metadata for supported vivo/iQOO, OPPO Enco, Bose, Edifier,
-StarRing, ROSESELSA, NiceHCK, Apple and Sony devices.
+StarRing, ROSESELSA, NiceHCK and Sony devices.
 
 > [!WARNING]
 > HyperEars requires root, LSPosed and private HyperOS APIs. Be prepared to recover your system
 > before installing it. ROM updates may temporarily break compatibility. This project is not
-> affiliated with Xiaomi, vivo, iQOO, OPPO, Bose, Edifier, ROSESELSA, NiceHCK, Apple, Sony or any
+> affiliated with Xiaomi, vivo, iQOO, OPPO, Bose, Edifier, ROSESELSA, NiceHCK, Sony or any
 > other device vendor.
 
 ## Scope
@@ -50,7 +50,6 @@ session.
 | Edifier | W860NB PRO and Huazai Evo Pro hardware-verified; others family extrapolation | headphone aggregate or TWS aggregate | noise cancellation, off, transparency and wind-noise reduction |
 | ROSESELSA / ROSE | two public implementations; product-line extrapolation; others standard fallback | private components after protocol confirmation; Android aggregate on fallback | four modes after protocol confirmation |
 | NiceHCK / YuanDao | OriG in public implementation; others standard fallback | private components after protocol confirmation; Android aggregate on fallback | OriG in: four modes after protocol confirmation |
-| Apple AirPods | public implementation and family extrapolation | private components | Pro / Max: noise cancellation, off, transparency |
 | Sony | public implementation, family extrapolation and standard fallback | private aggregate, private components or Android aggregate by form factor | explicit model-specific modes listed in the detailed matrix |
 | other standard A2DP/HFP headsets | standard fallback | Android aggregate | none |
 
@@ -61,8 +60,6 @@ also validate a service, on-wire identity or accepted state frame. Bose devices 
 their on-wire BMAP product ID. Unknown BMAP devices retain battery telemetry and use GET-only
 AudioModes, ANR and CNC discovery; no write is exposed before a valid status response.
 
-AirPods are selected by the AAP service UUID, not by a display name alone. Battery packets carry a
-dynamic one-to-three component set; only Pro and Max refinements expose confirmed ANC controls.
 Sony private adapters require a valid RFCOMM v1/v2 initialization response. Exact model adapters
 select battery topology and the ambient-control dialect; unknown product-line models use
 conservative family fallbacks. The exhaustive model list, transports, evidence and known limits are

@@ -53,6 +53,43 @@ class SonyEarbudAdapterTest {
     }
 
     @Test
+    fun sharedIap2UuidNeverActsAsSonyOrBoseIdentity() {
+        val identity = identity(
+            name = "Wireless Audio",
+            services = setOf(BoseEarbudAdapter.IAP2_ACCESSORY_UUID),
+        )
+
+        assertEquals(
+            StandardEarbudAdapter.ID,
+            EarbudAdapterRegistry.resolve(identity)?.id,
+        )
+    }
+
+    @Test
+    fun sharedIap2UuidDoesNotOverrideARecognizedSonyModel() {
+        val adapter = EarbudAdapterRegistry.resolve(
+            identity(
+                name = "LinkBuds S",
+                services = setOf(BoseEarbudAdapter.IAP2_ACCESSORY_UUID),
+            ),
+        )
+
+        assertEquals("sony-linkbuds-s", adapter?.id)
+    }
+
+    @Test
+    fun boseVendorServiceCanSelectBoseFamilyWithoutSharedIap2Uuid() {
+        val adapter = EarbudAdapterRegistry.resolve(
+            identity(
+                name = "Wireless Audio",
+                services = setOf(BoseEarbudAdapter.BOSE_BMAP_BLE_SERVICE_UUID),
+            ),
+        )
+
+        assertEquals(BoseEarbudAdapter.ID, adapter?.id)
+    }
+
+    @Test
     fun v1HandshakeAcksAndAdvancesOneRequestPerDeviceAck() {
         val adapter = resolve("WH-1000XM3")
         val protocol = requireNotNull(adapter.protocolSession)

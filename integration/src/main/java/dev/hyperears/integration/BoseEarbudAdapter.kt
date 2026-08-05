@@ -28,8 +28,10 @@ open class BoseEarbudAdapter(
             id = "spp-uuid",
         ),
         RfcommEndpointSpec.ServiceUuid(
-            uuid = BMAP_UUID,
-            id = "bmap-uuid",
+            // This is the Apple iAP2 accessory-side service UUID. Bose uses it as one
+            // BMAP/RFCOMM endpoint, but other vendors advertise the same service too.
+            uuid = IAP2_ACCESSORY_UUID,
+            id = "iap2-accessory-rfcomm",
         ),
         RfcommEndpointSpec.Channel(number = 2),
     )
@@ -41,10 +43,10 @@ open class BoseEarbudAdapter(
         val oui = identity.deviceAddress
             ?.uppercase(Locale.ROOT)
             ?.take(8)
-        val hasBmapService = identity.serviceUuids.any { uuid ->
-            uuid.equals(BMAP_UUID, ignoreCase = true)
+        val hasBoseVendorService = identity.serviceUuids.any { uuid ->
+            uuid.equals(BOSE_BMAP_BLE_SERVICE_UUID, ignoreCase = true)
         }
-        return hasBmapService || BOSE_NAME_MARKERS.any(name::contains) || oui in BOSE_OUIS
+        return hasBoseVendorService || BOSE_NAME_MARKERS.any(name::contains) || oui in BOSE_OUIS
     }
 
     override fun createProtocolSession(): ProtocolSession =
@@ -94,7 +96,18 @@ open class BoseEarbudAdapter(
     companion object {
         const val ID = "bose-bmap-family"
         const val STANDARD_SPP_UUID = "00001101-0000-1000-8000-00805f9b34fb"
-        const val BMAP_UUID = "00000000-deca-fade-deca-deafdecacaff"
+        /**
+         * Common Apple iAP2 accessory-side UUID used by Bose for a legacy BMAP RFCOMM endpoint.
+         * It is transport-only and must never be used as a Bose identity predicate.
+         */
+        const val IAP2_ACCESSORY_UUID = "00000000-deca-fade-deca-deafdecacaff"
+
+        /** Bluetooth SIG service UUID assigned to Bose Corporation for its BMAP BLE service. */
+        const val BOSE_BMAP_BLE_SERVICE_UUID = "0000febe-0000-1000-8000-00805f9b34fb"
+
+        /** @deprecated Use [IAP2_ACCESSORY_UUID]; this UUID is not a Bose identity. */
+        @Deprecated("Transport endpoint only; do not use for device identity")
+        const val BMAP_UUID = IAP2_ACCESSORY_UUID
 
         private val BOSE_NAME_MARKERS = setOf(
             "bose",
