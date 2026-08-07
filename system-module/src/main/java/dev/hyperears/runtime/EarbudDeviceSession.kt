@@ -19,6 +19,7 @@ import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.DeviceLifecycle
 import dev.hyperears.integration.EarbudAdapter
 import dev.hyperears.integration.HandshakeResult
+import dev.hyperears.integration.InitialProtocolFailureResolution
 import dev.hyperears.integration.PrivateTransportState
 import dev.hyperears.integration.ProtocolEvent
 import dev.hyperears.integration.ProtocolHandshakeState
@@ -104,6 +105,9 @@ internal class EarbudDeviceSession(
 
     @Volatile
     private var systemBatteryPercent: Int? = null
+
+    @Volatile
+    private var privateProtocolEverConfirmed = false
 
     @Volatile
     private var lifecycle = DeviceLifecycle(
@@ -390,6 +394,7 @@ internal class EarbudDeviceSession(
                 if (stableConnection) consecutiveFailures = 0
                 val waitMs = ChannelRecoveryPolicy.delayBeforeRetry(consecutiveFailures)
                 if (waitMs == null) {
+                    if (applyInitialProtocolFallback()) return
                     updateLifecycle(
                         privateTransport = PrivateTransportState.DORMANT,
                         protocolHandshake = adapter.initialHandshakeState(),
@@ -533,6 +538,7 @@ internal class EarbudDeviceSession(
         var publishRequired = result.stateChanged
         when (val handshake = result.handshake) {
             HandshakeResult.Ready -> {
+                markPrivateProtocolConfirmed()
                 publishRequired = setLifecycle(
                     protocolHandshake = adapter.readyHandshakeState(),
                 ) || publishRequired
@@ -546,6 +552,7 @@ internal class EarbudDeviceSession(
 
             is HandshakeResult.Replace -> {
                 applyReplacement(handshake, activeChannel)
+                privateProtocolEverConfirmed = true
                 publishRequired = true
                 when (handshake.activation) {
                     AdapterActivation.KEEP_CHANNEL_READY -> {
@@ -607,6 +614,37 @@ internal class EarbudDeviceSession(
                 yieldToControlApp(owner)
                 throw CancellationException("replacement adapter yielded to external app")
             }
+    }
+
+    private fun markPrivateProtocolConfirmed() {
+        if (adapter.transportReadiness == TransportReadiness.PROTOCOL_HANDSHAKE) {
+            privateProtocolEverConfirmed = true
+        }
+    }
+
+    /** Executes an Adapter-owned fallback without embedding vendor knowledge in the session. */
+    private fun applyInitialProtocolFallback(): Boolean {
+        if (privateProtocolEverConfirmed) return false
+        val previous = adapter
+        val fallback = when (val resolution = previous.onInitialProtocolUnavailable()) {
+            InitialProtocolFailureResolution.KeepDormant -> return false
+            is InitialProtocolFailureResolution.FallbackTo -> resolution.adapter
+        }
+        require(!fallback.privateProtocolRequired) {
+            "Initial protocol fallback must not require another private transport"
+        }
+        adapter = fallback
+        publishCachedSystemBattery()
+        updateLifecycle(
+            privateTransport = PrivateTransportState.NOT_REQUIRED,
+            protocolHandshake = ProtocolHandshakeState.NOT_REQUIRED,
+        )
+        ModuleLog.debug(
+            COMPONENT,
+            "adapter fallback ${previous.id} -> ${fallback.id} " +
+                "address=${maskBluetoothAddress(address)}",
+        )
+        return true
     }
 
     private fun updateLifecycle(

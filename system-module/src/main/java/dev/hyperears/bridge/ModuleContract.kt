@@ -36,6 +36,8 @@ object ModuleContract {
         "dev.hyperears.action.CONTROL_APP_REGISTER"
     const val ACTION_CONTROL_APP_QUERY =
         "dev.hyperears.action.CONTROL_APP_QUERY"
+    const val ACTION_SYSTEM_OWNERSHIP_CLAIMED =
+        "dev.hyperears.action.SYSTEM_OWNERSHIP_CLAIMED"
 
     const val MODULE_PACKAGE = "dev.hyperears"
     const val BLUETOOTH_PACKAGE = "com.android.bluetooth"
@@ -211,6 +213,23 @@ object ModuleContract {
         Intent(ACTION_CONTROL_APP_QUERY)
             .setPackage(packageName)
             .addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+
+    fun systemOwnershipClaimed(address: String, targetPackage: String): Intent =
+        Intent(ACTION_SYSTEM_OWNERSHIP_CLAIMED)
+            .setPackage(targetPackage)
+            .putExtra(EXTRA_ADDRESS, address)
+
+    /** Shares the authenticated MiLink sender identity with the Bluetooth-process receiver. */
+    fun systemOwnershipClaimOptions(): Bundle = BroadcastOptions.makeBasic()
+        .setShareIdentityEnabled(true)
+        .toBundle()
+
+    fun Intent.readSystemOwnershipClaimAddress(): String? =
+        if (action == ACTION_SYSTEM_OWNERSHIP_CLAIMED) {
+            getStringExtra(EXTRA_ADDRESS)?.takeIf(String::isNotBlank)
+        } else {
+            null
+        }
 
     data class ControlAppRegistration(
         val packageName: String,

@@ -44,6 +44,9 @@ internal class MiLinkServiceHook : HookContext() {
     )
 
     private val knownAddresses = Collections.synchronizedSet(mutableSetOf<String>())
+    private val deviceOwnership = MiLinkDeviceOwnershipRegistry()
+    private val pendingSystemOwnershipClaims =
+        Collections.synchronizedSet(mutableSetOf<String>())
     private val runtimeOwners = Collections.synchronizedSet(
         Collections.newSetFromMap(WeakHashMap<Any, Boolean>()),
     )
@@ -88,7 +91,7 @@ internal class MiLinkServiceHook : HookContext() {
         )
         runtimeClasses.forEach { className ->
             hookContextEntry(className)
-            hookBluetoothDeviceResult(className, "checkIsMiTWS") { _, _ -> 1 }
+            hookNativeHeadsetAdmission(className)
             hookBluetoothDeviceResult(className, "getDeviceId") { _, adapter ->
                 MiLinkCarrierIdentity.deviceId(adapter)
             }
@@ -204,9 +207,7 @@ internal class MiLinkServiceHook : HookContext() {
                 val publishedPresentationId = presentationIdFrom(serviceInfo)
                 val serviceAddress = serviceInfo?.let(::serviceInfoAddress)
                 val address = serviceAddress
-                    ?.takeIf {
-                        publishedPresentationId != null || isTargetAddress(it)
-                    }
+                    ?.takeIf(::isTargetAddress)
                     ?: args.firstNotNullOfOrNull(::headsetAddress)
                 if (address == null) return@hookAfter
                 extension.bind(
@@ -264,9 +265,7 @@ internal class MiLinkServiceHook : HookContext() {
                 if (ModuleRuntimeGate.paused) return@hookBefore
                 val serviceInfo = args.singleOrNull() ?: return@hookBefore
                 val address = serviceInfoAddress(serviceInfo) ?: return@hookBefore
-                val isHyperEarsCard =
-                    presentationIdFrom(serviceInfo) != null || isTargetAddress(address)
-                if (!isHyperEarsCard || !openPreferredHeadsetSettings(address)) {
+                if (!isTargetAddress(address) || !openPreferredHeadsetSettings(address)) {
                     return@hookBefore
                 }
 
@@ -567,6 +566,65 @@ internal class MiLinkServiceHook : HookContext() {
         }
     }
 
+    /**
+     * Extends MiLink's own headset-admission decision without replacing it.
+     *
+     * The original method has already run at this hook point. A positive platform result is
+     * authoritative: HyperEars records system ownership, leaves the result untouched, and asks
+     * the Bluetooth process to close any speculative module session for the same address. Only a
+     * native rejection plus an active HyperEars candidate is changed to an accepted result.
+     */
+    @SuppressLint("MissingPermission")
+    private fun hookNativeHeadsetAdmission(className: String) {
+        runCatching {
+            hookAfter(findMethod(className, "checkIsMiTWS", BluetoothDevice::class.java)) {
+                if (ModuleRuntimeGate.paused) return@hookAfter
+                val device = args[0] as? BluetoothDevice ?: return@hookAfter
+                val address = runCatching { device.address }.getOrNull() ?: return@hookAfter
+                captureContext(instance)
+
+                val candidateState = rawStateForAddress(address)
+                val decision = deviceOwnership.observeNativeAdmission(
+                    address = address,
+                    originalResult = result,
+                    hyperEarsCandidateAvailable =
+                        candidateState.sessionActive && candidateState.adapter != null,
+                )
+                ModuleLog.debug(
+                    "MiLink",
+                    "native admission original=$result candidate=${candidateState.sessionActive} " +
+                        "owner=${decision.owner} process=${Application.getProcessName()} " +
+                        "address=${maskBluetoothAddress(address)}",
+                )
+                when (decision.owner) {
+                    MiLinkDeviceOwnershipRegistry.Owner.SYSTEM -> {
+                        knownAddresses.remove(normalizeAddress(address))
+                        headsetDetailExtension?.unbind(address)
+                        if (decision.systemOwnershipNewlyClaimed) {
+                            publishSystemOwnershipClaim(address)
+                            ModuleLog.debug(
+                                "MiLink",
+                                "preserved native headset ownership " +
+                                    "address=${maskBluetoothAddress(address)}",
+                            )
+                        }
+                    }
+
+                    MiLinkDeviceOwnershipRegistry.Owner.HYPEREARS -> {
+                        knownAddresses += normalizeAddress(address)
+                        recordBridgeStage(device, BridgeStage.IDENTITY_QUERIED)
+                        rememberRuntimeOwner(className, instance)
+                        result = NATIVE_HEADSET_SUPPORTED
+                    }
+
+                    MiLinkDeviceOwnershipRegistry.Owner.UNKNOWN -> Unit
+                }
+            }
+        }.onFailure {
+            ModuleLog.warn("MiLink", "required $className.checkIsMiTWS unavailable", it)
+        }
+    }
+
     private fun hookAddressResult(
         className: String,
         methodName: String,
@@ -705,22 +763,34 @@ internal class MiLinkServiceHook : HookContext() {
                             }?.takeIf { it == ModuleContract.MODULE_PACKAGE } ?: return
                             publishCurrentBridgeStatus(targetPackage)
                         }
+
+                        ModuleContract.ACTION_SYSTEM_OWNERSHIP_CLAIMED ->
+                            handleSystemOwnershipClaim(
+                                context = context,
+                                intent = intent,
+                                senderPackage = sentFromPackage,
+                                senderUid = sentFromUid,
+                            )
                     }
                 }
             },
             IntentFilter().apply {
                 addAction(ModuleContract.ACTION_STATE_CHANGED)
                 addAction(ModuleContract.ACTION_REQUEST_BRIDGE_STATUS)
+                addAction(ModuleContract.ACTION_SYSTEM_OWNERSHIP_CLAIMED)
             },
             Context.RECEIVER_EXPORTED,
         )
         receiverRegistered = true
+        flushPendingSystemOwnershipClaims()
         requestState()
         ModuleLog.debug("MiLink", "state receiver registered")
     }
 
     private fun clearModuleState() {
         knownAddresses.clear()
+        deviceOwnership.clear()
+        pendingSystemOwnershipClaims.clear()
         targetHeadsetAddresses.clear()
         synchronized(observationLock) {
             sessionStages.clear()
@@ -739,20 +809,69 @@ internal class MiLinkServiceHook : HookContext() {
         val state = ProcessStateStore.accept(intent) ?: return
         state.address?.let {
             val normalized = normalizeAddress(it)
-            if (state.sessionActive) {
+            val systemOwned = deviceOwnership.isSystemOwned(it)
+            if (state.sessionActive && !systemOwned) {
                 knownAddresses += normalized
                 observeStateAccepted(state, sessionToken)
             } else {
+                if (systemOwned) {
+                    knownAddresses.remove(normalized)
+                }
                 synchronized(observationLock) {
                     sessionStages.remove(normalized)
                     pendingStages.remove(normalized)
                 }
             }
         }
-        notifyRuntimeChanged(previous, state)
-        // Let the model-specific card adapter render after MiLink has consumed the stock
-        // three-state callback; otherwise the host can overwrite an extended mode such as WIND.
-        headsetDetailExtension?.onStateChanged(state)
+        if (state.address?.let(deviceOwnership::isSystemOwned) != true) {
+            notifyRuntimeChanged(previous, state)
+            // Let the model-specific card adapter render after MiLink has consumed the stock
+            // three-state callback; otherwise the host can overwrite an extended mode such as WIND.
+            headsetDetailExtension?.onStateChanged(state)
+        }
+    }
+
+    private fun handleSystemOwnershipClaim(
+        context: Context?,
+        intent: Intent,
+        senderPackage: String?,
+        senderUid: Int,
+    ) {
+        if (context == null ||
+            !isAuthenticatedMiLinkSender(context, senderPackage, senderUid)
+        ) return
+        val address = with(ModuleContract) {
+            intent.readSystemOwnershipClaimAddress()
+        } ?: return
+        if (!deviceOwnership.claimSystemOwnership(address)) return
+        val normalized = normalizeAddress(address)
+        knownAddresses.remove(normalized)
+        synchronized(observationLock) {
+            sessionStages.remove(normalized)
+            pendingStages.remove(normalized)
+        }
+        headsetDetailExtension?.unbind(address)
+        ModuleLog.debug(
+            "MiLink",
+            "received shared system ownership address=${maskBluetoothAddress(address)} " +
+                "process=${Application.getProcessName()}",
+        )
+    }
+
+    private fun isAuthenticatedMiLinkSender(
+        context: Context,
+        senderPackage: String?,
+        senderUid: Int,
+    ): Boolean {
+        if (senderPackage.isNullOrBlank() && senderUid < 0) return false
+        if (!senderPackage.isNullOrBlank() && senderPackage != ModuleContract.MILINK_PACKAGE) {
+            return false
+        }
+        if (senderUid >= 0) {
+            val packages = context.packageManager.getPackagesForUid(senderUid).orEmpty()
+            if (ModuleContract.MILINK_PACKAGE !in packages) return false
+        }
+        return true
     }
 
     private fun publishCurrentBridgeStatus(targetPackage: String) {
@@ -871,9 +990,7 @@ internal class MiLinkServiceHook : HookContext() {
     private fun adapterFor(device: BluetoothDevice?) =
         device?.let { target ->
             val address = runCatching { target.address }.getOrNull()
-            val adapter = address
-                ?.let(::stateForAddress)
-                ?.adapter
+            val adapter = address?.let(::adapterForAddress)
             if (adapter != null) {
                 knownAddresses += normalizeAddress(address)
             }
@@ -881,7 +998,11 @@ internal class MiLinkServiceHook : HookContext() {
         }
 
     private fun adapterForAddress(address: String) =
-        stateForAddress(address).adapter
+        if (!deviceOwnership.isSystemOwned(address)) {
+            rawStateForAddress(address).adapter
+        } else {
+            null
+        }
 
     private fun adapterIdentity(state: EarbudState) =
         state.adapter
@@ -894,7 +1015,8 @@ internal class MiLinkServiceHook : HookContext() {
 
     private fun isTargetAddress(address: String): Boolean {
         val normalized = normalizeAddress(address)
-        return normalized in knownAddresses || ProcessStateStore.containsKnown(normalized)
+        return !deviceOwnership.isSystemOwned(address) &&
+            (normalized in knownAddresses || ProcessStateStore.containsKnown(normalized))
     }
 
     private fun isTargetHeadsetInfo(info: Any?): Boolean {
@@ -947,8 +1069,15 @@ internal class MiLinkServiceHook : HookContext() {
         stateForHeadsetInfo(info).takeIf(EarbudState::sessionActive)
 
     private fun stateForAddress(address: String): EarbudState {
-        return ProcessStateStore.knownSnapshot(address)
+        return if (!deviceOwnership.isSystemOwned(address)) {
+            rawStateForAddress(address)
+        } else {
+            EarbudState()
+        }
     }
+
+    private fun rawStateForAddress(address: String): EarbudState =
+        ProcessStateStore.knownSnapshot(address)
 
     private fun rememberRuntimeOwner(className: String, owner: Any?) {
         owner?.let { runtimeOwners += it }
@@ -1112,6 +1241,45 @@ internal class MiLinkServiceHook : HookContext() {
         )
     }
 
+    private fun publishSystemOwnershipClaim(address: String) {
+        val targetContext = context
+        if (targetContext == null) {
+            pendingSystemOwnershipClaims += normalizeAddress(address)
+            return
+        }
+        var deliveryFailed = false
+        listOf(ModuleContract.MILINK_PACKAGE, ModuleContract.BLUETOOTH_PACKAGE)
+            .forEach { targetPackage ->
+                runCatching {
+                    targetContext.sendBroadcast(
+                        ModuleContract.systemOwnershipClaimed(address, targetPackage)
+                            .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
+                        null,
+                        ModuleContract.systemOwnershipClaimOptions(),
+                    )
+                }.onFailure {
+                    deliveryFailed = true
+                    ModuleLog.warn(
+                        "MiLink",
+                        "system-ownership broadcast failed target=$targetPackage",
+                        it,
+                    )
+                }
+            }
+        if (deliveryFailed) {
+            pendingSystemOwnershipClaims += normalizeAddress(address)
+        }
+    }
+
+    private fun flushPendingSystemOwnershipClaims() {
+        val pending = synchronized(pendingSystemOwnershipClaims) {
+            pendingSystemOwnershipClaims.toList().also {
+                pendingSystemOwnershipClaims.clear()
+            }
+        }
+        pending.forEach(::publishSystemOwnershipClaim)
+    }
+
     @SuppressLint("MissingPermission")
     private fun sendControl(request: ControlRequest, device: BluetoothDevice?) {
         val address = runCatching { device?.address }.getOrNull() ?: return
@@ -1119,6 +1287,7 @@ internal class MiLinkServiceHook : HookContext() {
     }
 
     private fun sendControl(request: ControlRequest, address: String) {
+        if (deviceOwnership.isSystemOwned(address)) return
         val snapshot = ProcessStateStore.find(address) ?: return
         if (!snapshot.sessionActive) return
         val token = ProcessStateStore.sessionToken(address) ?: return
@@ -1166,6 +1335,7 @@ internal class MiLinkServiceHook : HookContext() {
         const val MILINK_RAW_ANC_ALL_MODES = 7
         const val NO_ANC_CAPABILITY = 0
         const val NO_ANC_STATE = 0
+        const val NATIVE_HEADSET_SUPPORTED = 1
         const val UNKNOWN_BATTERY_LEVEL = -1
         const val HEADSET_OPERATION_UNSUPPORTED = 0
         val UNKNOWN_COMPONENT_BATTERY_LEVELS = listOf(-1, -1, -1, 0, 0, 0)

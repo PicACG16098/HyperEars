@@ -111,6 +111,13 @@ EarbudAdapter
 匹配依据来自 Android 已缓存的设备名称、Class、服务 UUID 和地址信息，不主动扫描。
 Registry 不按 ID 恢复运行时 Adapter，也不参与协议升级。
 
+Registry 结果只是 Bluetooth 进程中的静态候选。MiLink 执行原生 `checkIsMiTWS(device)` 后，
+模块才在同一稳定入口仲裁最终所有权：原始结果表示支持时，系统所有权优先，并通过带发送方
+身份的定向广播同步到 MiLink 的 `:audio`、`:core`、`:ui` 进程，同时关闭 Bluetooth 进程中
+同地址的模块会话；原始结果表示不支持且存在活动候选时，HyperEars 才把结果补充为支持。
+MiLink 子进程在收到系统认领前可以消费相同的活动候选快照，收到认领后，身份、电量、噪声
+能力、命令、卡片扩展和设置跳转会统一退避，不单独维护品牌黑名单。
+
 需要私有协议的 Adapter 在会话第一阶段执行只读确认。结果只有四种：
 
 - `AwaitingEvidence`：初始请求已写入，等待有效响应；
@@ -140,7 +147,9 @@ Registry 不按 ID 恢复运行时 Adapter，也不参与协议升级。
 6. MiLink 才看到对应控制项。
 
 有效电量响应只确认电量；有效噪声状态/协议能力响应才确认噪声控制。失败或超时不会把
-静态猜测能力留在卡片上。
+静态猜测能力留在卡片上。家族 Adapter 还可通过 `onInitialProtocolUnavailable()` 返回保守
+替代 Adapter；会话层只执行统一决策，不包含厂商品牌判断。ROSESELSA 产品线候选使用该
+机制在首次私有协议始终未确认时退回品牌标准能力。
 
 Bose 是型号细化示例：BMAP 产品 ID 产生 `ProductIdentified(productId)`，Bose Adapter
 把产品 ID 映射为具体 Adapter，并将已有 ProtocolSession 和运行状态转移过去。未知产品
@@ -179,8 +188,9 @@ A2DP/HFP connected
   -> MiLink 接收、查询身份/能力、刷新卡片
 ```
 
-通道异常进入 `RECOVERING`，有界重试耗尽后进入 `DORMANT`。系统音频会话仍保留，重新
-注册或显式刷新可唤醒连接；A2DP/HFP 断开才销毁设备会话。
+已确认协议的通道异常进入 `RECOVERING`，有界重试耗尽后进入 `DORMANT`。系统音频会话
+仍保留，重新注册或显式刷新可唤醒连接。尚未确认的家族候选可按 Adapter 决策降级为不需要
+私有通道的保守实现；A2DP/HFP 断开才销毁设备会话。
 
 ## 7. 传输与并发
 

@@ -63,6 +63,16 @@ abstract class EarbudAdapter(
     abstract fun matches(identity: EarbudIdentity): Boolean
 
     /**
+     * Decides how a provisional protocol-family candidate degrades when its bounded initial
+     * transport and handshake attempts finish without ever confirming the private protocol.
+     *
+     * Concrete and already-confirmed adapters retain their identity by default. A family probe
+     * may replace itself with a conservative, non-private adapter while preserving runtime state.
+     */
+    open fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
+        InitialProtocolFailureResolution.KeepDormant
+
+    /**
      * Mutable wire-conversation state owned by this adapter instance.
      *
      * Registry entries are factories; a runtime adapter is never shared by two physical devices.
@@ -281,6 +291,14 @@ enum class TransportReadiness {
 
     /** The candidate must also return an accepted protocol handshake. */
     PROTOCOL_HANDSHAKE,
+}
+
+sealed interface InitialProtocolFailureResolution {
+    data object KeepDormant : InitialProtocolFailureResolution
+
+    data class FallbackTo(
+        val adapter: EarbudAdapter,
+    ) : InitialProtocolFailureResolution
 }
 
 /**

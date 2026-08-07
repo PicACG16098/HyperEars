@@ -66,13 +66,20 @@ open class RoseEarfreeProtocolFamilyAdapter(
         val advertisedService = identity.serviceUuids.any {
             it.equals(SERVICE_UUID, ignoreCase = true)
         }
-        return namedProductLine || (super.matches(identity) && advertisedService)
+        // The private service selects this protocol-family probe on its own. Product-line names
+        // remain a second, independent entry path for devices whose UUID cache is not populated.
+        return namedProductLine || advertisedService
     }
 
     override fun createProtocolSession(): ProtocolSession = RoseEarfreeProtocolSession()
 
     override fun batterySourceAfterProtocolEvidence(): BatterySource =
         BatterySource.PRIVATE_PROTOCOL
+
+    override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
+        InitialProtocolFailureResolution.FallbackTo(
+            RoseEarbudAdapter(initialRuntimeState = runtimeState()),
+        )
 
     companion object {
         const val ID = "rose-earfree-protocol-family"
@@ -105,6 +112,9 @@ class RoseEarfreeI5Adapter : RoseEarfreeProtocolFamilyAdapter() {
         if (identity.nativeSystemEarbud) return false
         return normalizeDeviceName(identity.deviceName.orEmpty()) in MODEL_NAMES
     }
+
+    override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
+        InitialProtocolFailureResolution.KeepDormant
 
     companion object {
         const val ID = "roseselsa-earfree-i5"
@@ -147,13 +157,20 @@ open class RoseBudsFeelProtocolFamilyAdapter(
         val advertisedService = identity.serviceUuids.any {
             it.equals(DATA_CHANNEL_UUID, ignoreCase = true)
         }
-        return namedProductLine || (super.matches(identity) && advertisedService)
+        // A cached private RFCOMM UUID is sufficient to try the family codec even when a
+        // collaboration edition uses a completely different Bluetooth display name.
+        return namedProductLine || advertisedService
     }
 
     override fun createProtocolSession(): ProtocolSession = RoseBudsFeelProtocolSession()
 
     override fun batterySourceAfterProtocolEvidence(): BatterySource =
         BatterySource.PRIVATE_PROTOCOL
+
+    override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
+        InitialProtocolFailureResolution.FallbackTo(
+            RoseEarbudAdapter(initialRuntimeState = runtimeState()),
+        )
 
     companion object {
         const val ID = "rose-budsfeel-protocol-family"
@@ -182,6 +199,9 @@ class RoseBudsFeelMk2Adapter : RoseBudsFeelProtocolFamilyAdapter() {
         if (identity.nativeSystemEarbud) return false
         return normalizeDeviceName(identity.deviceName.orEmpty()) in MODEL_NAMES
     }
+
+    override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
+        InitialProtocolFailureResolution.KeepDormant
 
     companion object {
         const val ID = "rose-budsfeel-mk2"

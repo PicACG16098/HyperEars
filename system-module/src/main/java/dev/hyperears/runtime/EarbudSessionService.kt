@@ -156,7 +156,35 @@ internal object EarbudSessionService {
                         }
                     }
 
+                    ModuleContract.ACTION_SYSTEM_OWNERSHIP_CLAIMED -> {
+                        val address = with(ModuleContract) {
+                            intent.readSystemOwnershipClaimAddress()
+                        } ?: return
+                        if (!isAuthenticatedMiLinkSender(context)) {
+                            ModuleLog.warn(
+                                COMPONENT,
+                                "rejected unauthenticated system-ownership claim",
+                            )
+                            return
+                        }
+                        connectionManager.claimSystemOwnership(address)
+                    }
+
                 }
+            }
+
+            private fun isAuthenticatedMiLinkSender(context: Context): Boolean {
+                val senderPackage = sentFromPackage
+                val senderUid = sentFromUid
+                if (senderPackage.isNullOrBlank() && senderUid < 0) return false
+                if (!senderPackage.isNullOrBlank() &&
+                    senderPackage != ModuleContract.MILINK_PACKAGE
+                ) return false
+                if (senderUid >= 0) {
+                    val packages = context.packageManager.getPackagesForUid(senderUid).orEmpty()
+                    if (ModuleContract.MILINK_PACKAGE !in packages) return false
+                }
+                return true
             }
         }
 
@@ -165,6 +193,7 @@ internal object EarbudSessionService {
                 addAction(ModuleContract.ACTION_REQUEST_STATE)
                 addAction(ModuleContract.ACTION_CONTROL)
                 addAction(ModuleContract.ACTION_CONTROL_APP_REGISTER)
+                addAction(ModuleContract.ACTION_SYSTEM_OWNERSHIP_CLAIMED)
                 addAction(BluetoothSystemBattery.ACTION_LEVEL_CHANGED)
             }
             context.registerReceiver(

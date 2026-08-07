@@ -55,6 +55,7 @@ internal class EarbudConnectionManager(
     private val sessions = linkedMapOf<String, SessionRecord>()
     private val knownDevices = linkedMapOf<String, Snapshot>()
     private val lastRevisions = mutableMapOf<String, Long>()
+    private val systemOwnedAddresses = mutableSetOf<String>()
     private val connectionCoordinator = ConnectionAttemptCoordinator()
 
     private var activeControlAppPackages: Set<String> = emptySet()
@@ -81,6 +82,13 @@ internal class EarbudConnectionManager(
 
         val registration = synchronized(lifecycleLock) {
             if (closed || modulePaused) return false
+            if (key in systemOwnedAddresses) {
+                ModuleLog.debug(
+                    COMPONENT,
+                    "ignored system-owned device ${maskBluetoothAddress(address)}",
+                )
+                return false
+            }
             sessions[key]?.let(Registration::Existing) ?: run {
                 val initialState = knownDevices[key]
                     ?.state
@@ -157,6 +165,29 @@ internal class EarbudConnectionManager(
         }
         finishRemovals(removals)
         return removals.isNotEmpty()
+    }
+
+    /**
+     * Permanently yields this process lifetime's address to HyperOS native headset support.
+     *
+     * The ownership claim is sticky across A2DP reconnects so a session cannot be recreated
+     * after MiLink has already established that the platform owns the same device.
+     */
+    fun claimSystemOwnership(address: String): Boolean {
+        val key = normalizeAddress(address)
+        val result = synchronized(lifecycleLock) {
+            if (closed) return false
+            val newlyClaimed = systemOwnedAddresses.add(key)
+            newlyClaimed to removeLocked(address)
+        }
+        finishRemovals(result.second)
+        if (result.first) {
+            ModuleLog.debug(
+                COMPONENT,
+                "yielded to system ownership ${maskBluetoothAddress(address)}",
+            )
+        }
+        return result.first
     }
 
     fun updateSystemBattery(device: BluetoothDevice, percent: Int?): Boolean {

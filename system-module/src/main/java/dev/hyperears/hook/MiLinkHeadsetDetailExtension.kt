@@ -96,6 +96,21 @@ internal class MiLinkHeadsetDetailExtension(
         }
     }
 
+    /** Releases any optional card binding when MiLink reclaims the device natively. */
+    fun unbind(address: String) {
+        val normalizedAddress = address.uppercase(Locale.ROOT)
+        val matchingTargets = synchronized(targetLock) {
+            targets.values.filter { it.address == normalizedAddress }
+        }
+        matchingTargets.forEach { target ->
+            val root = target.root.get() ?: return@forEach
+            root.post {
+                target.publishedPresentationId = null
+                release(target)
+            }
+        }
+    }
+
     private fun dispatchRender(target: Target) {
         val root = target.root.get() ?: return
         if (!root.isAttachedToWindow) return
@@ -111,8 +126,14 @@ internal class MiLinkHeadsetDetailExtension(
         if (!root.isAttachedToWindow) return
         val retainedState = environment.stateProvider(target.address)
         val localState = retainedState.takeIf(EarbudState::sessionActive)
-        val localPresentationId = localState?.adapter?.presentationId
-        val presentationId = localPresentationId ?: target.publishedPresentationId
+        val presentationId = if (localState != null) {
+            // An active Adapter's null presentation is deliberate (for example, after a failed
+            // family probe falls back to standard integration). Cached service metadata must not
+            // resurrect the previous model-specific binding.
+            localState.adapter?.presentationId
+        } else {
+            target.publishedPresentationId
+        }
         if (target.boundPresentationId != presentationId) {
             release(target)
         }

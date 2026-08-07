@@ -125,7 +125,10 @@ StarRing Ultra 使用 GATT `7777/8888` 特征，厂商 RFCOMM 为回退通道。
 | 其他 ROSESELSA / ROSE 耳机 | 标准回退 | 标准回退 | 品牌名称与 Android 标准耳机身份匹配 | 系统整机 | 无 |
 
 EARFREE / EARFEEL 使用 GATT 服务 `011bf5da`、`7777/8888` 特征；BudsFeel 使用 RFCOMM
-UUID `0cf12d31-…`。产品线候选在收到合法私有电量前保留 Android 系统整机电量。
+UUID `0cf12d31-…`。产品线名称与对应私有服务 UUID 是相互独立的候选条件；因此使用联名
+名称但保留该私有服务的设备仍会进入家族只读试探。产品线候选在收到合法私有电量前保留
+Android 系统整机电量；首次协议试探经过有界重试仍未确认时，自动降级为 ROSESELSA 标准
+耳机能力，不保留私有控制项或休眠中的私有通道。
 
 ### 2.7 NiceHCK / YuanDao
 
@@ -171,8 +174,10 @@ OriG in 使用 RFCOMM UUID `a100`。
 原生卡片属于 ROM 内部实现，不承诺跨 HyperOS 大版本二进制稳定。已在 Xiaomi 14 Pro、
 Xiaomi Pad 6S Pro 12.4 和 REDMI K Pad 上验证流转路径；实际兼容性仍取决于 ROM 构建。
 
-名称和系统能力可确认由 HyperOS 原生支持的 Xiaomi / REDMI 耳机不会被 HyperEars 接管。
-音箱、车机和无法保守判定为耳机的设备也不会进入标准耳机回退。
+MiLink 原始耳机准入结果具有最高优先级：只要当前 ROM 已原生接管该地址，HyperEars 就不
+覆盖身份、能力或控制查询，并关闭同地址的模块会话。该仲裁不依赖品牌名称，因此同样适用
+于系统原生支持的 Apple 或其他品牌设备。音箱、车机和无法保守判定为耳机的设备也不会进入
+标准耳机回退。
 
 ## 4. 提交新设备证据
 

@@ -37,7 +37,7 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun appleIdentityFallsBackToStandardAdapterWhenAppleIntegrationIsDisabled() {
+    fun appleIdentityIsOnlyAStaticStandardCandidateBeforeRuntimeNativeArbitration() {
         val adapter = requireNotNull(
             EarbudAdapterRegistry.resolve(
                 EarbudIdentity(
@@ -319,6 +319,55 @@ class EarbudAdapterHierarchyTest {
         assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
         assertTrue(adapter.snapshot().capabilities.noiseControl)
         assertTrue(adapter.snapshot().capabilities.windNoiseControl)
+    }
+
+    @Test
+    fun rosePrivateUuidsSelectTheirProtocolFamiliesWithoutAProductLineName() {
+        val earfree = EarbudAdapterRegistry.resolve(
+            EarbudIdentity(
+                deviceName = "Furina Endless Solo of Solitude",
+                standardHeadset = true,
+                serviceUuids = setOf(RoseEarfreeProtocolFamilyAdapter.SERVICE_UUID),
+            ),
+        )
+        val budsFeel = EarbudAdapterRegistry.resolve(
+            EarbudIdentity(
+                deviceName = "Collaboration Edition",
+                standardHeadset = true,
+                serviceUuids = setOf(RoseBudsFeelProtocolFamilyAdapter.DATA_CHANNEL_UUID),
+            ),
+        )
+
+        assertTrue(earfree is RoseEarfreeProtocolFamilyAdapter)
+        assertTrue(budsFeel is RoseBudsFeelProtocolFamilyAdapter)
+    }
+
+    @Test
+    fun unconfirmedRoseFamilyFallsBackToConservativeRoseIntegration() {
+        val family = RoseEarfreeProtocolFamilyAdapter()
+        family.onSystemBatteryChanged(68)
+
+        val resolution = family.onInitialProtocolUnavailable()
+
+        assertTrue(resolution is InitialProtocolFailureResolution.FallbackTo)
+        val fallback = (resolution as InitialProtocolFailureResolution.FallbackTo).adapter
+        assertTrue(fallback is RoseEarbudAdapter)
+        assertFalse(fallback.privateProtocolRequired)
+        assertFalse(fallback.snapshot().capabilities.noiseControl)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, fallback.snapshot().batterySource)
+        assertEquals(68, fallback.runtimeState().battery.overall.percent)
+    }
+
+    @Test
+    fun exactRoseModelRetainsItsVerifiedAdapterAfterTransportFailure() {
+        assertEquals(
+            InitialProtocolFailureResolution.KeepDormant,
+            RoseEarfreeI5Adapter().onInitialProtocolUnavailable(),
+        )
+        assertEquals(
+            InitialProtocolFailureResolution.KeepDormant,
+            RoseBudsFeelMk2Adapter().onInitialProtocolUnavailable(),
+        )
     }
 
     @Test
