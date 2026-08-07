@@ -12,7 +12,7 @@ body:
     id: version
     attributes:
       label: HyperEars version
-      placeholder: v0.10.2, official GitHub Release
+      placeholder: vX.Y.Z, official GitHub Release
     validations:
       required: true
 
@@ -38,6 +38,12 @@ body:
       description: Do not include the complete Bluetooth address.
     validations:
       required: true
+
+  - type: input
+    id: controller
+    attributes:
+      label: Vendor controller app, if involved
+      description: Include both the visible app name and Android package name.
 
   - type: textarea
     id: reproduce

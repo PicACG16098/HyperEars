@@ -16,6 +16,10 @@ open class BoseEarbudAdapter(
 ) : StandardEarbudAdapter(transferredSession, initialRuntimeState) {
     override val id: String = ID
     override val displayName: String = "Bose BMAP headset"
+    override val controlApps: List<ControlAppSpec> = listOf(
+        ControlAppCatalog.bose,
+        ControlAppCatalog.boseConnect,
+    )
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE

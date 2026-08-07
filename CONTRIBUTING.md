@@ -19,6 +19,13 @@
   :system-module:assembleRelease
 ```
 
+文档验证：
+
+```powershell
+npx --yes markdownlint-cli2@0.18.1 "*.md" "docs/**/*.md" ".github/**/*.md"
+node tools/validate-docs.mjs
+```
+
 ## 设计规则
 
 1. 设备匹配按“具体型号 → 厂商家族 → 标准耳机”从窄到宽执行。
@@ -29,11 +36,27 @@
 6. 优先 Hook 稳定的语义边界；避免按混淆方法名、视图层级或定时轮询打补丁。
 7. 新增后台工作必须说明生命周期、退避、并发和耗电影响。
 
+新增或变更厂商控制 App 时，还必须同步更新 `ControlAppCatalog`、对应 Adapter 的
+`controlApps`、`META-INF/xposed/scope.list` 和
+[控制 App 目录](docs/control-apps.md)，并补充控制权优先顺序测试。控制 App 包名只能作为
+导航目标和控制权边界，不能作为耳机品牌或型号的识别证据。
+
+## 文档规则
+
+1. `README.md` 和 `README_EN.md` 只提供项目概览，不复制完整型号矩阵。
+2. `docs/compatibility.md` 必须按代码实际开放的电量、噪声模式和确认条件描述能力。
+3. 协议文档必须区分实机验证、公开实现、参考协议和家族外推，不把候选协议写成已验证支持。
+4. 控制 App 显示名、包名和声明顺序以 `ControlAppCatalog` 与 `docs/control-apps.md` 为准。
+5. 外部协议来源和适用许可同步维护在 `THIRD_PARTY_NOTICES.md`。
+6. 用户可见设置名称、默认值和排障步骤必须与当前 Release 界面一致。
+7. 行为变化同步更新 `CHANGELOG.md`；文档不得使用控制 App 安装状态作为耳机判型依据。
+
 ## 新型号提交材料
 
 - 零售名称及规范化别名；
 - 设备形态（TWS/头戴）和 Android Profile；
 - 厂商 UUID、RFCOMM channel 或 GATT service；
+- 厂商控制 App 的显示名和 Android 包名（如适用），以及是否验证页面跳转和运行时退避；
 - 只读查询、响应和字段解释；
 - 每个控制命令的写入帧、设备回读和失败行为；
 - 至少一个解析器单元测试和一个 Adapter 选择测试；

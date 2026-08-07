@@ -2,7 +2,7 @@
 
 ![HyperEars cover](docs/assets/coolapk-title.png)
 
-[简体中文](README.md) · [Installation](docs/installation.md) · [Compatibility](docs/compatibility.md) · [Troubleshooting](docs/troubleshooting.md)
+[简体中文](README.md) · [Installation](docs/installation.md) · [Compatibility](docs/compatibility.md) · [Controller scopes](docs/control-apps.md) · [Troubleshooting](docs/troubleshooting.md)
 
 [![CI](https://github.com/silverpoetry/HyperEars/actions/workflows/ci.yml/badge.svg)](https://github.com/silverpoetry/HyperEars/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/silverpoetry/HyperEars?display_name=tag)](https://github.com/silverpoetry/HyperEars/releases)
@@ -23,9 +23,17 @@ StarRing, ROSESELSA, NiceHCK and Sony devices.
 
 - Publishes eligible third-party headsets to MiLink while retaining Android's A2DP/HFP routing.
 - Reads model-appropriate battery telemetry and maps verified private noise-control protocols.
-- Opens the real Android Bluetooth-device details page from a HyperEars MiLink card.
+- Opens an installed vendor controller declared by the current Adapter from a HyperEars MiLink
+  card when enabled, otherwise the real Android Bluetooth-device details page.
 - Falls back to handoff, volume and Android's aggregate battery for standard Bluetooth headsets.
 - Exposes a per-device lifecycle dashboard for recognition, channel, protocol and publication.
+- Provides settings for vendor-controller navigation and runtime yielding, plus root-only
+  log export and shortcuts for restarting MiLink, restarting Bluetooth and stopping supported
+  controller apps.
+- Can pause HyperEars integration without disabling Android's native Bluetooth or audio routing;
+  reconnect the headset after resuming to create a fresh module session.
+- Produces no module diagnostics while detailed logging is disabled. When enabled, injected-process
+  logs are written through the LSPosed daemon and exported together with a bounded companion-app log.
 
 HyperEars does not proxy audio, continuously scan for Bluetooth devices, inject the HyperOS
 Settings UI or poll MiLink views. Private GATT, RFCOMM or BR/EDR L2CAP channels are created only
@@ -36,7 +44,10 @@ session.
 
 - Xiaomi HyperOS on Android 15 or newer;
 - LSPosed API 101 or newer;
-- static scopes `com.android.bluetooth` and `com.milink.service`;
+- required LSPosed scopes are `com.android.bluetooth` and `com.milink.service`;
+- to enable runtime yielding, also select the matching installed package from the
+  [controller-app catalog](docs/control-apps.md); opening an installed controller from “More
+  settings” does not by itself require that optional scope;
 - a headset already paired through Android Bluetooth settings.
 
 ## Compatibility overview
@@ -45,33 +56,35 @@ session.
 |---|---|---|---|
 | vivo / iQOO TWS | hardware-verified, public implementation, family extrapolation | private components | noise cancellation, off, transparency |
 | OPPO Enco | reference protocol | private components | noise cancellation, off, transparency |
-| StarRing / LightYear | Ultra hardware-verified; others standard fallback | Ultra private components; others Android aggregate | Ultra: noise cancellation, off, transparency, wind-noise reduction |
+| StarRing | Ultra hardware-verified; others standard fallback | Ultra private components; others Android aggregate | Ultra: noise cancellation, off, transparency, wind-noise reduction |
 | Bose | one hardware-verified model; public implementation, reference protocol and family extrapolation for others | private aggregate or components | explicit subset selected by BMAP product and control dialect |
 | Edifier | W860NB PRO and Huazai Evo Pro hardware-verified; others family extrapolation | headphone aggregate or TWS aggregate | noise cancellation, off, transparency and wind-noise reduction |
-| ROSESELSA / ROSE | two public implementations; product-line extrapolation; others standard fallback | private components after protocol confirmation; Android aggregate on fallback | four modes after protocol confirmation |
-| NiceHCK / YuanDao | OriG in public implementation; others standard fallback | private components after protocol confirmation; Android aggregate on fallback | OriG in: four modes after protocol confirmation |
+| ROSESELSA / ROSE | two public implementations; product-line extrapolation; others standard fallback | private components after protocol confirmation; Android aggregate on fallback | noise cancellation, off, transparency and wind-noise reduction after protocol confirmation |
+| NiceHCK / YuanDao | OriG in public implementation; others standard fallback | private components after protocol confirmation; Android aggregate on fallback | OriG in: noise cancellation, off, transparency and wind-noise reduction after protocol confirmation |
 | Sony | public implementation, family extrapolation and standard fallback | private aggregate, private components or Android aggregate by form factor | explicit model-specific modes listed in the detailed matrix |
 | other standard A2DP/HFP headsets | standard fallback | Android aggregate | none |
 
 Every row includes device handoff and system volume. Public implementations, reference protocols
 and family extrapolations are not hardware verification. A family name selects only a candidate
-protocol; adapters that require confirmation
-also validate a service, on-wire identity or accepted state frame. Bose devices are refined by
+protocol; adapters that require confirmation also validate a service, on-wire identity or
+accepted state frame. Bose devices are refined by
 their on-wire BMAP product ID. Unknown BMAP devices retain battery telemetry and use GET-only
 AudioModes, ANR and CNC discovery; no write is exposed before a valid status response.
 
 Sony private adapters require a valid RFCOMM v1/v2 initialization response. Exact model adapters
 select battery topology and the ambient-control dialect; unknown product-line models use
 conservative family fallbacks. The exhaustive model list, transports, evidence and known limits are
-maintained in the
-[compatibility matrix](docs/compatibility.md).
+maintained in the [compatibility matrix](docs/compatibility.md).
 
 ## Install
 
 1. Download the APK and matching `.sha256` file from
    [Releases](https://github.com/silverpoetry/HyperEars/releases).
 2. Verify the SHA-256 digest.
-3. Install the APK, enable HyperEars in LSPosed and confirm both static scopes.
+3. Install the APK, enable HyperEars in LSPosed and select at least `com.android.bluetooth` and
+   `com.milink.service`. If runtime yielding is needed, also select the matching installed package
+   from the [controller-app catalog](docs/control-apps.md); do not select Settings, System UI or
+   every application.
 4. Reboot the device, pair/connect the headset and inspect the HyperEars dashboard.
 
 Early development builds used a different certificate. Android cannot update such a build in
@@ -90,6 +103,15 @@ The public signing-certificate fingerprint and verification procedure are docume
 
 Architecture, process boundaries, state revisioning and extension rules are described in
 [system-module-architecture.md](docs/system-module-architecture.md).
+
+When runtime yielding is enabled and a declared controller app is actually hooked, HyperEars
+yields private-protocol ownership while that app is running. It closes only its own
+GATT/RFCOMM/L2CAP channel and keeps MiLink handoff, system volume and standard Bluetooth
+integration. Presence is determined solely by a process Binder token and Binder death, never by
+whether the vendor app opened a Bluetooth connection. Private control is restored after all
+hooked processes of that app have exited. The authoritative app names, package names,
+Adapter-declared priority and scope behavior are maintained in the
+[controller-app catalog](docs/control-apps.md).
 
 ## Privacy and security
 
@@ -112,6 +134,18 @@ JDK 17 and Android SDK 36 are required:
 Without the four `HYPEREARS_KEY*`/`HYPEREARS_KEYSTORE*` environment variables, the Release APK is
 left unsigned. Tagged GitHub builds retrieve the durable release key from repository Secrets,
 verify the resulting APK and publish a matching SHA-256 file.
+
+CI also validates Markdown structure, local links, controller-catalog consistency, unit tests,
+Android Lint and the Release build.
+
+## Documentation
+
+- [Installation, upgrade and removal](docs/installation.md)
+- [Device compatibility and evidence levels](docs/compatibility.md)
+- [Vendor controller apps and LSPosed scopes](docs/control-apps.md)
+- [Troubleshooting and log collection](docs/troubleshooting.md)
+- [System-module architecture](docs/system-module-architecture.md)
+- [Release signing and artifact verification](docs/release-signing.md)
 
 ## Contributing and licensing
 

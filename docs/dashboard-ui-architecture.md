@@ -8,14 +8,16 @@
 
 ## 页面结构
 
-应用使用单 Activity 和 Compose Navigation。运行看板与“关于”是独立导航目的地；
-关于页不订阅运行状态，也不会触发蓝牙或 MiLink 操作。系统返回手势恢复原看板及其
-滚动和会话状态。
+应用使用单 Activity、Material 底部导航和 `HorizontalPager`。看板、设置、关于是固定
+页序，点击底部项目或左右滑动都会切换页面并同步选中状态；关于页不订阅运行状态，也不会
+触发蓝牙或 MiLink 操作。外层只负责底部导航和分页；每个页面独立拥有自己的 `Scaffold`、
+标题栏、列表状态和折叠滚动行为，页面之间不会共享标题栏展开偏移。设置页写入策略后立即
+由 libxposed `RemotePreferences` 通知已注入进程，不依赖页面切换、广播或轮询。
 
 - 顶部运行时卡片：Bluetooth 进程 Hook 回执、MiLink 各进程 Hook 回执，
   以及 MiLink 状态接收、身份查询和能力查询的实际会话数量。
 - 设备会话列表：每个活动地址独立一张统一卡片，不按品牌或型号选择页面布局。
-- 每设备卡片分为两组状态：
+- 每设备卡片展示以下信息：
   - Adapter 摘要：当前 Adapter 的显示名、稳定 ID、判定等级、耳机形态、电量来源、
     传输类别和已确认能力；这些值来自不可变快照，不由 Compose 查询 Adapter。
   - 耳机链路：A2DP 会话，以及具体型号需要时的 GATT、RFCOMM 或 BR/EDR L2CAP
@@ -23,6 +25,8 @@
     `TransportReadiness.CONNECTED` 的 Adapter 显示“连接即就绪”。身份级回退显示
     身份桥就绪且无需私有通道。
   - MiLink 处理：状态接收、身份查询、卡片能力查询和运行时状态通知。
+  - 控制权：模块控制或专有控制 App 运行中。后者表示私有协议已退避，不表示蓝牙断开。
+    控制 App 的包名和作用域语义见[控制 App 目录](control-apps.md)。
   - 遥测指标：TWS 显示左/右/盒，头戴设备显示整机；缺失字段显示 `—`，不复用旧值
     或伪造组件。模式能力未声明时明确显示“不支持”。
   卡片同时显示真实蓝牙名称和本机完整蓝牙地址。地址只在本地界面显示。
@@ -65,6 +69,10 @@ DashboardScreen             单一布局、无型号分支
 `EarbudState.lifecycle` 是唯一生命周期事实。界面分别投影系统音频、私有传输和协议
 确认三个正交阶段；`connected`、`privateChannelConnected`、`handshakeAccepted` 仅是
 兼容旧 IPC 的派生读取，不得反向参与状态推断。
+
+控制 App 退避阶段仍可显示系统蓝牙连接、设备流转和系统音量；私有模式按钮不由界面自行
+轮询恢复，而是由 Bluetooth 进程发布的标准集成投影统一决定。控制 App 进程退出后，新的
+生命周期快照会驱动卡片恢复私有能力。
 
 协议确认或产品身份细化后，设备会话会原子替换当前 Adapter，并发布一份完整的
 `AdapterSnapshot + AdapterRuntimeState + DeviceLifecycle`。Compose 不观察替换过程中的

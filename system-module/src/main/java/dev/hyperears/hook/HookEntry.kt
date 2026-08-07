@@ -1,12 +1,30 @@
 package dev.hyperears.hook
 
 import android.app.Application
+import dev.hyperears.bridge.ModuleRuntimeGate
+import dev.hyperears.integration.ControlAppCatalog
+import dev.hyperears.settings.ModuleSettingsRuntime
+import dev.hyperears.settings.ModuleSettingsStore
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
 
 class HookEntry : XposedModule() {
     override fun onPackageLoaded(param: PackageLoadedParam) {
         if (!param.isFirstPackage) return
+        ModuleLog.module = this
+        runCatching {
+            getRemotePreferences(ModuleSettingsStore.PREFERENCES_GROUP)
+        }.onSuccess { preferences ->
+            ModuleSettingsRuntime.bind(preferences)
+            ModuleSettingsRuntime.observe { settings ->
+                ModuleRuntimeGate.update(settings.modulePaused)
+            }
+        }
+        ModuleLog.debug(
+            "Entry",
+            "package loaded package=${param.packageName} " +
+                "classLoader=${param.defaultClassLoader.javaClass.name}",
+        )
 
         val hooks = when (param.packageName) {
             "com.android.bluetooth" -> listOf(BluetoothProcessHook())
@@ -16,15 +34,18 @@ class HookEntry : XposedModule() {
                 if (processName in MILINK_PROCESSES) {
                     listOf(MiLinkServiceHook())
                 } else {
+                    ModuleLog.debug("Entry", "ignored MiLink process=$processName")
                     emptyList()
                 }
             }
 
-            else -> emptyList()
+            else -> ControlAppCatalog.find(param.packageName)
+                ?.let { listOf(ControlAppProcessHook(it)) }
+                .orEmpty()
         }
+        ModuleLog.debug("Entry", "selected hooks=${hooks.map { it.javaClass.simpleName }} package=${param.packageName}")
 
         hooks.forEach { hook ->
-            ModuleLog.module = this
             hook.module = this
             hook.appClassLoader = param.defaultClassLoader
             hook.packageName = param.packageName

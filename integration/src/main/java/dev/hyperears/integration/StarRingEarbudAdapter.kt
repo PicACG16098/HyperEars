@@ -12,6 +12,7 @@ import java.util.UUID
 open class StarRingEarbudAdapter : StandardEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "StarRing headset"
+    override val controlApps: List<ControlAppSpec> = listOf(ControlAppCatalog.lightYear)
     override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.Channel(number = 28),
         RfcommEndpointSpec.Channel(number = 28, secure = false),

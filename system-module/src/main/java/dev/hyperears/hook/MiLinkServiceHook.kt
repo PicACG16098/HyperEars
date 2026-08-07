@@ -14,6 +14,7 @@ import android.provider.Settings
 import android.view.View
 import dev.hyperears.bridge.BridgeStage
 import dev.hyperears.bridge.ModuleContract
+import dev.hyperears.bridge.ModuleRuntimeGate
 import dev.hyperears.bridge.ProcessStateStore
 import dev.hyperears.integration.ControlRequest
 import dev.hyperears.integration.AdapterSnapshot
@@ -21,6 +22,9 @@ import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.MiLinkStateCodec
 import dev.hyperears.integration.NoiseMode
+import dev.hyperears.settings.ModuleSettings
+import dev.hyperears.settings.ModuleSettingsRuntime
+import java.io.Closeable
 import java.lang.reflect.Method
 import java.util.Collections
 import java.util.Locale
@@ -58,6 +62,11 @@ internal class MiLinkServiceHook : HookContext() {
     private var receiverRegistered = false
 
     @Volatile
+    private var settings = ModuleSettingsRuntime.current
+
+    private var settingsSubscription: Closeable? = null
+
+    @Volatile
     private var lastAncBatteryController: Any? = null
 
     @Volatile
@@ -67,6 +76,11 @@ internal class MiLinkServiceHook : HookContext() {
     private var headsetDetailExtension: MiLinkHeadsetDetailExtension? = null
 
     override fun install() {
+        settingsSubscription = ModuleSettingsRuntime.observe { updated ->
+            val wasPaused = settings.modulePaused
+            settings = updated
+            if (updated.modulePaused && !wasPaused) clearModuleState()
+        }
         hookApplicationContext()
         val runtimeClasses = listOf(
             "com.xiaomi.mxbluetoothsdk.manager.MxBluetoothManager",
@@ -137,6 +151,7 @@ internal class MiLinkServiceHook : HookContext() {
                     candidate.parameterTypes.firstOrNull() == headsetInfoClass
             }.apply { isAccessible = true }
             hookAfter(method) {
+                if (ModuleRuntimeGate.paused) return@hookAfter
                 val headsetInfo = args.firstOrNull() ?: return@hookAfter
                 val address = rawHeadsetAddress(headsetInfo) ?: return@hookAfter
                 val state = stateForAddress(address).takeIf(EarbudState::sessionActive)
@@ -183,6 +198,7 @@ internal class MiLinkServiceHook : HookContext() {
             hookAfter(
                 findHeadsetDetailBindMethod(),
             ) {
+                if (ModuleRuntimeGate.paused) return@hookAfter
                 val root = instance as? View ?: return@hookAfter
                 val serviceInfo = args.firstOrNull()
                 val publishedPresentationId = presentationIdFrom(serviceInfo)
@@ -245,24 +261,64 @@ internal class MiLinkServiceHook : HookContext() {
             }.apply { isAccessible = true }
 
             hookBefore(method) {
+                if (ModuleRuntimeGate.paused) return@hookBefore
                 val serviceInfo = args.singleOrNull() ?: return@hookBefore
                 val address = serviceInfoAddress(serviceInfo) ?: return@hookBefore
                 val isHyperEarsCard =
                     presentationIdFrom(serviceInfo) != null || isTargetAddress(address)
-                if (!isHyperEarsCard || !openBluetoothDeviceSettings(address)) {
+                if (!isHyperEarsCard || !openPreferredHeadsetSettings(address)) {
                     return@hookBefore
                 }
 
                 result = CompletableFuture.completedFuture(HEADSET_OPERATION_SUCCESS)
                 ModuleLog.debug(
                     "MiLink",
-                    "opened system Bluetooth details for ${maskBluetoothAddress(address)}",
+                    "opened headset settings for ${maskBluetoothAddress(address)}",
                 )
             }
             ModuleLog.debug("MiLink", "headset settings navigation installed")
         }.onFailure {
             ModuleLog.warn("MiLink", "headset settings navigation unavailable", it)
         }
+    }
+
+    private fun openPreferredHeadsetSettings(address: String): Boolean {
+        val state = stateForAddress(address)
+        if (settings.preferVendorControlApp && openControlApp(state)) return true
+        return openBluetoothDeviceSettings(address)
+    }
+
+    private fun openControlApp(state: EarbudState): Boolean {
+        val appContext = context ?: return false
+        val adapter = state.adapter ?: return false
+        val candidates = buildList {
+            state.lifecycle.externalControlApp?.let(::add)
+            adapter.controlApps.forEach { candidate ->
+                if (none { it.packageName == candidate.packageName }) add(candidate)
+            }
+        }
+        val launch = candidates.firstNotNullOfOrNull { controlApp ->
+            appContext.packageManager
+                .getLaunchIntentForPackage(controlApp.packageName)
+                ?.let { controlApp to it }
+        } ?: return false
+        val (controlApp, intent) = launch
+        return runCatching {
+            appContext.startActivity(
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            )
+        }.onSuccess {
+            ModuleLog.debug(
+                "MiLink",
+                "opened ${controlApp.packageName} for ${maskBluetoothAddress(state.address)}",
+            )
+        }.onFailure {
+            ModuleLog.warn(
+                "MiLink",
+                "unable to open ${controlApp.displayName}",
+                it,
+            )
+        }.isSuccess
     }
 
     private fun openBluetoothDeviceSettings(address: String): Boolean {
@@ -376,6 +432,7 @@ internal class MiLinkServiceHook : HookContext() {
                     Int::class.java,
                 ),
             ) {
+                if (ModuleRuntimeGate.paused) return@hookBefore
                 val device = args[0] as? BluetoothDevice
                 val mode = args[1] as? Int ?: return@hookBefore
                 val requestedMode = when (mode) {
@@ -459,6 +516,7 @@ internal class MiLinkServiceHook : HookContext() {
                     BluetoothDevice::class.java,
                 ),
             ) {
+                if (ModuleRuntimeGate.paused) return@hookBefore
                 val device = args[0] as? BluetoothDevice ?: return@hookBefore
                 if (adapterFor(device) == null) return@hookBefore
                 rememberRuntimeOwner(className, instance)
@@ -494,6 +552,7 @@ internal class MiLinkServiceHook : HookContext() {
     ) {
         runCatching {
             hookAfter(findMethod(className, methodName, BluetoothDevice::class.java)) {
+                if (ModuleRuntimeGate.paused) return@hookAfter
                 val device = args[0] as? BluetoothDevice ?: return@hookAfter
                 val adapter = adapterFor(device) ?: return@hookAfter
                 recordBridgeStage(device, methodName.bridgeStage())
@@ -515,6 +574,7 @@ internal class MiLinkServiceHook : HookContext() {
     ) {
         runCatching {
             hookAfter(findMethod(className, methodName, String::class.java)) {
+                if (ModuleRuntimeGate.paused) return@hookAfter
                 val address = args[0] as? String ?: return@hookAfter
                 if (!isTargetAddress(address)) return@hookAfter
                 recordBridgeStage(address, methodName.bridgeStage())
@@ -532,6 +592,7 @@ internal class MiLinkServiceHook : HookContext() {
     ) {
         runCatching {
             hookBefore(findMethod(className, methodName, BluetoothDevice::class.java)) {
+                if (ModuleRuntimeGate.paused) return@hookBefore
                 val device = args[0] as? BluetoothDevice
                 val adapter = adapterFor(device)
                     ?: return@hookBefore
@@ -576,6 +637,7 @@ internal class MiLinkServiceHook : HookContext() {
                         String::class.java,
                     ),
                 ) {
+                    if (ModuleRuntimeGate.paused) return@hookBefore
                     val address = args.firstOrNull() as? String ?: return@hookBefore
                     val adapter = adapterForAddress(address) ?: return@hookBefore
                     result = when {
@@ -616,6 +678,7 @@ internal class MiLinkServiceHook : HookContext() {
             return
         }
         hookAfter(method) {
+            if (ModuleRuntimeGate.paused) return@hookAfter
             val info = instance ?: return@hookAfter
             if (!isTargetHeadsetInfo(info)) return@hookAfter
             headsetAddress(info)?.let {
@@ -628,6 +691,7 @@ internal class MiLinkServiceHook : HookContext() {
     private fun registerStateReceiver(candidate: Context?) {
         if (candidate == null || receiverRegistered) return
         context = candidate.applicationContext ?: candidate
+        ModuleLog.debug("MiLink", "state receiver context attached")
         context?.registerReceiver(
             object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
@@ -655,7 +719,18 @@ internal class MiLinkServiceHook : HookContext() {
         ModuleLog.debug("MiLink", "state receiver registered")
     }
 
+    private fun clearModuleState() {
+        knownAddresses.clear()
+        targetHeadsetAddresses.clear()
+        synchronized(observationLock) {
+            sessionStages.clear()
+            pendingStages.clear()
+        }
+        ProcessStateStore.clear()
+    }
+
     private fun handleStateChanged(intent: Intent) {
+        if (ModuleRuntimeGate.paused) return
         val incoming = with(ModuleContract) { intent.readState() } ?: return
         val sessionToken = with(ModuleContract) { intent.readSessionToken() } ?: return
         val previous = incoming.address

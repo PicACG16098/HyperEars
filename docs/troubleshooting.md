@@ -3,7 +3,8 @@
 ## 卡片完全不出现
 
 1. 确认耳机在系统蓝牙中已连接并可播放声音；
-2. 确认 LSPosed 启用了 `com.android.bluetooth` 和 `com.milink.service`；
+2. 确认 LSPosed 启用了 `com.android.bluetooth` 和 `com.milink.service`；如果需要控制 App
+   退避，再按[控制 App 目录](control-apps.md#2-当前目录)确认对应作用域已启用；
 3. 确认安装版本满足 Android 15+ 与 LSPosed API 101；
 4. 重启整台设备，而不是只重启 HyperEars 应用；
 5. 打开运行看板，检查是否存在对应地址的设备会话。
@@ -38,6 +39,29 @@
 `BluetoothDeviceDetailsFragment`。若 ROM 更改了 Settings Intent 或 Fragment 参数，
 模块会尝试回退到蓝牙设置列表。提交问题时请附 Settings 崩溃堆栈和 ROM 完整版本。
 
+启用“打开厂商设置”后，模块只会打开当前 Adapter 在
+[控制 App 目录](control-apps.md#2-当前目录)中声明、已经安装且具有 Launcher Activity 的
+候选 App。没有可启动候选时仍进入真实蓝牙设备详情。App 页面跳转本身不依赖 LSPosed
+作用域；未勾选作用域只会导致该 App 无法登记进程状态、不能触发运行时退避。
+
+## 厂商控制 App 不退避或退出后不恢复
+
+依次确认：
+
+1. HyperEars 中“运行时退避”已经开启；
+2. LSPosed 为实际安装的包名启用了 HyperEars 作用域，而不是仅按桌面名称选择相似 App；
+3. 修改作用域后已彻底重启对应 App 进程；
+4. 看板是否显示“专有控制 App 运行中”；该状态表示 Binder 登记有效，不表示 App 已连接耳机；
+5. 退出时确认该 App 的所有进程已经结束。返回键、返回桌面或划走最近任务都不保证进程退出。
+
+需要立即释放控制权时，手动强制停止控制 App，或使用 HyperEars 设置页中需要 Root 的
+“停止厂商应用”。若控制 App 没有启用作用域，模块无法获得进程存活回执，也不会进入退避。
+完整条件和包名见[控制 App 作用域文档](control-apps.md)。
+
+如果不希望模块在厂商 App 运行时退避，可在 HyperEars“设置”中关闭“运行时退避”。
+这不会阻止厂商 App 自己连接耳机，只会让 HyperEars 继续维护自己的私有协议通道；同时连接
+两个控制端可能造成协议争用，只有在确有需要时才建议关闭。
+
 ## 流转超时
 
 先区分耳机协议通道与 MiLink 设备共享通道：HyperEars 的 GATT、RFCOMM/L2CAP 通道只
@@ -50,17 +74,37 @@
 
 ## 日志采集
 
-常用过滤：
+推荐使用 HyperEars“设置”中的“导出日志”：
+
+1. 在 HyperEars 中开启“详细日志”；
+2. 在 LSPosed 设置中关闭“禁用详细日志”；
+3. 在 LSPosed 设置中开启“输出日志到守护进程”；
+4. 保持“Xposed API 调用保护”开启，无需为 HyperEars 关闭；
+5. 重新启动需要观察的蓝牙、MiLink 或厂商控制 App 进程，并复现问题；
+6. 返回 HyperEars，选择“导出日志”，在系统文件选择器中保存文本文件。
+
+导出的文件包含两部分：
+
+- 蓝牙、MiLink 和已勾选厂商 App 注入进程通过 libxposed 写入的 HyperEars 模块日志；
+- HyperEars 应用自身此前记录的设置变更与 Root 快捷控制结果。
+
+注入日志由各目标进程产生，但统一写入 LSPosed 守护进程日志，不会写入目标应用的数据目录。
+导出文件头同时记录生成时间、HyperEars 版本、设备型号、Android 版本和日志开关状态。
+LSPosed 日志部分最多保留最新 2 MiB；应用日志保存在 HyperEars 私有目录，使用当前与上一份
+滚动文件，每份上限 256 KiB。日志开关关闭时，两条链路都不会新增诊断记录。应用内导出需要
+Root，用于读取并过滤 `/data/adb/lspd/log` 中的 HyperEars 模块条目；没有 Root 时可在
+LSPosed 管理器中手动导出模块日志。
+
+如需额外采集 Android 崩溃，可使用：
 
 ```powershell
-adb logcat -c
-adb logcat -v threadtime HyperEars*:V AndroidRuntime:E '*:S'
+adb logcat -v threadtime AndroidRuntime:E '*:S'
 ```
 
 若 PowerShell 对 `*` 展开有影响，可以使用：
 
 ```powershell
-adb logcat -v threadtime | Select-String 'HyperEars|AndroidRuntime|FATAL EXCEPTION'
+adb logcat -v threadtime | Select-String 'AndroidRuntime|FATAL EXCEPTION'
 ```
 
 提交前删除：
@@ -76,5 +120,6 @@ adb logcat -v threadtime | Select-String 'HyperEars|AndroidRuntime|FATAL EXCEPTI
 - 手机/平板型号、Android 和 HyperOS 完整版本；
 - LSPosed 与 MiLink 版本；
 - 耳机零售名称；
+- 涉及厂商控制 App 时，提供应用显示名和 Android 包名；
 - 最短复现步骤、预期结果、实际结果；
 - 已脱敏日志和截图。

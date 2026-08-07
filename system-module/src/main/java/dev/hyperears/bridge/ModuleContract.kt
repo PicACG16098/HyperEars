@@ -1,11 +1,16 @@
 package dev.hyperears.bridge
 
+import android.app.BroadcastOptions
 import android.content.Intent
+import android.os.Bundle
+import android.os.IBinder
 import dev.hyperears.integration.AdapterResolution
 import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.BatteryReading
 import dev.hyperears.integration.BatterySource
 import dev.hyperears.integration.ControlRequest
+import dev.hyperears.integration.ControlAppSpec
+import dev.hyperears.integration.ControlOwnership
 import dev.hyperears.integration.EarbudCapabilities
 import dev.hyperears.integration.EarbudBattery
 import dev.hyperears.integration.EarbudState
@@ -27,6 +32,10 @@ object ModuleContract {
         "dev.hyperears.action.BRIDGE_STATE_OBSERVED"
     const val ACTION_BRIDGE_RUNTIME_OBSERVED =
         "dev.hyperears.action.BRIDGE_RUNTIME_OBSERVED"
+    const val ACTION_CONTROL_APP_REGISTER =
+        "dev.hyperears.action.CONTROL_APP_REGISTER"
+    const val ACTION_CONTROL_APP_QUERY =
+        "dev.hyperears.action.CONTROL_APP_QUERY"
 
     const val MODULE_PACKAGE = "dev.hyperears"
     const val BLUETOOTH_PACKAGE = "com.android.bluetooth"
@@ -45,6 +54,8 @@ object ModuleContract {
     private const val EXTRA_ADAPTER_NOISE_MODES = "adapter_noise_modes"
     private const val EXTRA_ADAPTER_TRANSPORT_KINDS = "adapter_transport_kinds"
     private const val EXTRA_ADAPTER_ANC_COOLDOWN = "adapter_anc_cooldown"
+    private const val EXTRA_ADAPTER_CONTROL_APP_PACKAGES = "adapter_control_app_packages"
+    private const val EXTRA_ADAPTER_CONTROL_APP_NAMES = "adapter_control_app_names"
     private const val EXTRA_CAP_BATTERY = "cap_battery"
     private const val EXTRA_CAP_NOISE = "cap_noise"
     private const val EXTRA_CAP_WIND = "cap_wind"
@@ -62,9 +73,15 @@ object ModuleContract {
     private const val EXTRA_SYSTEM_PROFILE_STATE = "system_profile_state"
     private const val EXTRA_PRIVATE_TRANSPORT_STATE = "private_transport_state"
     private const val EXTRA_PROTOCOL_HANDSHAKE_STATE = "protocol_handshake_state"
+    private const val EXTRA_CONTROL_OWNERSHIP = "control_ownership"
+    private const val EXTRA_EXTERNAL_CONTROL_APP_PACKAGE = "external_control_app_package"
+    private const val EXTRA_EXTERNAL_CONTROL_APP_NAME = "external_control_app_name"
     private const val EXTRA_REVISION = "revision"
     private const val EXTRA_CONSUMER_PROCESS = "consumer_process"
     private const val EXTRA_BRIDGE_STAGE = "bridge_stage"
+    private const val EXTRA_CONTROL_APP_PACKAGE = "control_app_package"
+    private const val EXTRA_CONTROL_APP_PROCESS = "control_app_process"
+    private const val EXTRA_CONTROL_APP_TOKEN = "control_app_token"
     private const val EXTRA_LEFT = "left_battery"
     private const val EXTRA_LEFT_CHARGING = "left_charging"
     private const val EXTRA_RIGHT = "right_battery"
@@ -167,6 +184,69 @@ object ModuleContract {
         )
     }
 
+    fun controlAppRegistration(
+        packageName: String,
+        processName: String,
+        token: IBinder,
+    ): Intent = Intent(ACTION_CONTROL_APP_REGISTER)
+        .setPackage(BLUETOOTH_PACKAGE)
+        .putExtra(EXTRA_CONTROL_APP_PACKAGE, packageName)
+        .putExtra(EXTRA_CONTROL_APP_PROCESS, processName)
+        // Intent.getExtras() returns a defensive copy on current Android releases. Build a
+        // separate Bundle and merge it through putExtras so the Binder is written to the Intent.
+        .putExtras(Bundle().apply { putBinder(EXTRA_CONTROL_APP_TOKEN, token) })
+
+    /**
+     * Broadcast delivery options for a controller-process registration.
+     *
+     * Android does not expose a broadcast sender's package or UID to the receiver by default.
+     * Presence registration is an ownership boundary, so the hooked controller process opts in
+     * to sharing its system-authenticated identity instead of relying on self-declared extras.
+     */
+    fun controlAppRegistrationOptions(): Bundle = BroadcastOptions.makeBasic()
+        .setShareIdentityEnabled(true)
+        .toBundle()
+
+    fun controlAppQuery(packageName: String): Intent =
+        Intent(ACTION_CONTROL_APP_QUERY)
+            .setPackage(packageName)
+            .addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+
+    data class ControlAppRegistration(
+        val packageName: String,
+        val processName: String,
+        val token: IBinder,
+    )
+
+    fun Intent.readControlAppRegistration(): ControlAppRegistration? {
+        if (action != ACTION_CONTROL_APP_REGISTER) return null
+        val packageName = getStringExtra(EXTRA_CONTROL_APP_PACKAGE)
+            ?.takeIf(String::isNotBlank)
+            ?: return null
+        val processName = getStringExtra(EXTRA_CONTROL_APP_PROCESS)
+            ?.takeIf(String::isNotBlank)
+            ?: return null
+        val token = extras?.getBinder(EXTRA_CONTROL_APP_TOKEN) ?: return null
+        return ControlAppRegistration(packageName, processName, token)
+    }
+
+    /**
+     * Returns only the transport fields needed to diagnose a malformed registration. The Binder
+     * itself is deliberately never stringified or persisted.
+     */
+    data class ControlAppRegistrationFields(
+        val packageName: String?,
+        val processName: String?,
+        val tokenPresent: Boolean,
+    )
+
+    fun Intent.controlAppRegistrationFields(): ControlAppRegistrationFields =
+        ControlAppRegistrationFields(
+            packageName = getStringExtra(EXTRA_CONTROL_APP_PACKAGE),
+            processName = getStringExtra(EXTRA_CONTROL_APP_PROCESS),
+            tokenPresent = extras?.getBinder(EXTRA_CONTROL_APP_TOKEN) != null,
+        )
+
     fun Intent.readBridgeRuntimeReceipt(): BridgeRuntimeReceipt? {
         if (action != ACTION_BRIDGE_RUNTIME_OBSERVED) return null
         val consumerProcess = getStringExtra(EXTRA_CONSUMER_PROCESS)
@@ -196,6 +276,14 @@ object ModuleContract {
             putExtra(EXTRA_ADAPTER_NOISE_MODES, adapter.supportedNoiseModes.map(NoiseMode::name).toTypedArray())
             putExtra(EXTRA_ADAPTER_TRANSPORT_KINDS, adapter.transportKinds.map(TransportKind::name).toTypedArray())
             putExtra(EXTRA_ADAPTER_ANC_COOLDOWN, adapter.ancSwitchCooldownMs)
+            putExtra(
+                EXTRA_ADAPTER_CONTROL_APP_PACKAGES,
+                adapter.controlApps.map(ControlAppSpec::packageName).toTypedArray(),
+            )
+            putExtra(
+                EXTRA_ADAPTER_CONTROL_APP_NAMES,
+                adapter.controlApps.map(ControlAppSpec::displayName).toTypedArray(),
+            )
             putExtra(EXTRA_CAP_BATTERY, adapter.capabilities.battery)
             putExtra(EXTRA_CAP_NOISE, adapter.capabilities.noiseControl)
             putExtra(EXTRA_CAP_WIND, adapter.capabilities.windNoiseControl)
@@ -214,6 +302,15 @@ object ModuleContract {
         putExtra(EXTRA_SYSTEM_PROFILE_STATE, state.lifecycle.systemProfile.name)
         putExtra(EXTRA_PRIVATE_TRANSPORT_STATE, state.lifecycle.privateTransport.name)
         putExtra(EXTRA_PROTOCOL_HANDSHAKE_STATE, state.lifecycle.protocolHandshake.name)
+        putExtra(EXTRA_CONTROL_OWNERSHIP, state.lifecycle.controlOwnership.name)
+        putExtra(
+            EXTRA_EXTERNAL_CONTROL_APP_PACKAGE,
+            state.lifecycle.externalControlApp?.packageName,
+        )
+        putExtra(
+            EXTRA_EXTERNAL_CONTROL_APP_NAME,
+            state.lifecycle.externalControlApp?.displayName,
+        )
         putExtra(EXTRA_REVISION, state.revision)
         putExtra(EXTRA_NOISE_MODE, state.noiseMode?.name)
         putExtra(EXTRA_LEFT, state.battery.left.percent ?: -1)
@@ -252,8 +349,33 @@ object ModuleContract {
             ?.let { runCatching { PrivateTransportState.valueOf(it) }.getOrNull() }
         val handshake = getStringExtra(EXTRA_PROTOCOL_HANDSHAKE_STATE)
             ?.let { runCatching { ProtocolHandshakeState.valueOf(it) }.getOrNull() }
+        val decodedOwnership = getStringExtra(EXTRA_CONTROL_OWNERSHIP)
+            ?.let { runCatching { ControlOwnership.valueOf(it) }.getOrNull() }
+            ?: ControlOwnership.MODULE
+        val externalControlApp = if (decodedOwnership == ControlOwnership.EXTERNAL_APP) {
+            val packageName = getStringExtra(EXTRA_EXTERNAL_CONTROL_APP_PACKAGE)
+            val displayName = getStringExtra(EXTRA_EXTERNAL_CONTROL_APP_NAME)
+            if (!packageName.isNullOrBlank() && !displayName.isNullOrBlank()) {
+                ControlAppSpec(packageName, displayName)
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+        val ownership = if (externalControlApp == null) {
+            ControlOwnership.MODULE
+        } else {
+            ControlOwnership.EXTERNAL_APP
+        }
         if (system != null && transport != null && handshake != null) {
-            return DeviceLifecycle(system, transport, handshake)
+            return DeviceLifecycle(
+                systemProfile = system,
+                privateTransport = transport,
+                protocolHandshake = handshake,
+                controlOwnership = ownership,
+                externalControlApp = externalControlApp,
+            )
         }
 
         // Backward-compatible decode for a state broadcast from an older module process.
@@ -298,6 +420,18 @@ object ModuleContract {
         val transportKinds = getStringArrayExtra(EXTRA_ADAPTER_TRANSPORT_KINDS)
             .orEmpty()
             .mapNotNullTo(linkedSetOf()) { runCatching { TransportKind.valueOf(it) }.getOrNull() }
+        val controlAppPackages = getStringArrayExtra(EXTRA_ADAPTER_CONTROL_APP_PACKAGES).orEmpty()
+        val controlAppNames = getStringArrayExtra(EXTRA_ADAPTER_CONTROL_APP_NAMES).orEmpty()
+        val controlApps = controlAppPackages.mapIndexedNotNull { index, packageName ->
+            packageName.takeIf(String::isNotBlank)?.let {
+                ControlAppSpec(
+                    packageName = it,
+                    displayName = controlAppNames.getOrNull(index)
+                        ?.takeIf(String::isNotBlank)
+                        ?: it,
+                )
+            }
+        }
         return AdapterSnapshot(
             id = id,
             displayName = displayName,
@@ -320,6 +454,7 @@ object ModuleContract {
                 ?.let(::MiLinkCardPresentationId),
             transportKinds = transportKinds,
             ancSwitchCooldownMs = getLongExtra(EXTRA_ADAPTER_ANC_COOLDOWN, 0L),
+            controlApps = controlApps,
         )
     }
 

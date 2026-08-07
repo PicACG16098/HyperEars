@@ -13,6 +13,11 @@ import dev.hyperears.protocol.oppo.OppoWireCodec
 open class OppoEarbudAdapter : StandardEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "OPPO Enco headset"
+    override val controlApps: List<ControlAppSpec> = listOf(
+        ControlAppCatalog.heyMelody,
+        ControlAppCatalog.oplusWirelessEarphones,
+        ControlAppCatalog.colorOsWirelessEarphones,
+    )
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE

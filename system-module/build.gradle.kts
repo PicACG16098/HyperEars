@@ -22,8 +22,8 @@ android {
         applicationId = "dev.hyperears"
         minSdk = 35
         targetSdk = 36
-        versionCode = 120
-        versionName = "1.2.0"
+        versionCode = 130
+        versionName = "1.3.0"
     }
 
     signingConfigs {
@@ -71,6 +71,7 @@ android {
     }
 
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    packaging.resources.excludes += "/DebugProbesKt.bin"
 
     lint {
         // Android 16 is the deliberate deployment target for the current HyperOS device.
@@ -87,12 +88,11 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
     implementation(libs.kotlinx.coroutines.android)
     compileOnly(libs.libxposed.api)
+    implementation(libs.libxposed.service)
 
-    debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
 }

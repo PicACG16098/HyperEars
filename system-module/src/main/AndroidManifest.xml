@@ -4,9 +4,21 @@
     <queries>
         <package android:name="com.android.bluetooth" />
         <package android:name="com.milink.service" />
+        <package android:name="com.vivo.vivotws" />
+        <package android:name="com.heytap.headset" />
+        <package android:name="com.oplus.melody" />
+        <package android:name="com.coloros.oppopods" />
+        <package android:name="com.bose.bosemusic" />
+        <package android:name="com.bose.monet" />
+        <package android:name="com.edifier.edifierconnect" />
+        <package android:name="cn.ikaile.ruoshui.client" />
+        <package android:name="cn.lightyeartech.android" />
+        <package android:name="com.yuandao.nicehck" />
+        <package android:name="com.sony.songpal.mdr" />
     </queries>
 
     <application
+        android:name=".HyperEarsApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"

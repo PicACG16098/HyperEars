@@ -3,42 +3,37 @@ package dev.hyperears.ui.dashboard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import dev.hyperears.R
+import dev.hyperears.ui.components.HyperEarsPage
 import java.text.DateFormat
 import java.util.Date
 
@@ -47,90 +42,42 @@ import java.util.Date
 fun DashboardScreen(
     uiState: DashboardUiState,
     onRefresh: () -> Unit,
-    onOpenAbout: () -> Unit,
 ) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "HyperEars",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
-                actions = {
-                    TextButton(onClick = onRefresh) {
-                        Text("同步")
-                    }
-                    IconButton(onClick = onOpenAbout) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_info_outline),
-                            contentDescription = "关于",
-                        )
-                    }
-                },
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.surface,
-    ) { scaffoldPadding ->
-        BoxWithConstraints(
+    HyperEarsPage(title = "HyperEars") { pagePadding, scrollBehavior ->
+        val listState = rememberLazyListState()
+        LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(scaffoldPadding),
+                .padding(pagePadding)
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 12.dp,
+                bottom = 32.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            val wideLayout = maxWidth >= 720.dp
-            val horizontalPadding = if (wideLayout) 32.dp else 16.dp
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(
-                        PaddingValues(
-                            start = horizontalPadding,
-                            end = horizontalPadding,
-                            top = 12.dp,
-                            bottom = 32.dp,
-                        ),
-                    ),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .widthIn(max = 1120.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    RuntimeCard(uiState)
-                    SectionHeader(
-                        title = "设备会话",
-                        count = uiState.sessions.size,
-                    )
-                    if (uiState.deviceCards.isEmpty()) {
-                        EmptySessionsCard()
-                    } else if (wideLayout) {
-                        uiState.deviceCards.chunked(2).forEach { rowSessions ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.Top,
-                            ) {
-                                rowSessions.forEach { session ->
-                                    DeviceSessionCard(
-                                        session = session,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-                                if (rowSessions.size == 1) {
-                                    Spacer(Modifier.weight(1f))
-                                }
-                            }
-                        }
-                    } else {
-                        uiState.deviceCards.forEach { session ->
-                            DeviceSessionCard(session)
-                        }
-                    }
+            item(key = "runtime") {
+                RuntimeCard(uiState, onRefresh)
+            }
+            item(key = "session-header") {
+                SectionHeader(
+                    title = "设备会话",
+                    count = uiState.sessions.size,
+                )
+            }
+            if (uiState.deviceCards.isEmpty()) {
+                item(key = "empty-sessions") {
+                    EmptySessionsCard()
+                }
+            } else {
+                items(
+                    items = uiState.deviceCards,
+                    key = { session -> "${session.address}:${session.adapterId}" },
+                ) { session ->
+                    DeviceSessionCard(session)
                 }
             }
         }
@@ -138,7 +85,10 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun RuntimeCard(uiState: DashboardUiState) {
+private fun RuntimeCard(
+    uiState: DashboardUiState,
+    onRefresh: () -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -147,6 +97,15 @@ private fun RuntimeCard(uiState: DashboardUiState) {
         ),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "运行状态",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                TextButton(onClick = onRefresh) { Text("同步") }
+            }
             RuntimeProcessRow(
                 label = "蓝牙进程 Hook",
                 status = if (uiState.runtimeResponsive) {
@@ -343,11 +302,11 @@ private fun DeviceSessionCard(
             AdapterFacts(session)
 
             Text(
-                text = "耳机链路",
+                text = "会话状态",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            EarbudLinkStrip(session.headsetLifecycle)
+            SessionStatusList(session.headsetLifecycle)
 
             Text(
                 text = "MiLink 处理",
@@ -388,15 +347,18 @@ private fun AdapterFacts(session: DeviceSessionUiModel) {
 }
 
 @Composable
-private fun EarbudLinkStrip(
+private fun SessionStatusList(
     stages: List<DeviceLinkStage>,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        stages.forEach { stage ->
-            LinkState(stage, Modifier.weight(1f))
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        stages.forEachIndexed { index, stage ->
+            SessionStatusRow(stage)
+            if (index != stages.lastIndex) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 20.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+            }
         }
     }
 }
@@ -414,47 +376,35 @@ private fun MetricStrip(metrics: List<DeviceMetric>) {
 }
 
 @Composable
-private fun LinkState(
+private fun SessionStatusRow(
     stage: DeviceLinkStage,
-    modifier: Modifier = Modifier,
 ) {
-    val color = if (stage.complete) {
-        MaterialTheme.colorScheme.primary
-    } else if (stage.active) {
-        MaterialTheme.colorScheme.tertiary
-    } else {
-        MaterialTheme.colorScheme.outline
+    val color = when (stage.status) {
+        DeviceLinkStatus.READY -> MaterialTheme.colorScheme.primary
+        DeviceLinkStatus.ACTIVE -> MaterialTheme.colorScheme.tertiary
+        DeviceLinkStatus.INACTIVE -> MaterialTheme.colorScheme.outline
+        DeviceLinkStatus.ERROR -> MaterialTheme.colorScheme.error
     }
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = if (stage.complete || stage.active) {
-            color.copy(alpha = 0.12f)
-        } else {
-            MaterialTheme.colorScheme.surfaceContainer
-        },
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            StatusDot(color)
-            Column {
-                Text(
-                    text = stage.label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = color,
-                    maxLines = 1,
-                )
-                Text(
-                    text = stage.value,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
-        }
+        StatusDot(color)
+        Text(
+            text = stage.label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = stage.value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = color,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -544,7 +494,9 @@ private fun PhasePill(phase: DevicePhase) {
         DevicePhase.TRANSPORT_RECOVERING,
         DevicePhase.PROTOCOL_CONFIRMING,
         -> MaterialTheme.colorScheme.secondary
-        DevicePhase.WAITING_FOR_MILINK -> MaterialTheme.colorScheme.tertiary
+        DevicePhase.WAITING_FOR_MILINK,
+        DevicePhase.EXTERNAL_CONTROL_APP,
+        -> MaterialTheme.colorScheme.tertiary
         DevicePhase.STATE_ACCEPTED,
         DevicePhase.IDENTITY_QUERIED,
         DevicePhase.CAPABILITIES_QUERIED,

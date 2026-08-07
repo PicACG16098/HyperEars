@@ -8,6 +8,9 @@ import android.os.SystemClock
 import dev.hyperears.hook.ModuleLog
 import dev.hyperears.hook.maskBluetoothAddress
 import dev.hyperears.integration.ControlRequest
+import dev.hyperears.integration.ControlAppSpec
+import dev.hyperears.integration.ControlAppCatalog
+import dev.hyperears.integration.ControlOwnership
 import dev.hyperears.integration.BatterySource
 import dev.hyperears.integration.AdapterActivation
 import dev.hyperears.integration.AdapterIoResult
@@ -21,6 +24,7 @@ import dev.hyperears.integration.ProtocolEvent
 import dev.hyperears.integration.ProtocolHandshakeState
 import dev.hyperears.integration.SystemProfileState
 import dev.hyperears.integration.TransportReadiness
+import dev.hyperears.integration.standardIntegrationProjection
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -56,6 +60,8 @@ internal class EarbudDeviceSession(
     private val connectionCoordinator: ConnectionAttemptCoordinator,
     private val listener: Listener,
     private val channelFactory: EarbudChannelFactory = AndroidEarbudChannelFactory,
+    initialActiveControlApps: Set<String> = emptySet(),
+    initialExternalControlEnabled: Boolean = true,
 ) : Closeable {
     fun interface Listener {
         fun onSnapshotChanged(session: EarbudDeviceSession, snapshot: Snapshot)
@@ -86,36 +92,119 @@ internal class EarbudDeviceSession(
         private set
 
     @Volatile
+    private var activeControlAppPackages: Set<String> = initialActiveControlApps.toSet()
+
+    @Volatile
+    private var externalControlEnabled = initialExternalControlEnabled
+
+    @Volatile
+    private var externalControlApp: ControlAppSpec? =
+        ControlAppCatalog.activeOwner(initialAdapter.controlApps, activeControlAppPackages)
+            ?.takeIf { initialExternalControlEnabled }
+
+    @Volatile
+    private var systemBatteryPercent: Int? = null
+
+    @Volatile
     private var lifecycle = DeviceLifecycle(
         systemProfile = SystemProfileState.CONNECTED,
-        privateTransport = if (initialAdapter.privateProtocolRequired) {
+        privateTransport = if (externalControlApp != null) {
+            PrivateTransportState.NOT_REQUIRED
+        } else if (initialAdapter.privateProtocolRequired) {
             PrivateTransportState.IDLE
         } else {
             PrivateTransportState.NOT_REQUIRED
         },
-        protocolHandshake = initialAdapter.initialHandshakeState(),
+        protocolHandshake = if (externalControlApp != null) {
+            ProtocolHandshakeState.NOT_REQUIRED
+        } else {
+            initialAdapter.initialHandshakeState()
+        },
+        controlOwnership = if (externalControlApp != null) {
+            ControlOwnership.EXTERNAL_APP
+        } else {
+            ControlOwnership.MODULE
+        },
+        externalControlApp = externalControlApp,
     )
 
-    fun snapshot(): Snapshot = Snapshot(
-        adapter = adapter.snapshot(),
-        runtime = adapter.runtimeState(),
-        lifecycle = lifecycle,
-    )
+    fun snapshot(): Snapshot {
+        val currentAdapter = adapter
+        val owner = externalControlApp
+        return Snapshot(
+            adapter = if (owner == null) {
+                currentAdapter.snapshot()
+            } else {
+                currentAdapter.snapshot().standardIntegrationProjection()
+            },
+            runtime = if (owner == null) {
+                currentAdapter.runtimeState()
+            } else {
+                AdapterRuntimeState(
+                    battery = dev.hyperears.integration.EarbudBattery
+                        .fromSystemAggregate(systemBatteryPercent),
+                    noiseMode = null,
+                )
+            },
+            lifecycle = lifecycle,
+        )
+    }
 
     fun start() {
-        if (adapter.privateProtocolRequired) {
+        publishCachedSystemBattery()
+        if (externalControlApp != null) {
+            publishSnapshot()
+        } else if (adapter.privateProtocolRequired) {
             requestConnection()
         } else {
             publishSnapshot()
         }
-        publishCachedSystemBattery()
     }
 
     fun onSystemBatteryChanged(percent: Int?) {
-        if (closed.get() || adapter.effectiveBatterySource() != BatterySource.SYSTEM_AGGREGATE) {
+        if (closed.get()) return
+        val normalized = percent?.takeIf { it in 0..100 }
+        val aggregateChanged = systemBatteryPercent != normalized
+        systemBatteryPercent = normalized
+        if (externalControlApp != null) {
+            if (aggregateChanged) publishSnapshot()
             return
         }
+        if (adapter.effectiveBatterySource() != BatterySource.SYSTEM_AGGREGATE) return
         if (adapter.onSystemBatteryChanged(percent)) publishSnapshot()
+    }
+
+    /** Applies one process-wide control-app presence snapshot to this device session. */
+    fun updateControlAppPresence(activePackages: Set<String>) {
+        if (closed.get()) return
+        activeControlAppPackages = activePackages.toSet()
+        ModuleLog.debug(
+            COMPONENT,
+            "controller presence address=${maskBluetoothAddress(address)} active=$activeControlAppPackages " +
+                "candidates=${adapter.controlApps.map(ControlAppSpec::packageName)}",
+        )
+        reconcileExternalControlOwner()
+    }
+
+    fun updateExternalControlEnabled(enabled: Boolean) {
+        if (closed.get() || externalControlEnabled == enabled) return
+        externalControlEnabled = enabled
+        reconcileExternalControlOwner()
+    }
+
+    private fun reconcileExternalControlOwner() {
+        val nextOwner = if (externalControlEnabled) {
+            ControlAppCatalog.activeOwner(adapter.controlApps, activeControlAppPackages)
+        } else {
+            null
+        }
+        val previousOwner = externalControlApp
+        if (nextOwner == previousOwner) return
+        if (nextOwner != null) {
+            yieldToControlApp(nextOwner)
+        } else {
+            resumeModuleControl(previousOwner)
+        }
     }
 
     /**
@@ -125,8 +214,18 @@ internal class EarbudDeviceSession(
      * requests never create concurrent socket attempts for the same device.
      */
     fun requestConnection(): Boolean {
-        if (closed.get()) return false
-        if (!adapter.privateProtocolRequired) return true
+        if (closed.get()) {
+            ModuleLog.debug(COMPONENT, "ignored connection request; session closed")
+            return false
+        }
+        if (externalControlApp != null) {
+            ModuleLog.debug(COMPONENT, "ignored connection request; external owner=${externalControlApp?.packageName}")
+            return true
+        }
+        if (!adapter.privateProtocolRequired) {
+            ModuleLog.debug(COMPONENT, "ignored connection request; adapter=${adapter.id} uses no private protocol")
+            return true
+        }
         var createdNewJob = false
         val job = synchronized(connectionJobLock) {
             if (closed.get()) return false
@@ -144,6 +243,7 @@ internal class EarbudDeviceSession(
             }
         }
         if (createdNewJob) {
+            ModuleLog.debug(COMPONENT, "connection cycle requested address=${maskBluetoothAddress(address)} adapter=${adapter.id}")
             updateLifecycle(
                 privateTransport = PrivateTransportState.CONNECTING,
                 protocolHandshake = adapter.initialHandshakeState(),
@@ -155,6 +255,10 @@ internal class EarbudDeviceSession(
 
     fun execute(request: ControlRequest): Boolean {
         if (closed.get()) return false
+        if (externalControlApp != null) {
+            if (request === ControlRequest.Refresh) publishSnapshot()
+            return request === ControlRequest.Refresh
+        }
         if (!adapter.privateProtocolRequired) {
             return request === ControlRequest.Refresh
         }
@@ -229,6 +333,8 @@ internal class EarbudDeviceSession(
             } else {
                 ProtocolHandshakeState.NOT_REQUIRED
             },
+            controlOwnership = ControlOwnership.MODULE,
+            externalControlApp = null,
         )
         ModuleLog.debug(COMPONENT, "closed ${maskBluetoothAddress(address)}")
     }
@@ -238,7 +344,11 @@ internal class EarbudDeviceSession(
         var consecutiveFailures = 0
         cancelDiscoveryOnce()
 
-        while (currentCoroutineContext().isActive && !closed.get()) {
+        while (
+            currentCoroutineContext().isActive &&
+            !closed.get() &&
+            externalControlApp == null
+        ) {
             var connectedAt = 0L
             try {
                 val connectedTransport = connectFirstTransport()
@@ -269,7 +379,11 @@ internal class EarbudDeviceSession(
                 throw cancelled
             } catch (error: Throwable) {
                 clearTransport()
-                if (closed.get() || !currentCoroutineContext().isActive) return
+                if (
+                    closed.get() ||
+                    externalControlApp != null ||
+                    !currentCoroutineContext().isActive
+                ) return
                 val stableConnection =
                     connectedAt != 0L &&
                         SystemClock.elapsedRealtime() - connectedAt >= STABLE_CONNECTION_MS
@@ -282,7 +396,8 @@ internal class EarbudDeviceSession(
                     )
                     ModuleLog.warn(
                         COMPONENT,
-                        "channel dormant after bounded recovery: ${error.message}",
+                        "channel dormant after bounded recovery failures=$consecutiveFailures " +
+                            "error=${error.javaClass.simpleName}:${error.message}",
                     )
                     return
                 }
@@ -293,7 +408,8 @@ internal class EarbudDeviceSession(
                 )
                 ModuleLog.warn(
                     COMPONENT,
-                    "channel unavailable; retry in ${waitMs}ms: ${error.message}",
+                    "channel unavailable failures=$consecutiveFailures retryIn=${waitMs}ms " +
+                        "error=${error.javaClass.simpleName}:${error.message}",
                 )
                 delay(waitMs)
             }
@@ -311,8 +427,13 @@ internal class EarbudDeviceSession(
     }
 
     private fun publishCachedSystemBattery() {
-        if (adapter.effectiveBatterySource() != BatterySource.SYSTEM_AGGREGATE) return
-        onSystemBatteryChanged(BluetoothSystemBattery.cachedLevel(device))
+        val percent = BluetoothSystemBattery.cachedLevel(device)
+        systemBatteryPercent = percent?.takeIf { it in 0..100 }
+        if (externalControlApp == null &&
+            adapter.effectiveBatterySource() == BatterySource.SYSTEM_AGGREGATE
+        ) {
+            adapter.onSystemBatteryChanged(percent)
+        }
     }
 
     private suspend fun connectFirstTransport(): ConnectedTransport {
@@ -325,6 +446,9 @@ internal class EarbudDeviceSession(
         var lastError: Throwable? = null
         adapter.transports.forEach { transport ->
             currentCoroutineContext().ensureActive()
+            if (externalControlApp != null) {
+                throw CancellationException("vendor control owned by external app")
+            }
             val candidate = channelFactory.create(context, device, transport)
             adapter.resetProtocolSession()
             synchronized(transportLock) { channel = candidate }
@@ -477,22 +601,46 @@ internal class EarbudDeviceSession(
     ) {
         if (channel !== activeChannel) throw CancellationException("stale adapter replacement")
         adapter = replacement.adapter
+        ControlAppCatalog.activeOwner(adapter.controlApps, activeControlAppPackages)
+            ?.takeIf { externalControlEnabled }
+            ?.let { owner ->
+                yieldToControlApp(owner)
+                throw CancellationException("replacement adapter yielded to external app")
+            }
     }
 
     private fun updateLifecycle(
         systemProfile: SystemProfileState = lifecycle.systemProfile,
         privateTransport: PrivateTransportState = lifecycle.privateTransport,
         protocolHandshake: ProtocolHandshakeState = lifecycle.protocolHandshake,
+        controlOwnership: ControlOwnership = lifecycle.controlOwnership,
+        externalControlApp: ControlAppSpec? = lifecycle.externalControlApp,
     ) {
-        if (setLifecycle(systemProfile, privateTransport, protocolHandshake)) publishSnapshot()
+        if (
+            setLifecycle(
+                systemProfile,
+                privateTransport,
+                protocolHandshake,
+                controlOwnership,
+                externalControlApp,
+            )
+        ) publishSnapshot()
     }
 
     private fun setLifecycle(
         systemProfile: SystemProfileState = lifecycle.systemProfile,
         privateTransport: PrivateTransportState = lifecycle.privateTransport,
         protocolHandshake: ProtocolHandshakeState = lifecycle.protocolHandshake,
+        controlOwnership: ControlOwnership = lifecycle.controlOwnership,
+        externalControlApp: ControlAppSpec? = lifecycle.externalControlApp,
     ): Boolean {
-        val next = DeviceLifecycle(systemProfile, privateTransport, protocolHandshake)
+        val next = DeviceLifecycle(
+            systemProfile = systemProfile,
+            privateTransport = privateTransport,
+            protocolHandshake = protocolHandshake,
+            controlOwnership = controlOwnership,
+            externalControlApp = externalControlApp,
+        )
         if (next == lifecycle) return false
         lifecycle = next
         return true
@@ -513,6 +661,9 @@ internal class EarbudDeviceSession(
             if (closed.get() || channel !== activeChannel) {
                 throw CancellationException("stale vendor-channel writer")
             }
+            if (externalControlApp != null) {
+                throw CancellationException("vendor control owned by external app")
+            }
             activeChannel.write(command)
             ModuleLog.debug(
                 COMPONENT,
@@ -530,6 +681,52 @@ internal class EarbudDeviceSession(
             }
         }
         oldChannel?.close()
+    }
+
+    private fun yieldToControlApp(owner: ControlAppSpec) {
+        if (closed.get()) return
+        externalControlApp = owner
+        synchronized(connectionJobLock) {
+            connectionJob.also { connectionJob = null }
+        }?.cancel(CancellationException("vendor control yielded to ${owner.packageName}"))
+        clearTransport()
+        updateLifecycle(
+            privateTransport = PrivateTransportState.NOT_REQUIRED,
+            protocolHandshake = ProtocolHandshakeState.NOT_REQUIRED,
+            controlOwnership = ControlOwnership.EXTERNAL_APP,
+            externalControlApp = owner,
+        )
+        ModuleLog.debug(
+            COMPONENT,
+            "yielded vendor control to ${owner.packageName} " +
+                "address=${maskBluetoothAddress(address)}",
+        )
+    }
+
+    private fun resumeModuleControl(previousOwner: ControlAppSpec?) {
+        if (closed.get() || externalControlApp == null) return
+        externalControlApp = null
+        updateLifecycle(
+            privateTransport = if (adapter.privateProtocolRequired) {
+                PrivateTransportState.IDLE
+            } else {
+                PrivateTransportState.NOT_REQUIRED
+            },
+            protocolHandshake = adapter.initialHandshakeState(),
+            controlOwnership = ControlOwnership.MODULE,
+            externalControlApp = null,
+        )
+        ModuleLog.debug(
+            COMPONENT,
+            "resuming vendor control after ${previousOwner?.packageName ?: "external app"} " +
+                "address=${maskBluetoothAddress(address)}",
+        )
+        if (adapter.privateProtocolRequired) {
+            requestConnection()
+        } else {
+            publishCachedSystemBattery()
+            publishSnapshot()
+        }
     }
 
     private fun logUnknownFrame(event: ProtocolEvent.UnknownFrame) {

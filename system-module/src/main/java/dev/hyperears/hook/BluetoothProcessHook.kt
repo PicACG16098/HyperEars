@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.os.Handler
 import dev.hyperears.integration.EarbudAdapterRegistry
+import dev.hyperears.bridge.ModuleRuntimeGate
 import dev.hyperears.runtime.EarbudSessionService
 import dev.hyperears.runtime.toEarbudIdentity
 
@@ -74,6 +75,7 @@ internal class BluetoothProcessHook : HookContext() {
             return
         }
         if (state != BluetoothProfile.STATE_CONNECTED) return
+        if (ModuleRuntimeGate.paused) return
 
         val identity = device.toEarbudIdentity()
         val earbudAdapter = EarbudAdapterRegistry.forIntegration(identity) ?: return

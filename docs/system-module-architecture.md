@@ -195,6 +195,42 @@ A2DP/HFP connected
 即时响应和回读都经过同一互斥写入路径，防止重复帧和交叉事务。全局协调器只串行化昂贵
 的连接尝试，不限制多个已连接设备会话。
 
+### 7.1 厂商控制 App 退避
+
+控制权仲裁与蓝牙连接状态是两个独立维度。HyperEars 在每个声明的厂商控制 App 进程中仅
+Hook `Application.attach(Context)`，随后向 Bluetooth 进程登记一个进程级 Binder 令牌。
+Bluetooth 进程使用 `linkToDeath` 监听令牌死亡，并按包名聚合多进程状态：只要该 App 的
+任一已 Hook 进程存活，对应设备会话就进入 `EXTERNAL_APP`；所有进程死亡后才恢复
+`MODULE`。整个过程不扫描蓝牙、不读取厂商 App 的连接对象，也不要求厂商 App 建立耳机
+通道。
+
+控制 App 目录只定义 Adapter 可使用的导航目标和私有通道所有权边界，不参与耳机判型。
+当前应用名称、包名、Adapter 声明顺序和 LSPosed 配置见
+[厂商控制 App 与 LSPosed 作用域](control-apps.md)。
+
+进入 `EXTERNAL_APP` 时，`EarbudDeviceSession` 先设置控制权，再取消自身连接任务、关闭
+当前私有通道、重置 `ProtocolSession`，并发布 `standardIntegrationProjection()`。该投影保留
+MiLink 流转、系统音量、标准蓝牙电量和设备形态，移除私有传输、握手、噪声控制和型号专属
+能力，避免卡片显示“可点击但实际无效”的控制项。控制 App 退出后，会话在仍连接的前提下
+按同一有界重连策略恢复私有通道和协议确认；耳机已断开时不创建新的连接任务。
+
+MiLink 的“更多设置”按 Adapter 声明的优先级选择已安装且有 Launcher Activity 的控制 App，
+没有可启动的控制 App 时回退到真实蓝牙设备详情。LSPosed 没有公开的运行时作用域查询接口，
+因此“已 Hook”以控制 App 实际发出的 Binder 登记为准；静态作用域只决定该登记 Hook 是否会
+被安装。页面跳转本身不依赖该登记，运行时退避则必须依赖登记。
+
+用户策略以 libxposed `RemotePreferences` 为跨进程单一事实来源。HyperEars 应用保留一份
+本地镜像，只用于服务暂不可用时的界面读取、首次迁移和待同步写入；Bluetooth、MiLink 和
+已 Hook 控制 App 进程直接绑定同一 RemotePreferences 组，并通过偏好变更监听器接收更新。
+该链路不使用配置广播，也不轮询目标进程。
+
+“暂停模块”通过同一 RemotePreferences 监听链路驱动每个进程的 `ModuleRuntimeGate`。
+Bluetooth 进程暂停时
+同步关闭全部 `EarbudDeviceSession` 并停止接收新的 A2DP 注册；MiLink 进程暂停时清空
+`ProcessStateStore`、已知地址和卡片扩展状态，所有 Hook 直接返回原实现。暂停不会停用
+Android 原生蓝牙服务，也不会修改 A2DP/HFP 或音频路由；恢复后由下一次系统连接事件创建
+新的模块会话。
+
 ## 8. 跨进程状态与 MiLink
 
 Bluetooth 进程发布的状态包含：
@@ -221,10 +257,11 @@ AudioModes 两态设备保留系统三项布局，但把协议不支持的“关
 `DeviceSessionUiProjector` 只读取不可变状态快照，输出通用 `DeviceSessionUiModel`。
 Compose 不导入具体 Adapter、ProtocolSession、WireCodec 或厂商类型。
 
-每个会话展示两组真实阶段：
+每个会话展示三类真实状态：
 
 - 耳机侧：系统音频、Adapter 分辨率、私有传输、协议确认；
-- MiLink 侧：状态接收、身份查询、能力查询、运行时通知。
+- MiLink 侧：状态接收、身份查询、能力查询、运行时通知；
+- 控制权：模块控制或专有控制 App 运行中；后者表示私有协议已退避，不表示蓝牙断开。
 
 连接中、恢复中、休眠和协议拒绝均来自 `DeviceLifecycle`，不由 UI 根据时间或型号猜测。
 

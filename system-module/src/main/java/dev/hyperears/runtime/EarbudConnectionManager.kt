@@ -57,6 +57,10 @@ internal class EarbudConnectionManager(
     private val lastRevisions = mutableMapOf<String, Long>()
     private val connectionCoordinator = ConnectionAttemptCoordinator()
 
+    private var activeControlAppPackages: Set<String> = emptySet()
+    private var externalControlEnabled = true
+    private var modulePaused = false
+
     @Volatile
     private var closed = false
 
@@ -70,13 +74,13 @@ internal class EarbudConnectionManager(
         identity: EarbudIdentity,
         earbudAdapter: EarbudAdapter,
     ): Boolean {
-        if (closed) return false
+        if (closed || modulePaused) return false
         val name = identity.deviceName
         val address = runCatching { device.address }.getOrNull() ?: return false
         val key = normalizeAddress(address)
 
         val registration = synchronized(lifecycleLock) {
-            if (closed) return false
+            if (closed || modulePaused) return false
             sessions[key]?.let(Registration::Existing) ?: run {
                 val initialState = knownDevices[key]
                     ?.state
@@ -95,6 +99,8 @@ internal class EarbudConnectionManager(
                     initialAdapter = earbudAdapter,
                     connectionCoordinator = connectionCoordinator,
                     listener = ::onSessionEvent,
+                    initialActiveControlApps = activeControlAppPackages,
+                    initialExternalControlEnabled = externalControlEnabled,
                 )
                 val runtime = session.snapshot()
                 val state = initialState.copy(
@@ -162,12 +168,52 @@ internal class EarbudConnectionManager(
         return true
     }
 
+    /**
+     * Applies the process-wide set of currently hooked vendor controller applications.
+     *
+     * The set is maintained by [ControlAppPresenceRegistry]; individual sessions decide whether
+     * their adapter declares one of those packages and atomically yield or resume their channel.
+     */
+    fun updateControlAppPresence(activePackages: Set<String>) {
+        val records = synchronized(lifecycleLock) {
+            if (closed) return
+            activeControlAppPackages = activePackages.toSet()
+            sessions.values.toList()
+        }
+        records.forEach { record ->
+            record.session.updateControlAppPresence(activePackages)
+        }
+    }
+
+    /** Enables or disables voluntary handoff while retaining observed controller-process state. */
+    fun updateExternalControlEnabled(enabled: Boolean) {
+        val records = synchronized(lifecycleLock) {
+            if (closed || externalControlEnabled == enabled) return
+            externalControlEnabled = enabled
+            sessions.values.toList()
+        }
+        records.forEach { record ->
+            record.session.updateExternalControlEnabled(enabled)
+        }
+    }
+
+    /** Stops all HyperEars device sessions while leaving Android's native Bluetooth profiles intact. */
+    fun setModulePaused(paused: Boolean) {
+        val removals = synchronized(lifecycleLock) {
+            if (closed || modulePaused == paused) return
+            modulePaused = paused
+            if (paused) removeLocked(address = null) else emptyList()
+        }
+        finishRemovals(removals)
+    }
+
     fun execute(
         request: ControlRequest,
         address: String,
         sessionToken: String,
     ): Boolean {
         val target = synchronized(lifecycleLock) {
+            if (modulePaused) return false
             sessions[normalizeAddress(address)]?.takeIf {
                 it.token == sessionToken &&
                     it.state.sessionActive &&

@@ -61,6 +61,15 @@ internal class DeviceStateRegistry {
         entries.values.map(Entry::state)
     }
 
+    fun clear() = synchronized(lock) {
+        entries.clear()
+        knownEntries.clear()
+        latestTokens.clear()
+        latestRevisions.clear()
+        retiredTokens.clear()
+        primaryAddress = null
+    }
+
     fun accept(state: EarbudState, sessionToken: String): EarbudState? {
         val address = state.address?.takeIf(String::isNotBlank) ?: return null
         val key = normalizeAddress(address)

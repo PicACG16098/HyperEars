@@ -1,6 +1,7 @@
 package dev.hyperears.hook
 
 import android.util.Log
+import dev.hyperears.settings.ModuleSettingsRuntime
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import java.lang.reflect.Method
@@ -73,20 +74,26 @@ internal object ModuleLog {
     @Volatile
     var module: XposedModule? = null
 
-    fun debug(component: String, message: String) {
-        val tag = "$ROOT_TAG/$component"
-        Log.d(tag, message)
-        module?.log(Log.INFO, tag, message)
-    }
+    fun debug(component: String, message: String) =
+        emit(Log.DEBUG, component, message)
 
     fun warn(component: String, message: String, error: Throwable? = null) {
+        if (error == null) emit(Log.WARN, component, message)
+        else emit(Log.ERROR, component, message, error)
+    }
+
+    private fun emit(
+        level: Int,
+        component: String,
+        message: String,
+        error: Throwable? = null,
+    ) {
+        if (!ModuleSettingsRuntime.current.diagnosticLogging) return
+        val activeModule = module ?: return
         val tag = "$ROOT_TAG/$component"
-        if (error == null) {
-            Log.w(tag, message)
-            module?.log(Log.WARN, tag, message)
-        } else {
-            Log.w(tag, message, error)
-            module?.log(Log.ERROR, tag, message, error)
+        runCatching {
+            if (error == null) activeModule.log(level, tag, message)
+            else activeModule.log(level, tag, message, error)
         }
     }
 }
