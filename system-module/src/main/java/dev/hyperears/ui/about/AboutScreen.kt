@@ -211,6 +211,12 @@ private val supportBrands = listOf(
                 noiseControl = "降噪 / 关闭 / 通透 / 抗风噪",
             ),
             SupportEntry(
+                name = "Furina Endless Solo of Solitude",
+                evidence = EvidenceLevel.VERIFIED,
+                battery = BatteryCapability.COMPONENT,
+                noiseControl = "降噪 / 关闭 / 通透 / 抗风噪",
+            ),
+            SupportEntry(
                 name = "ROSE BudsFeel MK2",
                 evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
                 battery = BatteryCapability.COMPONENT,

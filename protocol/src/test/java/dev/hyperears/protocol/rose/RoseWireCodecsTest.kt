@@ -51,7 +51,7 @@ class RoseWireCodecsTest {
             0xDD.toByte(), 0x2A, 0x15,
             0x04, 0x0C, 90, 81, 55,
             0x02, 0x09, 0x04,
-        )
+        ) + ByteArray(13)
         val response = body + byteArrayOf(body.checksum(), 0xAA.toByte())
         val decoder = RoseBudsFeelMk2WireCodec.Decoder()
         val split = response.size / 2
@@ -64,6 +64,57 @@ class RoseWireCodecsTest {
             ),
             decoder.offer(response.copyOfRange(split, response.size)),
         )
+    }
+
+    @Test
+    fun budsFeelDecodesIndependentBatteryAndNoiseResponses() {
+        val battery = responseFrame(
+            sequence = 0xFC,
+            payload = byteArrayOf(0x0C, 0x63, 0x63, 0x00),
+        )
+        val noise = responseFrame(
+            sequence = 0xFB,
+            payload = byteArrayOf(0x09, 0x02),
+        )
+        val decoder = RoseBudsFeelMk2WireCodec.Decoder()
+
+        assertEquals(
+            emptyList<RoseBudsFeelMk2WireCodec.State>(),
+            decoder.offer(battery.copyOfRange(0, 4)),
+        )
+        assertEquals(
+            listOf(
+                RoseBudsFeelMk2WireCodec.State.Battery(99, 99, 0),
+                RoseBudsFeelMk2WireCodec.State.Noise(RoseBudsFeelMk2WireCodec.NoiseMode.OFF),
+            ),
+            decoder.offer(battery.copyOfRange(4, battery.size) + noise),
+        )
+    }
+
+    @Test
+    fun budsFeelRejectsInvalidLengthAndResynchronizesAtNextResponse() {
+        val invalid = byteArrayOf(
+            0xDD.toByte(), 0x01, 0x04, 0x09, 0x02, 0x00, 0xAA.toByte(),
+        )
+        val valid = responseFrame(
+            sequence = 0x02,
+            payload = byteArrayOf(0x09, 0x03),
+        )
+        val decoder = RoseBudsFeelMk2WireCodec.Decoder()
+
+        assertEquals(
+            listOf(RoseBudsFeelMk2WireCodec.State.Noise(RoseBudsFeelMk2WireCodec.NoiseMode.TRANSPARENCY)),
+            decoder.offer(invalid + valid),
+        )
+    }
+
+    private fun responseFrame(sequence: Int, payload: ByteArray): ByteArray {
+        val body = byteArrayOf(
+            0xDD.toByte(),
+            sequence.toByte(),
+            payload.size.toByte(),
+        ) + payload
+        return body + byteArrayOf(body.checksum(), 0xAA.toByte())
     }
 
     private fun response(group: Int, command: Int, payload: ByteArray): ByteArray {

@@ -1,6 +1,12 @@
 package dev.hyperears.protocol.rose
 
-/** Checksum-framed RFCOMM codec used by ROSE BudsFeel MK2. */
+/**
+ * Checksum-framed RFCOMM codec used by the ROSE BudsFeel protocol family.
+ *
+ * A response is encoded as `DD sequence payloadLength payload checksum AA`. The payload may be
+ * either one field (as returned by Furina Endless) or an aggregate LTV block (as returned by the
+ * published BudsFeel MK2 captures).
+ */
 object RoseBudsFeelMk2WireCodec {
     enum class NoiseMode(val value: Int) {
         ANC(1),
@@ -66,32 +72,44 @@ object RoseBudsFeelMk2WireCodec {
     }
 
     private fun ByteArray.validFrameEnd(): Int {
-        var sawTerminator = false
-        for (index in MIN_FRAME_SIZE - 1 until size) {
-            if (this[index] != TERMINATOR) continue
-            sawTerminator = true
-            val checksumIndex = index - 1
-            val expected = copyOfRange(0, checksumIndex).checksum()
-            if (this[checksumIndex] == expected) return index
-        }
-        return when {
-            !sawTerminator && size < MAX_FRAME_SIZE -> INCOMPLETE_FRAME
-            else -> INVALID_FRAME
-        }
+        if (size < FRAME_HEADER_SIZE) return INCOMPLETE_FRAME
+        val payloadLength = this[PAYLOAD_LENGTH_INDEX].unsigned()
+
+        val checksumIndex = FRAME_HEADER_SIZE + payloadLength
+        val terminatorIndex = checksumIndex + 1
+        if (size <= terminatorIndex) return INCOMPLETE_FRAME
+        if (this[terminatorIndex] != TERMINATOR) return INVALID_FRAME
+
+        val expected = copyOfRange(0, checksumIndex).checksum()
+        return if (this[checksumIndex] == expected) terminatorIndex else INVALID_FRAME
     }
 
-    private fun parseFrame(frame: ByteArray): List<State> = when (frame[2].unsigned()) {
-        STATUS_RESPONSE -> parseTlvBlock(frame, 3, frame.size - 2)
-        UNSOLICITED_RESPONSE -> parseUnsolicited(frame)
-        else -> emptyList()
+    private fun parseFrame(frame: ByteArray): List<State> {
+        if (frame.size < MIN_FRAME_SIZE) return emptyList()
+        val payloadLength = frame[PAYLOAD_LENGTH_INDEX].unsigned()
+        val payloadEnd = FRAME_HEADER_SIZE + payloadLength
+        if (payloadEnd + FRAME_TRAILER_SIZE != frame.size) return emptyList()
+        return parsePayload(frame.copyOfRange(FRAME_HEADER_SIZE, payloadEnd))
     }
 
-    private fun parseUnsolicited(frame: ByteArray): List<State> {
-        if (frame.size < 7) return emptyList()
-        return when (frame[3].unsigned()) {
-            NOISE_TYPE -> frame[4].toNoiseMode()?.let { listOf(State.Noise(it)) }.orEmpty()
-            else -> emptyList()
+    private fun parsePayload(payload: ByteArray): List<State> {
+        if (payload.size == DIRECT_NOISE_PAYLOAD_LENGTH &&
+            payload[0].unsigned() == NOISE_TYPE
+        ) {
+            return payload[1].toNoiseMode()?.let { listOf(State.Noise(it)) }.orEmpty()
         }
+        if (payload.size == DIRECT_BATTERY_PAYLOAD_LENGTH &&
+            payload[0].unsigned() == BATTERY_TYPE
+        ) {
+            return listOf(
+                State.Battery(
+                    leftPercent = payload[1].batteryPercent(),
+                    rightPercent = payload[2].batteryPercent(),
+                    casePercent = payload[3].batteryPercent(),
+                ),
+            )
+        }
+        return parseTlvBlock(payload, 0, payload.size)
     }
 
     private fun parseTlvBlock(data: ByteArray, start: Int, end: Int): List<State> {
@@ -137,12 +155,14 @@ object RoseBudsFeelMk2WireCodec {
 
     private const val STATUS_COMMAND = 0x1E
     private const val SET_COMMAND = 0x02
-    private const val STATUS_RESPONSE = 0x15
-    private const val UNSOLICITED_RESPONSE = 0x02
     private const val NOISE_TYPE = 0x09
     private const val BATTERY_TYPE = 0x0C
     private const val MIN_FRAME_SIZE = 5
-    private const val MAX_FRAME_SIZE = 512
+    private const val FRAME_HEADER_SIZE = 3
+    private const val FRAME_TRAILER_SIZE = 2
+    private const val PAYLOAD_LENGTH_INDEX = 2
+    private const val DIRECT_NOISE_PAYLOAD_LENGTH = 2
+    private const val DIRECT_BATTERY_PAYLOAD_LENGTH = 4
     private const val INCOMPLETE_FRAME = -1
     private const val INVALID_FRAME = -2
     private const val REQUEST_MARKER: Byte = 0xFF.toByte()

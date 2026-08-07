@@ -93,30 +93,27 @@ open class RoseEarfreeProtocolFamilyAdapter(
 }
 
 /**
- * Distribution-only probe for the Furina collaboration headset reported without cached UUIDs.
+ * Verified BudsFeel implementation used by Furina Endless Solo of Solitude.
  *
- * Captured SDP evidence identifies the BudsFeel RFCOMM family. The product name selects that
- * transport even when the cache is absent, while the normal read-only handshake
- * remains authoritative for every private capability. Failed probes stay dormant so a reconnect
- * can produce another complete diagnostic attempt instead of silently degrading to standard
- * Bluetooth before the tester can collect evidence.
+ * The product name is retained as a fallback when Android has not populated the cached SDP UUIDs;
+ * the read-only BudsFeel handshake remains authoritative for private capabilities.
  */
-class FurinaEndlessDiagnosticAdapter : RoseBudsFeelProtocolFamilyAdapter() {
+class FurinaEndlessAdapter : RoseBudsFeelProtocolFamilyAdapter() {
     override val id: String = ID
-    override val displayName: String = "Furina Endless BudsFeel diagnostic probe"
-    override val protocolTraceLevel: ProtocolTraceLevel = ProtocolTraceLevel.FULL
+    override val displayName: String = "Furina Endless Solo of Solitude"
+    override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
 
     override fun matches(identity: EarbudIdentity): Boolean {
         if (identity.nativeSystemEarbud) return false
-        return normalizeDeviceName(identity.deviceName.orEmpty()).startsWith(NAME_PREFIX)
+        return normalizeDeviceName(identity.deviceName.orEmpty()) in MODEL_NAMES
     }
 
     override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
         InitialProtocolFailureResolution.KeepDormant
 
     companion object {
-        const val ID = "furina-endless-budsfeel-diagnostic"
-        const val NAME_PREFIX = "furinaendless"
+        const val ID = "furina-endless-budsfeel"
+        private val MODEL_NAMES = setOf("furinaendlesssoloofsolitude")
     }
 }
 

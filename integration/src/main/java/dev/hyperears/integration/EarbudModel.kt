@@ -265,12 +265,6 @@ enum class AdapterResolution {
     PROTOCOL_CONFIRMED,
 }
 
-/** Adapter-owned diagnostic policy consumed by platform runtimes at protocol boundaries. */
-enum class ProtocolTraceLevel {
-    NONE,
-    FULL,
-}
-
 enum class TransportKind {
     RFCOMM,
     GATT,
@@ -339,7 +333,6 @@ data class AdapterIoResult(
     val handshake: HandshakeResult? = null,
     val stateChanged: Boolean = false,
     val unknownFrames: List<ProtocolEvent.UnknownFrame> = emptyList(),
-    val protocolEvents: List<ProtocolEvent> = emptyList(),
 )
 
 data class AdapterControlResult(

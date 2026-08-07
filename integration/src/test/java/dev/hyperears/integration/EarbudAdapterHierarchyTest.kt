@@ -346,7 +346,7 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun furinaDiagnosticNameForcesBudsFeelProbeWithoutCachedUuid() {
+    fun furinaNameSelectsVerifiedBudsFeelAdapterWithoutCachedUuid() {
         val adapter = requireNotNull(
             EarbudAdapterRegistry.resolve(
                 EarbudIdentity(
@@ -357,8 +357,8 @@ class EarbudAdapterHierarchyTest {
             ),
         )
 
-        assertTrue(adapter is FurinaEndlessDiagnosticAdapter)
-        assertEquals(ProtocolTraceLevel.FULL, adapter.protocolTraceLevel)
+        assertTrue(adapter is FurinaEndlessAdapter)
+        assertEquals(AdapterResolution.EXACT_MATCH, adapter.resolution)
         assertTrue(adapter.privateProtocolRequired)
         assertFalse(adapter.snapshot().capabilities.noiseControl)
         assertTrue(adapter.snapshot().supportedNoiseModes.isEmpty())
@@ -370,7 +370,7 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun furinaDiagnosticNameDoesNotCaptureUnrelatedHeadsets() {
+    fun furinaNameDoesNotCaptureUnrelatedHeadsets() {
         val adapter = requireNotNull(
             EarbudAdapterRegistry.resolve(
                 EarbudIdentity(
@@ -384,8 +384,8 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun furinaDiagnosticProbePublishesModesOnlyAfterValidBudsFeelEvidence() {
-        val adapter = FurinaEndlessDiagnosticAdapter()
+    fun furinaPublishesModesOnlyAfterValidBudsFeelEvidence() {
+        val adapter = FurinaEndlessAdapter()
 
         val result = adapter.receive(budsFeelStatusResponse())
 
@@ -394,19 +394,26 @@ class EarbudAdapterHierarchyTest {
         assertTrue(adapter.snapshot().capabilities.noiseControl)
         assertEquals(NoiseMode.WIND, adapter.runtimeState().noiseMode)
         assertEquals(NoiseMode.entries.toSet(), adapter.snapshot().supportedNoiseModes)
-        assertTrue(
-            result.protocolEvents.any { event ->
-                event is ProtocolEvent.CapabilitiesIdentified &&
-                    event.noiseModes == NoiseMode.entries.toSet()
-            },
-        )
     }
 
     @Test
-    fun furinaDiagnosticProbeRemainsDormantAfterBoundedFailure() {
+    fun furinaDecodesCapturedIndependentBatteryResponse() {
+        val adapter = FurinaEndlessAdapter()
+
+        val result = adapter.receive(hex("DD FC 04 0C 63 63 00 AF AA"))
+
+        assertEquals(HandshakeResult.Ready, result.handshake)
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
+        assertEquals(99, adapter.runtimeState().battery.left.percent)
+        assertEquals(99, adapter.runtimeState().battery.right.percent)
+        assertEquals(0, adapter.runtimeState().battery.case.percent)
+    }
+
+    @Test
+    fun furinaRemainsDormantAfterBoundedFailure() {
         assertEquals(
             InitialProtocolFailureResolution.KeepDormant,
-            FurinaEndlessDiagnosticAdapter().onInitialProtocolUnavailable(),
+            FurinaEndlessAdapter().onInitialProtocolUnavailable(),
         )
     }
 
@@ -475,7 +482,7 @@ class EarbudAdapterHierarchyTest {
             0x02,
             0x09,
             0x04,
-        )
+        ) + ByteArray(13)
         val checksum = body.sumOf { it.toInt() and 0xFF }.and(0xFF).toByte()
         return body + byteArrayOf(checksum, 0xAA.toByte())
     }
