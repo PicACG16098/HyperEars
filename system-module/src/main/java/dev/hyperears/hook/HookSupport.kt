@@ -82,6 +82,21 @@ internal object ModuleLog {
         else emit(Log.ERROR, component, message, error)
     }
 
+    /**
+     * Emits an always-on information record for an explicitly diagnostic Adapter build.
+     *
+     * Normal module logging still obeys the user's detailed-log setting. Callers must guard this
+     * entry through an Adapter-owned trace policy so production sessions never become noisy.
+     */
+    fun probe(component: String, message: String, error: Throwable? = null) {
+        val activeModule = module ?: return
+        val tag = "$ROOT_TAG/$component"
+        runCatching {
+            if (error == null) activeModule.log(Log.INFO, tag, message)
+            else activeModule.log(Log.INFO, tag, message, error)
+        }
+    }
+
     private fun emit(
         level: Int,
         component: String,

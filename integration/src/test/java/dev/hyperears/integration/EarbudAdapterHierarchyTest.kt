@@ -343,6 +343,77 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
+    fun furinaDiagnosticNameForcesEarfreeProbeWithoutCachedUuid() {
+        val adapter = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "Furina Endless Solo of Solitude",
+                    standardHeadset = true,
+                    serviceUuids = emptySet(),
+                ),
+            ),
+        )
+
+        assertTrue(adapter is FurinaEndlessDiagnosticAdapter)
+        assertEquals(ProtocolTraceLevel.FULL, adapter.protocolTraceLevel)
+        assertTrue(adapter.privateProtocolRequired)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+        assertTrue(adapter.snapshot().supportedNoiseModes.isEmpty())
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
+    }
+
+    @Test
+    fun furinaDiagnosticNameDoesNotCaptureUnrelatedHeadsets() {
+        val adapter = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "Collaboration Edition",
+                    standardHeadset = true,
+                ),
+            ),
+        )
+
+        assertTrue(adapter is StandardEarbudAdapter)
+    }
+
+    @Test
+    fun furinaDiagnosticProbePublishesModesOnlyAfterValidEarfreeEvidence() {
+        val adapter = FurinaEndlessDiagnosticAdapter()
+        val battery = roseResponse(
+            group = 0x01,
+            command = 0x01,
+            payload = byteArrayOf(0, 0, 91, 82, 1, 0, 67),
+        )
+        val noise = roseResponse(
+            group = 0x06,
+            command = 0x02,
+            payload = byteArrayOf(0, 0, 1, 0),
+        )
+
+        val result = adapter.receive(battery + noise)
+
+        assertEquals(HandshakeResult.Ready, result.handshake)
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
+        assertTrue(adapter.snapshot().capabilities.noiseControl)
+        assertEquals(NoiseMode.WIND, adapter.runtimeState().noiseMode)
+        assertEquals(NoiseMode.entries.toSet(), adapter.snapshot().supportedNoiseModes)
+        assertTrue(
+            result.protocolEvents.any { event ->
+                event is ProtocolEvent.CapabilitiesIdentified &&
+                    event.noiseModes == NoiseMode.entries.toSet()
+            },
+        )
+    }
+
+    @Test
+    fun furinaDiagnosticProbeRemainsDormantAfterBoundedFailure() {
+        assertEquals(
+            InitialProtocolFailureResolution.KeepDormant,
+            FurinaEndlessDiagnosticAdapter().onInitialProtocolUnavailable(),
+        )
+    }
+
+    @Test
     fun unconfirmedRoseFamilyFallsBackToConservativeRoseIntegration() {
         val family = RoseEarfreeProtocolFamilyAdapter()
         family.onSystemBatteryChanged(68)
@@ -393,6 +464,23 @@ class EarbudAdapterHierarchyTest {
         .split(Regex("\\s+"))
         .map { it.toInt(16).toByte() }
         .toByteArray()
+
+    private fun roseResponse(group: Int, command: Int, payload: ByteArray): ByteArray {
+        val size = 10 + payload.size
+        val body = byteArrayOf(
+            0x09,
+            0xFF.toByte(),
+            0,
+            0,
+            1,
+            group.toByte(),
+            command.toByte(),
+            size.toByte(),
+            0,
+        ) + payload
+        val checksum = body.sumOf { it.toInt() and 0xFF }.and(0xFF).toByte()
+        return body + byteArrayOf(checksum)
+    }
 
     private class TestRoseEarfreeProtocolFamilyAdapter :
         RoseEarfreeProtocolFamilyAdapter() {

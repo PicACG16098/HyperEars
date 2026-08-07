@@ -92,6 +92,33 @@ open class RoseEarfreeProtocolFamilyAdapter(
     }
 }
 
+/**
+ * Distribution-only probe for the Furina collaboration headset reported without cached UUIDs.
+ *
+ * The product name selects the known EARFREE transport, while the normal read-only handshake
+ * remains authoritative for every private capability. Failed probes stay dormant so a reconnect
+ * can produce another complete diagnostic attempt instead of silently degrading to standard
+ * Bluetooth before the tester can collect evidence.
+ */
+class FurinaEndlessDiagnosticAdapter : RoseEarfreeProtocolFamilyAdapter() {
+    override val id: String = ID
+    override val displayName: String = "Furina Endless EARFREE diagnostic probe"
+    override val protocolTraceLevel: ProtocolTraceLevel = ProtocolTraceLevel.FULL
+
+    override fun matches(identity: EarbudIdentity): Boolean {
+        if (identity.nativeSystemEarbud) return false
+        return normalizeDeviceName(identity.deviceName.orEmpty()).startsWith(NAME_PREFIX)
+    }
+
+    override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
+        InitialProtocolFailureResolution.KeepDormant
+
+    companion object {
+        const val ID = "furina-endless-earfree-diagnostic"
+        const val NAME_PREFIX = "furinaendless"
+    }
+}
+
 class RoseEarfreeI5Adapter : RoseEarfreeProtocolFamilyAdapter() {
 
     override val id: String = ID

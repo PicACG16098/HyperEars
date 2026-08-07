@@ -22,8 +22,8 @@ android {
         applicationId = "dev.hyperears"
         minSdk = 35
         targetSdk = 36
-        versionCode = 130
-        versionName = "1.3.0"
+        versionCode = 13001
+        versionName = "1.3.0-furina-probe1"
     }
 
     signingConfigs {

@@ -39,6 +39,7 @@ import kotlinx.coroutines.withTimeout
  */
 internal interface EarbudChannel : Closeable {
     val endpointId: String
+    val connectionDetails: String? get() = null
 
     suspend fun connect()
 
@@ -230,6 +231,7 @@ private class AndroidGattChannel(
     private val spec: GattTransportSpec,
 ) : EarbudChannel {
     override val endpointId: String = spec.id
+    override val connectionDetails: String? get() = connectedDetails
 
     private val appContext = context.applicationContext ?: context
     private val closed = AtomicBoolean()
@@ -245,6 +247,9 @@ private class AndroidGattChannel(
 
     @Volatile
     private var pendingWrite: CompletableDeferred<Unit>? = null
+
+    @Volatile
+    private var connectedDetails: String? = null
 
     private var pendingRead = ByteArray(0)
 
@@ -273,11 +278,21 @@ private class AndroidGattChannel(
                 return
             }
 
-            val characteristics = if (spec.serviceUuid != null) {
-                gatt.getService(UUID.fromString(spec.serviceUuid))?.characteristics.orEmpty()
-            } else {
-                gatt.services.flatMap(BluetoothGattService::getCharacteristics)
+            val requestedService = spec.serviceUuid?.let(UUID::fromString)
+            val service = requestedService?.let(gatt::getService)
+            if (requestedService != null && service == null) {
+                val discovered = gatt.services.joinToString(prefix = "[", postfix = "]") {
+                    it.uuid.toString()
+                }
+                terminate(
+                    IOException(
+                        "GATT service $requestedService unavailable; discovered=$discovered",
+                    ),
+                )
+                return
             }
+            val characteristics = service?.characteristics
+                ?: gatt.services.flatMap(BluetoothGattService::getCharacteristics)
             val write = characteristics.resolve(
                 uuid = UUID.fromString(spec.writeCharacteristicUuid),
                 instanceId = spec.writeInstanceId,
@@ -287,11 +302,24 @@ private class AndroidGattChannel(
                 instanceId = spec.notifyInstanceId,
             ) { it.canNotify() }
             if (write == null || notify == null) {
-                terminate(IOException("captured GATT characteristics are unavailable"))
+                val discovered = characteristics.joinToString(prefix = "[", postfix = "]") {
+                    it.describe()
+                }
+                terminate(
+                    IOException(
+                        "GATT characteristics unavailable " +
+                            "write=${spec.writeCharacteristicUuid}/${spec.writeInstanceId} " +
+                            "notify=${spec.notifyCharacteristicUuid}/${spec.notifyInstanceId}; " +
+                            "discovered=$discovered",
+                    ),
+                )
                 return
             }
 
             writeCharacteristic = write
+            connectedDetails =
+                "service=${service?.uuid ?: "<any>"} write=${write.describe()} " +
+                    "notify=${notify.describe()}"
             if (!gatt.setCharacteristicNotification(notify, true)) {
                 terminate(IOException("GATT notification registration failed"))
                 return
@@ -446,6 +474,9 @@ private class AndroidGattChannel(
             BluetoothGattCharacteristic.PROPERTY_NOTIFY or
                 BluetoothGattCharacteristic.PROPERTY_INDICATE
             ) != 0
+
+    private fun BluetoothGattCharacteristic.describe(): String =
+        "${uuid}#${instanceId}/properties=0x${properties.toString(16)}"
 
     private companion object {
         const val WRITE_TIMEOUT_MS = 4_000L

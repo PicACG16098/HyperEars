@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.os.Handler
 import dev.hyperears.integration.EarbudAdapterRegistry
+import dev.hyperears.integration.ProtocolTraceLevel
 import dev.hyperears.bridge.ModuleRuntimeGate
 import dev.hyperears.runtime.EarbudSessionService
 import dev.hyperears.runtime.toEarbudIdentity
@@ -80,6 +81,17 @@ internal class BluetoothProcessHook : HookContext() {
         val identity = device.toEarbudIdentity()
         val earbudAdapter = EarbudAdapterRegistry.forIntegration(identity) ?: return
         val address = runCatching { device.address }.getOrNull()
+        if (earbudAdapter.protocolTraceLevel == ProtocolTraceLevel.FULL) {
+            ModuleLog.probe(
+                "ProtocolProbe",
+                "identity name=${identity.deviceName?.quoted() ?: "<null>"} " +
+                    "normalized=${identity.deviceName.orEmpty().normalizeForMatch().quoted()} " +
+                    "address=${maskBluetoothAddress(address)} " +
+                    "class=${identity.bluetoothDeviceClass ?: "<unknown>"} " +
+                    "standard=${identity.standardHeadset} native=${identity.nativeSystemEarbud} " +
+                    "cachedUuids=${identity.serviceUuids.sorted()} selected=${earbudAdapter.id}",
+            )
+        }
         ModuleLog.debug(
             "Bluetooth",
             "A2DP state=$state adapter=${earbudAdapter.id} " +
@@ -87,4 +99,11 @@ internal class BluetoothProcessHook : HookContext() {
         )
         EarbudSessionService.registerDevice(device, identity, earbudAdapter)
     }
+
+    private fun String.normalizeForMatch(): String =
+        lowercase().filter(Char::isLetterOrDigit)
+
+    private fun String.quoted(): String = replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .let { "\"$it\"" }
 }

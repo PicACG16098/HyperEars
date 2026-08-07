@@ -60,6 +60,9 @@ abstract class EarbudAdapter(
     /** How this runtime adapter was selected. */
     open val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
 
+    /** Optional runtime diagnostics declared by a dedicated test adapter. */
+    open val protocolTraceLevel: ProtocolTraceLevel = ProtocolTraceLevel.NONE
+
     abstract fun matches(identity: EarbudIdentity): Boolean
 
     /**
@@ -170,6 +173,7 @@ abstract class EarbudAdapter(
             handshake = handshake,
             stateChanged = changed,
             unknownFrames = unknown,
+            protocolEvents = events,
         )
     }
 
@@ -348,6 +352,7 @@ object EarbudAdapterRegistry {
         add(::EdifierEvoProAdapter)
         add(::EdifierHeadphonesAdapter)
         add(::EdifierEarbudAdapter)
+        add(::FurinaEndlessDiagnosticAdapter)
         add(::RoseEarfreeI5Adapter)
         add(::RoseEarfreeProtocolFamilyAdapter)
         add(::RoseBudsFeelMk2Adapter)

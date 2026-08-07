@@ -20,9 +20,14 @@ import dev.hyperears.integration.DeviceLifecycle
 import dev.hyperears.integration.EarbudAdapter
 import dev.hyperears.integration.HandshakeResult
 import dev.hyperears.integration.InitialProtocolFailureResolution
+import dev.hyperears.integration.EarbudTransportSpec
+import dev.hyperears.integration.GattTransportSpec
+import dev.hyperears.integration.L2capEndpointSpec
 import dev.hyperears.integration.PrivateTransportState
 import dev.hyperears.integration.ProtocolEvent
 import dev.hyperears.integration.ProtocolHandshakeState
+import dev.hyperears.integration.ProtocolTraceLevel
+import dev.hyperears.integration.RfcommEndpointSpec
 import dev.hyperears.integration.SystemProfileState
 import dev.hyperears.integration.TransportReadiness
 import dev.hyperears.integration.standardIntegrationProjection
@@ -155,6 +160,10 @@ internal class EarbudDeviceSession(
     }
 
     fun start() {
+        trace(
+            "session start name=${deviceName.quoted()} private=${adapter.privateProtocolRequired} " +
+                "transports=${adapter.transports.map(EarbudTransportSpec::id)}",
+        )
         publishCachedSystemBattery()
         if (externalControlApp != null) {
             publishSnapshot()
@@ -259,11 +268,17 @@ internal class EarbudDeviceSession(
 
     fun execute(request: ControlRequest): Boolean {
         if (closed.get()) return false
+        trace(
+            "control requested=${request.description()} lifecycle=$lifecycle " +
+                "currentMode=${adapter.runtimeState().noiseMode}",
+        )
         if (externalControlApp != null) {
+            trace("control rejected owner=${externalControlApp?.packageName}")
             if (request === ControlRequest.Refresh) publishSnapshot()
             return request === ControlRequest.Refresh
         }
         if (!adapter.privateProtocolRequired) {
+            trace("control rejected privateProtocolRequired=false")
             return request === ControlRequest.Refresh
         }
         if (request is ControlRequest.SetNoiseMode &&
@@ -272,13 +287,26 @@ internal class EarbudDeviceSession(
                     request.mode !in adapter.effectiveSupportedNoiseModes()
                 )
         ) {
+            trace(
+                "control rejected unsupported requested=${request.description()} " +
+                    "capabilities=${adapter.effectiveCapabilities()} " +
+                    "modes=${adapter.effectiveSupportedNoiseModes()}",
+            )
             return false
         }
-        val activeChannel = channel ?: return false
+        val activeChannel = channel ?: run {
+            trace("control rejected channel=<none>")
+            return false
+        }
         scope.launch {
             runCatching {
                 transactionMutex.withLock {
                     val result = adapter.executeControl(request)
+                    trace(
+                        "control encoded requested=${request.description()} " +
+                            "accepted=${result.accepted} commands=${result.commands.size} " +
+                            "readback=${result.readback.size} stateChanged=${result.stateChanged}",
+                    )
                     if (!result.accepted) return@withLock
                     sendCommands(
                         activeChannel = activeChannel,
@@ -300,6 +328,7 @@ internal class EarbudDeviceSession(
                 }
             }.onFailure {
                 if (it !is CancellationException) {
+                    trace("control failed requested=${request.description()}", it)
                     ModuleLog.warn(
                         COMPONENT,
                         "control write failed: ${request.javaClass.simpleName}",
@@ -346,6 +375,7 @@ internal class EarbudDeviceSession(
     @SuppressLint("MissingPermission")
     private suspend fun runConnectionCycle() {
         var consecutiveFailures = 0
+        trace("connection cycle started")
         cancelDiscoveryOnce()
 
         while (
@@ -371,6 +401,10 @@ internal class EarbudDeviceSession(
                     COMPONENT,
                     "channel connected endpoint=${activeChannel.endpointId} " +
                         "address=${maskBluetoothAddress(address)}",
+                )
+                trace(
+                    "channel ready endpoint=${activeChannel.endpointId} " +
+                        "details=${activeChannel.connectionDetails ?: "<none>"}",
                 )
 
                 updateLifecycle(
@@ -404,6 +438,10 @@ internal class EarbudDeviceSession(
                         "channel dormant after bounded recovery failures=$consecutiveFailures " +
                             "error=${error.javaClass.simpleName}:${error.message}",
                     )
+                    trace(
+                        "recovery exhausted failures=$consecutiveFailures; session dormant",
+                        error,
+                    )
                     return
                 }
                 consecutiveFailures += 1
@@ -415,6 +453,10 @@ internal class EarbudDeviceSession(
                     COMPONENT,
                     "channel unavailable failures=$consecutiveFailures retryIn=${waitMs}ms " +
                         "error=${error.javaClass.simpleName}:${error.message}",
+                )
+                trace(
+                    "recovery scheduled failure=$consecutiveFailures retryInMs=$waitMs",
+                    error,
                 )
                 delay(waitMs)
             }
@@ -454,16 +496,32 @@ internal class EarbudDeviceSession(
             if (externalControlApp != null) {
                 throw CancellationException("vendor control owned by external app")
             }
-            val candidate = channelFactory.create(context, device, transport)
+            trace("transport attempt ${transport.traceDescription()}")
+            val candidate = try {
+                channelFactory.create(context, device, transport)
+            } catch (error: Throwable) {
+                lastError = error
+                trace("transport creation failed id=${transport.id}", error)
+                return@forEach
+            }
             adapter.resetProtocolSession()
             synchronized(transportLock) { channel = candidate }
             try {
                 withTimeout(CONNECT_TIMEOUT_MS) { candidate.connect() }
+                trace(
+                    "transport connected id=${transport.id} " +
+                        "details=${candidate.connectionDetails ?: "<none>"}",
+                )
                 updateLifecycle(
                     privateTransport = PrivateTransportState.CONNECTED,
                     protocolHandshake = adapter.initialHandshakeState(),
                 )
                 val initial = adapter.beginHandshake()
+                trace(
+                    "handshake begin result=${initial.handshake.traceDescription()} " +
+                        "commands=${initial.commands.size} " +
+                        "capabilities=${adapter.snapshot().traceDescription()}",
+                )
                 sendCommands(
                     activeChannel = candidate,
                     commands = initial.commands,
@@ -489,18 +547,21 @@ internal class EarbudDeviceSession(
                     throw error
                 }
                 lastError = error
+                trace("transport failed id=${transport.id}", error)
                 ModuleLog.debug(
                     COMPONENT,
                     "transport ${transport.id} failed: ${error.javaClass.simpleName}",
                 )
             }
         }
+        trace("all transport candidates failed", lastError)
         throw IOException("all vendor-channel endpoints failed", lastError)
     }
 
     private suspend fun awaitAcceptedHandshake(
         candidate: EarbudChannel,
     ) = withTimeout(PROTOCOL_HANDSHAKE_TIMEOUT_MS) {
+        trace("waiting for protocol evidence timeoutMs=$PROTOCOL_HANDSHAKE_TIMEOUT_MS")
         val buffer = ByteArray(READ_BUFFER_SIZE)
         while (true) {
             val count = candidate.read(buffer)
@@ -525,7 +586,20 @@ internal class EarbudDeviceSession(
         activeChannel: EarbudChannel,
         bytes: ByteArray,
     ): AdapterIoResult = transactionMutex.withLock {
+        val beforeAdapter = adapter.snapshot()
+        val beforeRuntime = adapter.runtimeState()
+        trace("read endpoint=${activeChannel.endpointId} bytes=${bytes.toHex()}")
         val result = adapter.receive(bytes)
+        val afterAdapter = adapter.snapshot()
+        val afterRuntime = adapter.runtimeState()
+        trace(
+            "decoded handshake=${result.handshake.traceDescription()} " +
+                "events=${result.protocolEvents.map { it.traceDescription() }} " +
+                "responses=${result.commands.size} stateChanged=${result.stateChanged} " +
+                "adapterBefore=${beforeAdapter.traceDescription()} " +
+                "adapterAfter=${afterAdapter.traceDescription()} " +
+                "runtimeBefore=$beforeRuntime runtimeAfter=$afterRuntime",
+        )
         if (result.commands.isNotEmpty()) {
             sendCommands(
                 activeChannel = activeChannel,
@@ -607,6 +681,11 @@ internal class EarbudDeviceSession(
         activeChannel: EarbudChannel,
     ) {
         if (channel !== activeChannel) throw CancellationException("stale adapter replacement")
+        val previous = adapter
+        trace(
+            "adapter replacement ${previous.id} -> ${replacement.adapter.id} " +
+                "activation=${replacement.activation}",
+        )
         adapter = replacement.adapter
         ControlAppCatalog.activeOwner(adapter.controlApps, activeControlAppPackages)
             ?.takeIf { externalControlEnabled }
@@ -633,6 +712,7 @@ internal class EarbudDeviceSession(
         require(!fallback.privateProtocolRequired) {
             "Initial protocol fallback must not require another private transport"
         }
+        trace("adapter fallback ${previous.id} -> ${fallback.id}")
         adapter = fallback
         publishCachedSystemBattery()
         updateLifecycle(
@@ -680,7 +760,9 @@ internal class EarbudDeviceSession(
             externalControlApp = externalControlApp,
         )
         if (next == lifecycle) return false
+        val previous = lifecycle
         lifecycle = next
+        trace("lifecycle $previous -> $next")
         return true
     }
 
@@ -702,7 +784,15 @@ internal class EarbudDeviceSession(
             if (externalControlApp != null) {
                 throw CancellationException("vendor control owned by external app")
             }
+            trace(
+                "$description write=${index + 1}/${commands.size} " +
+                    "endpoint=${activeChannel.endpointId} bytes=${command.toHex()}",
+            )
             activeChannel.write(command)
+            trace(
+                "$description write-complete=${index + 1}/${commands.size} " +
+                    "endpoint=${activeChannel.endpointId}",
+            )
             ModuleLog.debug(
                 COMPONENT,
                 "$description wrote bytes=${command.toHex()}",
@@ -791,6 +881,59 @@ internal class EarbudDeviceSession(
     private fun ByteArray.toHex(): String =
         joinToString(separator = " ") { "%02X".format(it.toInt() and 0xFF) }
 
+    private fun trace(message: String, error: Throwable? = null) {
+        if (adapter.protocolTraceLevel != ProtocolTraceLevel.FULL) return
+        ModuleLog.probe(
+            PROBE_COMPONENT,
+            "address=${maskBluetoothAddress(address)} adapter=${adapter.id} $message",
+            error,
+        )
+    }
+
+    private fun EarbudTransportSpec.traceDescription(): String = when (this) {
+        is GattTransportSpec ->
+            "id=$id kind=GATT service=${serviceUuid ?: "<any>"} " +
+                "write=$writeCharacteristicUuid#$writeInstanceId " +
+                "notify=$notifyCharacteristicUuid#$notifyInstanceId"
+
+        is RfcommEndpointSpec.ServiceUuid -> "id=$id kind=RFCOMM uuid=$uuid"
+        is RfcommEndpointSpec.Channel ->
+            "id=$id kind=RFCOMM channel=$number secure=$secure"
+
+        is L2capEndpointSpec ->
+            "id=$id kind=L2CAP psm=0x${psm.toString(16)} service=$serviceUuid " +
+                "authenticated=$authenticated encrypted=$encrypted"
+    }
+
+    private fun HandshakeResult?.traceDescription(): String = when (this) {
+        null -> "<none>"
+        HandshakeResult.AwaitingEvidence -> "AWAITING_EVIDENCE"
+        HandshakeResult.Ready -> "READY"
+        HandshakeResult.Rejected -> "REJECTED"
+        is HandshakeResult.Replace -> "REPLACE(${adapter.id},${activation.name})"
+    }
+
+    private fun ProtocolEvent.traceDescription(): String = when (this) {
+        ProtocolEvent.HandshakeAccepted -> "HandshakeAccepted"
+        ProtocolEvent.HandshakeRejected -> "HandshakeRejected"
+        is ProtocolEvent.ProductIdentified -> "ProductIdentified(id=$productId)"
+        is ProtocolEvent.CapabilitiesIdentified ->
+            "CapabilitiesIdentified(battery=$battery,modes=$noiseModes)"
+
+        is ProtocolEvent.BatteryChanged -> "BatteryChanged($battery)"
+        is ProtocolEvent.NoiseModeChanged -> "NoiseModeChanged($mode)"
+        is ProtocolEvent.UnknownFrame ->
+            "UnknownFrame(version=$version,vendor=$vendor,command=$command,payload=$payloadSize)"
+    }
+
+    private fun AdapterSnapshot.traceDescription(): String =
+        "id=$id resolution=$resolution batterySource=$batterySource " +
+            "capabilities=$capabilities modes=$supportedNoiseModes"
+
+    private fun String.quoted(): String = replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .let { "\"$it\"" }
+
     private fun EarbudAdapter.initialHandshakeState(): ProtocolHandshakeState =
         if (privateProtocolRequired && transportReadiness == TransportReadiness.PROTOCOL_HANDSHAKE) {
             ProtocolHandshakeState.PENDING
@@ -811,6 +954,7 @@ internal class EarbudDeviceSession(
         )
 
         const val COMPONENT = "DeviceSession"
+        const val PROBE_COMPONENT = "ProtocolProbe"
         const val CONNECT_TIMEOUT_MS = 60_000L
         const val PROTOCOL_HANDSHAKE_TIMEOUT_MS = 2_500L
         const val INITIAL_COMMAND_GAP_MS = 150L
