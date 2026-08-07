@@ -178,3 +178,6 @@ HyperEars 以 [GNU GPL-3.0-only](LICENSE) 发布。协议研究参考了
 抓包与验证结果。具体来源及许可说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 商标和产品名称仅用于兼容性描述，归各自权利人所有。
+
+https://github.com/SouthautumnYa/QCYpods 
+qycc50s
