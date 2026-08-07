@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.os.Handler
 import dev.hyperears.integration.EarbudAdapterRegistry
+import dev.hyperears.integration.PlatformReservedHeadsetPolicy
 import dev.hyperears.integration.ProtocolTraceLevel
 import dev.hyperears.bridge.ModuleRuntimeGate
 import dev.hyperears.runtime.EarbudSessionService
@@ -79,8 +80,19 @@ internal class BluetoothProcessHook : HookContext() {
         if (ModuleRuntimeGate.paused) return
 
         val identity = device.toEarbudIdentity()
-        val earbudAdapter = EarbudAdapterRegistry.forIntegration(identity) ?: return
         val address = runCatching { device.address }.getOrNull()
+        if (PlatformReservedHeadsetPolicy.reserves(identity)) {
+            ModuleLog.probe(
+                "OwnershipProbe",
+                "platform-reserved name=${identity.deviceName?.quoted() ?: "<null>"} " +
+                    "normalized=${identity.deviceName.orEmpty().normalizeForMatch().quoted()} " +
+                    "address=${maskBluetoothAddress(address)} " +
+                    "native=${identity.nativeSystemEarbud} " +
+                    "cachedUuids=${identity.serviceUuids.sorted()}",
+            )
+            return
+        }
+        val earbudAdapter = EarbudAdapterRegistry.forIntegration(identity) ?: return
         if (earbudAdapter.protocolTraceLevel == ProtocolTraceLevel.FULL) {
             ModuleLog.probe(
                 "ProtocolProbe",

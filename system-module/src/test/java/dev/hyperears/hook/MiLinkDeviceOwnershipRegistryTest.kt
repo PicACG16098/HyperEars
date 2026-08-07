@@ -46,15 +46,15 @@ class MiLinkDeviceOwnershipRegistryTest {
     }
 
     @Test
-    fun injectedPositiveFromAnOuterMiLinkWrapperCannotReclassifyHyperEarsAsSystem() {
+    fun laterAuthoritativeNativeAcceptancePromotesAProvisionalHyperEarsOwner() {
         val registry = MiLinkDeviceOwnershipRegistry()
         registry.observeNativeAdmission(ADDRESS, 0, true)
 
-        val outerWrapper = registry.observeNativeAdmission(ADDRESS, 1, true)
+        val accepted = registry.observeNativeAdmission(ADDRESS, 1, true)
 
-        assertEquals(Owner.HYPEREARS, outerWrapper.owner)
-        assertFalse(outerWrapper.systemOwnershipNewlyClaimed)
-        assertFalse(outerWrapper.hyperEarsOwnershipNewlyClaimed)
+        assertEquals(Owner.SYSTEM, accepted.owner)
+        assertTrue(accepted.systemOwnershipNewlyClaimed)
+        assertFalse(accepted.hyperEarsOwnershipNewlyClaimed)
     }
 
     @Test

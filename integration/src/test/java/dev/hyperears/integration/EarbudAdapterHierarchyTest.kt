@@ -6,6 +6,7 @@ import dev.hyperears.protocol.vivo.VivoTwsProtocol
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,19 +38,21 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun appleIdentityIsOnlyAStaticStandardCandidateBeforeRuntimeNativeArbitration() {
-        val adapter = requireNotNull(
+    fun appleIdentitiesAreReservedBeforeTheStandardFallback() {
+        assertNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(deviceName = "小明的 AirPods Pro", standardHeadset = true),
+            ),
+        )
+        assertNull(
             EarbudAdapterRegistry.resolve(
                 EarbudIdentity(
-                    deviceName = "AirPods Pro",
+                    deviceName = "Renamed headset",
                     standardHeadset = true,
                     serviceUuids = setOf(AppleAirPodsAdapter.AAP_SERVICE_UUID),
                 ),
             ),
         )
-
-        assertTrue(adapter is StandardEarbudAdapter)
-        assertEquals(StandardEarbudAdapter.ID, adapter.id)
     }
 
     @Test
@@ -325,7 +328,7 @@ class EarbudAdapterHierarchyTest {
     fun rosePrivateUuidsSelectTheirProtocolFamiliesWithoutAProductLineName() {
         val earfree = EarbudAdapterRegistry.resolve(
             EarbudIdentity(
-                deviceName = "Furina Endless Solo of Solitude",
+                deviceName = "EARFREE Collaboration Edition",
                 standardHeadset = true,
                 serviceUuids = setOf(RoseEarfreeProtocolFamilyAdapter.SERVICE_UUID),
             ),
@@ -343,7 +346,7 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun furinaDiagnosticNameForcesEarfreeProbeWithoutCachedUuid() {
+    fun furinaDiagnosticNameForcesBudsFeelProbeWithoutCachedUuid() {
         val adapter = requireNotNull(
             EarbudAdapterRegistry.resolve(
                 EarbudIdentity(
@@ -360,6 +363,10 @@ class EarbudAdapterHierarchyTest {
         assertFalse(adapter.snapshot().capabilities.noiseControl)
         assertTrue(adapter.snapshot().supportedNoiseModes.isEmpty())
         assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
+        assertEquals(
+            RoseBudsFeelProtocolFamilyAdapter.DATA_CHANNEL_UUID,
+            (adapter.transports.single() as RfcommEndpointSpec.ServiceUuid).uuid,
+        )
     }
 
     @Test
@@ -377,20 +384,10 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun furinaDiagnosticProbePublishesModesOnlyAfterValidEarfreeEvidence() {
+    fun furinaDiagnosticProbePublishesModesOnlyAfterValidBudsFeelEvidence() {
         val adapter = FurinaEndlessDiagnosticAdapter()
-        val battery = roseResponse(
-            group = 0x01,
-            command = 0x01,
-            payload = byteArrayOf(0, 0, 91, 82, 1, 0, 67),
-        )
-        val noise = roseResponse(
-            group = 0x06,
-            command = 0x02,
-            payload = byteArrayOf(0, 0, 1, 0),
-        )
 
-        val result = adapter.receive(battery + noise)
+        val result = adapter.receive(budsFeelStatusResponse())
 
         assertEquals(HandshakeResult.Ready, result.handshake)
         assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
@@ -465,21 +462,22 @@ class EarbudAdapterHierarchyTest {
         .map { it.toInt(16).toByte() }
         .toByteArray()
 
-    private fun roseResponse(group: Int, command: Int, payload: ByteArray): ByteArray {
-        val size = 10 + payload.size
+    private fun budsFeelStatusResponse(): ByteArray {
         val body = byteArrayOf(
+            0xDD.toByte(),
+            0x2A,
+            0x15,
+            0x04,
+            0x0C,
+            91,
+            82,
+            67,
+            0x02,
             0x09,
-            0xFF.toByte(),
-            0,
-            0,
-            1,
-            group.toByte(),
-            command.toByte(),
-            size.toByte(),
-            0,
-        ) + payload
+            0x04,
+        )
         val checksum = body.sumOf { it.toInt() and 0xFF }.and(0xFF).toByte()
-        return body + byteArrayOf(checksum)
+        return body + byteArrayOf(checksum, 0xAA.toByte())
     }
 
     private class TestRoseEarfreeProtocolFamilyAdapter :

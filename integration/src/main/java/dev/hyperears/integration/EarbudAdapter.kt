@@ -381,8 +381,10 @@ object EarbudAdapterRegistry {
         }
     }
 
-    fun resolve(identity: EarbudIdentity): EarbudAdapter? =
-        factories.asSequence().map { it() }.firstOrNull { it.matches(identity) }
+    fun resolve(identity: EarbudIdentity): EarbudAdapter? {
+        if (PlatformReservedHeadsetPolicy.reserves(identity)) return null
+        return factories.asSequence().map { it() }.firstOrNull { it.matches(identity) }
+    }
 
     fun forIntegration(identity: EarbudIdentity): EarbudAdapter? =
         resolve(identity)?.takeIf(EarbudAdapter::integrationEnabled)

@@ -89,9 +89,15 @@ internal class MiLinkServiceHook : HookContext() {
             "com.xiaomi.mxbluetoothsdk.manager.MxBluetoothManager",
             "com.xiaomi.mxbluetoothsdk.service.MxBluetoothService",
         )
+        // Hook exactly one native-admission boundary. Prefer the service implementation so a
+        // manager wrapper cannot observe and then reclassify the positive value injected below.
+        // Older MiLink builds without that method fall back to the manager entry.
+        val admissionHookInstalled = runtimeClasses.asReversed().any(::hookNativeHeadsetAdmission)
+        if (!admissionHookInstalled) {
+            ModuleLog.warn("MiLink", "no native headset-admission boundary available")
+        }
         runtimeClasses.forEach { className ->
             hookContextEntry(className)
-            hookNativeHeadsetAdmission(className)
             hookBluetoothDeviceResult(className, "getDeviceId") { _, adapter ->
                 MiLinkCarrierIdentity.deviceId(adapter)
             }
@@ -575,7 +581,7 @@ internal class MiLinkServiceHook : HookContext() {
      * native rejection plus an active HyperEars candidate is changed to an accepted result.
      */
     @SuppressLint("MissingPermission")
-    private fun hookNativeHeadsetAdmission(className: String) {
+    private fun hookNativeHeadsetAdmission(className: String): Boolean =
         runCatching {
             hookAfter(findMethod(className, "checkIsMiTWS", BluetoothDevice::class.java)) {
                 if (ModuleRuntimeGate.paused) return@hookAfter
@@ -593,7 +599,8 @@ internal class MiLinkServiceHook : HookContext() {
                 ModuleLog.debug(
                     "MiLink",
                     "native admission original=$result candidate=${candidateState.sessionActive} " +
-                        "owner=${decision.owner} process=${Application.getProcessName()} " +
+                        "owner=${decision.owner} boundary=$className " +
+                        "process=${Application.getProcessName()} " +
                         "address=${maskBluetoothAddress(address)}",
                 )
                 when (decision.owner) {
@@ -620,10 +627,11 @@ internal class MiLinkServiceHook : HookContext() {
                     MiLinkDeviceOwnershipRegistry.Owner.UNKNOWN -> Unit
                 }
             }
-        }.onFailure {
-            ModuleLog.warn("MiLink", "required $className.checkIsMiTWS unavailable", it)
+            true
+        }.getOrElse {
+            ModuleLog.debug("MiLink", "optional $className.checkIsMiTWS unavailable")
+            false
         }
-    }
 
     private fun hookAddressResult(
         className: String,

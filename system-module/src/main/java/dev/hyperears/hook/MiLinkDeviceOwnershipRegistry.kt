@@ -5,11 +5,9 @@ import java.util.Locale
 /**
  * Process-local ownership decided at MiLink's native headset-admission boundary.
  *
- * The first definitive admission is sticky for the lifetime of the MiLink process. This matters
- * because MiLink manager and service wrappers may call one another: an outer wrapper can observe
- * the positive value supplied by an inner HyperEars hook, but that value must not be mistaken for
- * a new native acceptance. HyperEars may supplement only after the original boundary rejected a
- * device and an active module session exists for the same Bluetooth address.
+ * MiLinkServiceHook observes exactly one native boundary, so every positive original result is
+ * authoritative. System ownership is sticky and may promote a provisional HyperEars owner if the
+ * platform later recognizes the same address after its own metadata becomes available.
  */
 internal class MiLinkDeviceOwnershipRegistry {
     enum class Owner {
@@ -36,8 +34,8 @@ internal class MiLinkDeviceOwnershipRegistry {
         val previous = owners[key] ?: Owner.UNKNOWN
         val next = when {
             previous == Owner.SYSTEM -> Owner.SYSTEM
-            previous == Owner.HYPEREARS -> Owner.HYPEREARS
             isNativeAdmissionAccepted(originalResult) -> Owner.SYSTEM
+            previous == Owner.HYPEREARS -> Owner.HYPEREARS
             hyperEarsCandidateAvailable -> Owner.HYPEREARS
             else -> previous
         }
