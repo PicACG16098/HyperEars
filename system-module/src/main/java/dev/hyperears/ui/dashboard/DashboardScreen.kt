@@ -55,7 +55,7 @@ fun DashboardScreen(
                 start = 16.dp,
                 end = 16.dp,
                 top = 12.dp,
-                bottom = 32.dp,
+                bottom = 0.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {

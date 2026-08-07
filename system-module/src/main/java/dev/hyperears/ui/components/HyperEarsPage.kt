@@ -1,6 +1,7 @@
 package dev.hyperears.ui.components
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.Scaffold
@@ -27,6 +28,9 @@ fun HyperEarsPage(
 
     Scaffold(
         modifier = modifier,
+        // The app shell already reserves the bottom navigation area. Re-consuming navigation-bar
+        // insets here adds a visible empty band between page content and the bottom navigation.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             LargeTopAppBar(
                 title = { Text(title) },
