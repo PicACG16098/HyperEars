@@ -90,12 +90,27 @@ enum class ProtocolHandshakeState {
     REJECTED,
 }
 
+/** Selects which process currently owns the vendor-private headset control channel. */
+enum class ControlOwnership {
+    MODULE,
+    EXTERNAL_APP,
+}
+
 /** One authoritative lifecycle projection for a physical headset session. */
 data class DeviceLifecycle(
     val systemProfile: SystemProfileState = SystemProfileState.DISCONNECTED,
     val privateTransport: PrivateTransportState = PrivateTransportState.NOT_REQUIRED,
     val protocolHandshake: ProtocolHandshakeState = ProtocolHandshakeState.NOT_REQUIRED,
+    val controlOwnership: ControlOwnership = ControlOwnership.MODULE,
+    val externalControlApp: ControlAppSpec? = null,
 ) {
+    init {
+        require(
+            (controlOwnership == ControlOwnership.EXTERNAL_APP) ==
+                (externalControlApp != null),
+        ) { "External control ownership requires exactly one control app identity" }
+    }
+
     val active: Boolean get() = systemProfile == SystemProfileState.CONNECTED
     val privateTransportRequired: Boolean
         get() = privateTransport != PrivateTransportState.NOT_REQUIRED
@@ -232,6 +247,17 @@ data class EarbudCapabilities(
     val findDevice: Boolean = false,
 )
 
+/** One vendor control application that may take ownership of the private headset protocol. */
+data class ControlAppSpec(
+    val packageName: String,
+    val displayName: String,
+) {
+    init {
+        require(packageName.isNotBlank())
+        require(displayName.isNotBlank())
+    }
+}
+
 enum class AdapterResolution {
     STANDARD,
     EXACT_MATCH,
@@ -258,6 +284,27 @@ data class AdapterSnapshot(
     val presentationId: MiLinkCardPresentationId?,
     val transportKinds: Set<TransportKind>,
     val ancSwitchCooldownMs: Long,
+    val controlApps: List<ControlAppSpec> = emptyList(),
+)
+
+/**
+ * Removes vendor-private telemetry and controls while preserving standard MiLink integration.
+ *
+ * The concrete identity and form factor remain visible, but the platform sees no private channel
+ * requirement, model-specific card extension, or writable vendor capability until ownership
+ * returns to HyperEars.
+ */
+fun AdapterSnapshot.standardIntegrationProjection(): AdapterSnapshot = copy(
+    privateProtocolRequired = false,
+    batterySource = BatterySource.SYSTEM_AGGREGATE,
+    capabilities = EarbudCapabilities(
+        battery = true,
+        audioHandoff = true,
+    ),
+    supportedNoiseModes = emptySet(),
+    presentationId = null,
+    transportKinds = emptySet(),
+    ancSwitchCooldownMs = 0L,
 )
 
 data class AdapterRuntimeState(

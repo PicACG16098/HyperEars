@@ -2,30 +2,37 @@
 
 ![HyperEars 标题图](docs/assets/coolapk-title.png)
 
-[English](README_EN.md) · [安装指南](docs/installation.md) · [兼容性](docs/compatibility.md) · [问题排查](docs/troubleshooting.md)
+[English](README_EN.md) · [安装指南](docs/installation.md) · [兼容性](docs/compatibility.md) · [控制 App 作用域](docs/control-apps.md) · [问题排查](docs/troubleshooting.md)
 
 [![CI](https://github.com/silverpoetry/HyperEars/actions/workflows/ci.yml/badge.svg)](https://github.com/silverpoetry/HyperEars/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/silverpoetry/HyperEars?display_name=tag)](https://github.com/silverpoetry/HyperEars/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
 HyperEars 是面向 Xiaomi HyperOS 的第三方蓝牙耳机系统集成模块。它让受支持的
-vivo/iQOO、OPPO Enco、Bose、Edifier、StarRing、ROSESELSA、NiceHCK 和 Sony 耳机进入 MiLink 融合设备中心，并在不接管
-Android 音频路由的前提下补充电量、降噪状态和设备流转所需的兼容信息。
+vivo / iQOO、OPPO Enco、Bose、Edifier、StarRing、ROSESELSA、NiceHCK 和 Sony 耳机
+进入 MiLink 融合设备中心，并在不接管 Android 音频路由的前提下补充电量、降噪状态和
+设备流转所需的兼容信息。
 
 > [!WARNING]
 > HyperEars 依赖 root、LSPosed 和 HyperOS 私有接口。安装前请确认能够恢复系统；ROM
 > 更新可能暂时破坏兼容性。本项目与 Xiaomi、vivo、iQOO、OPPO、Bose、Edifier、
-> ROSESELSA、NiceHCK、Sony
-> 及相关品牌无关。
+> ROSESELSA、NiceHCK、Sony 及相关品牌无关。
 
 ## 能做什么
 
 - 把符合条件的第三方耳机发布为 MiLink 耳机设备，复用系统原生流转与音量控制。
 - 按适配器声明读取左右耳/充电盒或头戴式整机电量；标准耳机回退到 Android 整机电量。
 - 把耳机私有降噪协议映射为系统卡片支持的降噪、关闭、通透和型号专属模式。
-- 在“更多设置”中打开真实蓝牙设备详情，而不是借用载体型号的厂商页面。
+- 在“更多设置”中优先打开当前 Adapter 声明的厂商控制 App；关闭该选项或没有可启动 App
+  时打开真实蓝牙设备详情。
 - 为没有私有适配的标准 A2DP/HFP 耳机提供流转、音量和系统整机电量回退。
 - 在应用内按设备会话展示识别、通道、协议和 MiLink 发布状态，便于诊断生命周期。
+- 在设置页配置“打开厂商设置”和“运行时退避”；
+  页面同时提供日志导出，以及重启 MiLink、重启蓝牙和停止厂商 App 的 Root 操作。
+- 可在设置页暂停 HyperEars 集成；暂停不会关闭 Android 原生蓝牙或音频路由，恢复后重新连接
+  耳机即可重新建立模块会话。
+- 详细日志关闭时不产生模块诊断记录；开启后，各注入进程写入 LSPosed 守护进程模块日志，
+  设置变更和快捷控制结果写入应用本地滚动日志，导出时合并为一个文本文件。
 
 HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频流经过模块，也不会
 持续扫描蓝牙。私有 GATT、RFCOMM 或 BR/EDR L2CAP 控制通道只对需要协议遥测的适配器建立，并按
@@ -47,15 +54,17 @@ HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频�
 
 所有条目均提供设备流转和系统音量。“公开实现”“参考协议”和“家族外推”均不等于
 实机验证。家族名称只用于选择候选协议；需要确认的适配器还会校验服务、线端身份或
-合法状态帧。完整型号、
-证据等级、判型条件、私有传输和开放能力见
+合法状态帧。完整型号、证据等级、判型条件、私有传输和开放能力见
 [兼容性文档](docs/compatibility.md)。
 
 ## 系统要求
 
 - Xiaomi HyperOS，Android 15 或更高版本；
 - 已安装并正常工作的 LSPosed，API 版本不低于 101；
-- LSPosed 作用域：`com.android.bluetooth`、`com.milink.service`；
+- LSPosed 必选作用域：`com.android.bluetooth`、`com.milink.service`；
+- 如果要启用“运行时退避”，还需按
+  [控制 App 目录](docs/control-apps.md#2-当前目录)勾选实际安装并使用的控制 App；仅执行
+  “更多设置”页面跳转时，安装且可启动即可；
 - 耳机已通过系统蓝牙完成配对。
 
 目前公开测试基线来自 HyperOS 设备。AOSP、MIUI、非小米 ROM 和低于 Android 15 的
@@ -68,10 +77,13 @@ HyperEars **不会**替换 Android 的 A2DP/HFP 音频链路，不会把音频�
 2. 校验 SHA-256：
 
    ```powershell
-    Get-FileHash .\HyperEars-v1.2.0.apk -Algorithm SHA256
+   Get-FileHash .\HyperEars-vX.Y.Z.apk -Algorithm SHA256
    ```
 
-3. 安装 APK，在 LSPosed 中启用 HyperEars，并确认两个静态作用域均已选中。
+3. 安装 APK，在 LSPosed 中启用 HyperEars，并至少确认 `com.android.bluetooth` 和
+   `com.milink.service` 已选中。若使用厂商控制 App 退避，再按
+   [控制 App 目录](docs/control-apps.md#2-当前目录)选择对应且已安装的包名；不要选择
+   Settings、System UI 或所有应用。
 4. 重启设备。仅强停 MiLink 不一定会让两个目标进程同时重新加载模块。
 5. 连接耳机后打开 HyperEars，确认对应会话显示正确的 Adapter、形态、传输和能力，
    并观察 MiLink 的状态接收、身份查询、能力查询与通知阶段。
@@ -113,6 +125,15 @@ MiLinkServiceHook         ── 最小身份、状态与控制映射
 扩展只在 MiLink 卡片绑定时执行，并由具体 Adapter 声明。完整架构见
 [系统模块架构](docs/system-module-architecture.md)。
 
+### 控制权退避
+
+HyperEars 只负责 MiLink 的标准集成、设备流转、系统音量和标准系统电量。开启“运行时退避”
+后，适配器声明且已被 LSPosed Hook 的厂商控制 App 运行时，模块通过该 App 进程的 Binder
+存活状态让出私有协议控制权，关闭自己建立的 GATT、RFCOMM 或 L2CAP 通道，卡片退化为
+标准耳机能力。这个判据不依赖厂商 App 是否创建了蓝牙连接；App 崩溃、被强停或进程退出
+都会通过 Binder death 自动恢复。App 运行期间仍由蓝牙进程维护耳机会话和标准蓝牙状态。
+支持的应用名称、包名、声明顺序及作用域条件见[控制 App 目录](docs/control-apps.md)。
+
 ## 隐私与安全
 
 - 正式模块未声明 `INTERNET` 权限，不包含分析、遥测、广告或崩溃上报 SDK。
@@ -140,13 +161,15 @@ MiLinkServiceHook         ── 最小身份、状态与控制映射
 - `HYPEREARS_KEY_ALIAS`
 - `HYPEREARS_KEY_PASSWORD`
 
-CI 会验证单元测试、Lint 和 Release 编译；带 `v*` 标签的发布工作流使用仓库 Secrets
-签名、验证 APK，并同时生成 SHA-256 文件。
+CI 会验证 Markdown 结构、站内链接、控制 App 目录一致性、单元测试、Android Lint 和
+Release 编译；带 `v*` 标签的发布工作流使用仓库 Secrets 签名、验证 APK，并同时生成
+SHA-256 文件。
 
 ## 文档
 
 - [安装、升级与卸载](docs/installation.md)
 - [设备兼容性与证据等级](docs/compatibility.md)
+- [厂商控制 App 与 LSPosed 作用域](docs/control-apps.md)
 - [常见问题与日志采集](docs/troubleshooting.md)
 - [发布签名与产物验证](docs/release-signing.md)
 - [系统模块架构](docs/system-module-architecture.md)

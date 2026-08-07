@@ -34,6 +34,12 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: controller
+    attributes:
+      label: Vendor controller app, if applicable
+      description: Provide the visible app name and exact Android package name; state whether settings navigation and runtime yielding were tested.
+
   - type: textarea
     id: result
     attributes:

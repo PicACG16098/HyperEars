@@ -5,36 +5,36 @@ HyperEars 的原创代码整体按 GNU GPL-3.0-only 发布。以下项目为协�
 
 ## OPPOPods
 
-- 1812z/OppoPods: https://github.com/1812z/OppoPods
-- Leaf-lsgtky/OppoPods: https://github.com/Leaf-lsgtky/OppoPods
+- 1812z/OppoPods: <https://github.com/1812z/OppoPods>
+- Leaf-lsgtky/OppoPods: <https://github.com/Leaf-lsgtky/OppoPods>
 
 用于理解 OPPO 私有 RFCOMM 帧、电量、降噪和 HyperOS 系统集成路径。1812z 项目
-README 声明 GPL-3.0。HyperEars 选择 GPL-3.0-only，以保证相关修改和派生实现继续
-提供源代码。
+README 声明 GPL-3.0。HyperEars 不随 APK 分发该项目的代码、应用或资源；本项目许可证
+及其与外部资料的关系以各自仓库中的许可证原文为准。
 
 ## HyperRose / ROSESELSA protocol profiles
 
-- DOHEX/HyperRose: https://github.com/DOHEX/HyperRose
+- DOHEX/HyperRose: <https://github.com/DOHEX/HyperRose>
 - Reviewed revision: `635c0dd89ee07aab95c4138ca1275e44fd666165`
 - Revision link:
-  https://github.com/DOHEX/HyperRose/tree/635c0dd89ee07aab95c4138ca1275e44fd666165
+  <https://github.com/DOHEX/HyperRose/tree/635c0dd89ee07aab95c4138ca1275e44fd666165>
 - Declared license: GNU GPL-3.0（README 声明；该固定提交未包含其链接指向的
   `LICENSE` 文件）
 
 用于核对 ROSESELSA EARFREE i5 的 BLE GATT 特征、电量和四态噪声控制帧，以及 ROSE
 BudsFeel MK2 的 RFCOMM、校验帧和 LTV 状态字段。HyperEars 在自身 Protocol/Adapter
 边界内重新组织实现，不分发 HyperRose 的应用、界面、图片或其他品牌资源。上游提交
-缺少许可证文件的问题在此如实记录；其 README 的 GPL-3.0 声明与 HyperEars 的
-GPL-3.0-only 发布方式兼容。
+缺少许可证文件的问题在此如实记录；HyperEars 不将该仓库的代码或资源作为可再分发
+组件纳入 APK。
 
 ## HyperPods and LibrePods / Apple AAP
 
 - Art-Chen/HyperPods:
-  https://github.com/Art-Chen/HyperPods/tree/9796d947daa18a379948349442632510424a1a15
+  <https://github.com/Art-Chen/HyperPods/tree/9796d947daa18a379948349442632510424a1a15>
 - Upstream license: GNU GPL-3.0
 - Copyright: Copyright (C) 2024 Art_Chen
 - kavishdevar/aln（现 LibrePods）:
-  https://github.com/kavishdevar/aln/tree/b5a3eaee8fbe5a0c83c360bb0fdcd6705a59cc25
+  <https://github.com/kavishdevar/aln/tree/b5a3eaee8fbe5a0c83c360bb0fdcd6705a59cc25>
 - Upstream license: GNU GPL version 3 or later
 - Copyright: Copyright (C) 2025 LibrePods contributors
 
@@ -45,7 +45,7 @@ GPL-3.0-only 发布方式兼容。
 ## NiceHCK Controller
 
 - ZaeXT/NiceHCK_Controller:
-  https://github.com/ZaeXT/NiceHCK_Controller/tree/f1348a8d09fc57e3b7098a4f15bae5f926475771
+  <https://github.com/ZaeXT/NiceHCK_Controller/tree/f1348a8d09fc57e3b7098a4f15bae5f926475771>
 - Upstream license: MIT
 
 用于核对 NiceHCK/YuanDao OriG in 的 RFCOMM UUID、帧长度、操作码、电量字段和噪声
@@ -78,7 +78,7 @@ SOFTWARE.
 ## HyperOriG behavioral reference
 
 - KiriChen-Wind/HyperOriG:
-  https://github.com/KiriChen-Wind/HyperOriG/tree/d2f2a4b1111e085f9720cc32ed072abb343778d0
+  <https://github.com/KiriChen-Wind/HyperOriG/tree/d2f2a4b1111e085f9720cc32ed072abb343778d0>
 - License status at reviewed revision: no license file or explicit software license found
 
 该项目只作为 YuanDao OriG in 用户可见行为的交叉参考。由于上游没有明确授予程序代码
@@ -88,7 +88,7 @@ NiceHCK_Controller 及可互操作协议事实独立完成。
 ## Community research index
 
 - 酷安帖子“HyperRose - 为你的弱水时砂耳机接入澎湃超级岛”：
-  https://www.coolapk.com/feed/71349652
+  <https://www.coolapk.com/feed/71349652>
 
 该帖子用于发现相关开源项目。实际协议采用、许可证判断和归属均以上述固定提交与其
 仓库文件为准，帖子本身不作为程序代码来源。
@@ -96,7 +96,7 @@ NiceHCK_Controller 及可互操作协议事实独立完成。
 ## Pods Protocol Reverse Engineering
 
 - Star-ZER0/Pods-Protocol-Reverse-Engineering:
-  https://github.com/Star-ZER0/Pods-Protocol-Reverse-Engineering
+  <https://github.com/Star-ZER0/Pods-Protocol-Reverse-Engineering>
 - Upstream license: CC BY-SA 4.0
 
 用于交叉验证 vivo、OPPO 等厂商协议字段。相关文档在引用处保留来源链接；HyperEars
@@ -104,15 +104,15 @@ NiceHCK_Controller 及可互操作协议事实独立完成。
 
 ## ScrewVivoTWS
 
-- moculll/ScrewVivoTWS: https://github.com/moculll/ScrewVivoTWS
+- moculll/ScrewVivoTWS: <https://github.com/moculll/ScrewVivoTWS>
 
 用于 vivo TWS 3e 的公开协议画像。该仓库当前未被 GitHub 识别出标准许可证；本项目
 只记录可互操作的协议事实和独立实现，不复制其程序或资源。
 
 ## Bose BMAP research
 
-- aaronsb/bosectl: https://github.com/aaronsb/bosectl
-- danielgjackson/noisecancel: https://github.com/danielgjackson/noisecancel
+- aaronsb/bosectl: <https://github.com/aaronsb/bosectl>
+- danielgjackson/noisecancel: <https://github.com/danielgjackson/noisecancel>
 - Upstream licenses: MIT
 
 用于交叉核对 Bose BMAP 产品 ID、RFCOMM 通道，以及 QC35/35 II、NC700、QC45、
@@ -132,13 +132,13 @@ v8.4.39 的互操作行为分析，并由真实设备通信验证。花再 Evo P
 ## Sony Headphones protocol research
 
 - Plutoberth/SonyHeadphonesClient:
-  https://github.com/Plutoberth/SonyHeadphonesClient/tree/5620e8ed5deccb957338b54e371b215146080819
+  <https://github.com/Plutoberth/SonyHeadphonesClient/tree/5620e8ed5deccb957338b54e371b215146080819>
 - Upstream license: MIT
 - Gadgetbridge Sony Headphones implementation:
-  https://codeberg.org/Freeyourgadget/Gadgetbridge/src/commit/15d45691c7eed5195fb7020dfefda49ff2be8a68/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/sony/headphones
+  <https://codeberg.org/Freeyourgadget/Gadgetbridge/src/commit/15d45691c7eed5195fb7020dfefda49ff2be8a68/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/sony/headphones>
 - Upstream license: GNU AGPL-3.0-or-later
 - Sony protocol documentation:
-  https://ohm-app.github.io/sony-headphones-bluetooth-documentation/Protocol/Specification/
+  <https://ohm-app.github.io/sony-headphones-bluetooth-documentation/Protocol/Specification/>
 
 用于交叉核对 Sony RFCOMM 服务、帧转义、ACK 序号、v1/v2 初始化、电量类型及环境声
 控制语义。HyperEars 根据可互操作协议事实独立实现 MiLink 所需的最小子集，不复制
@@ -147,8 +147,8 @@ Gadgetbridge 的 AGPL 程序代码，也不分发 SonyHeadphonesClient、厂商�
 
 ## Android and LSPosed APIs
 
-- Android Open Source Project: https://source.android.com/
-- libxposed API: https://github.com/libxposed/api
+- Android Open Source Project: <https://source.android.com/>
+- libxposed API: <https://github.com/libxposed/api>
 
 各依赖的二进制和许可证信息由 Gradle 依赖元数据及其上游项目提供。
 

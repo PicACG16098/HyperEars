@@ -4,6 +4,38 @@
 
 ## [Unreleased]
 
+后续变更将在此记录。
+
+## [1.3.0] - 2026-08-07
+
+### Added
+
+- 新增应用内日志导出：通过系统文件选择器合并经过模块标识过滤的 LSPosed 守护进程日志
+  与 HyperEars 应用滚动日志。
+- 设置开关增加与 HyperOS 交互一致的轻触反馈；底部导航和普通按钮保持无额外触感。
+
+### Changed
+
+- Root 快捷操作结果不再常驻设置页；开启“详细日志”后写入应用滚动日志。
+- 移除正式模块和协议测试工具未使用的 Compose tooling 依赖，并从 APK 排除协程
+  `DebugProbesKt.bin` 资源。
+
+### Documentation
+
+- 新增厂商控制 App 与 LSPosed 作用域目录，统一记录 11 个控制 App 的显示名、包名、
+  Adapter 声明顺序、页面跳转条件、运行时退避条件和退出恢复语义。
+- 统一中英文 README、兼容性矩阵、安装、排障、架构、隐私、贡献和第三方声明；明确
+  控制 App 不参与耳机判型，明确私有能力确认条件和日志隐私边界。
+- 修正过时的设置名称、版本示例、生命周期描述和英文术语，补充各型号明确的模式能力。
+- 新增 Markdown 结构、站内链接、标题锚点、YAML 和控制 App 目录一致性校验，并接入 CI。
+
+### Verification
+
+- MarkdownLint：23 个 Markdown 文件，0 个错误；
+- 本地链接与标题锚点：通过；
+- 控制 App 目录、Adapter 声明与 `scope.list`：11 项完全同步；
+- YAML 语法检查：8 个文件通过。
+
 ## [1.2.0] - 2026-08-05
 
 ### Added
@@ -176,7 +208,8 @@
 - Release 构建改用独立环境变量签名，不再使用 debug 证书。
 - 增加 CI、标签发布、APK 签名验证和 SHA-256 产物。
 
-[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.3.0
 [1.2.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.2.0
 [1.1.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.1.0
 [1.0.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.0.0

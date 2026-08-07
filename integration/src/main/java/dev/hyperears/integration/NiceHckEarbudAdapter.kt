@@ -6,6 +6,7 @@ import dev.hyperears.protocol.nicehck.NiceHckWireCodec
 open class NiceHckEarbudAdapter : StandardEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "NiceHCK headset"
+    override val controlApps: List<ControlAppSpec> = listOf(ControlAppCatalog.yuanDao)
 
     override fun matches(identity: EarbudIdentity): Boolean {
         if (identity.nativeSystemEarbud) return false

@@ -12,6 +12,8 @@ import dev.hyperears.hook.ModuleLog
 import dev.hyperears.integration.EarbudAdapter
 import dev.hyperears.integration.EarbudIdentity
 import dev.hyperears.integration.EarbudState
+import dev.hyperears.settings.ModuleSettings
+import dev.hyperears.settings.ModuleSettingsRuntime
 import java.io.Closeable
 
 /**
@@ -63,6 +65,11 @@ internal object EarbudSessionService {
         private val context: Context,
     ) : Closeable {
         val connectionManager = EarbudConnectionManager(context)
+        private val settingsSubscription = ModuleSettingsRuntime.observe(::applySettings)
+        private val controlAppPresence = ControlAppPresenceRegistry(
+            context = context,
+            onChanged = connectionManager::updateControlAppPresence,
+        )
 
         private val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -112,6 +119,43 @@ internal object EarbudSessionService {
                             )
                         }
                     }
+
+                    ModuleContract.ACTION_CONTROL_APP_REGISTER -> {
+                        val fields = with(ModuleContract) {
+                            intent.controlAppRegistrationFields()
+                        }
+                        val registration = with(ModuleContract) {
+                            intent.readControlAppRegistration()
+                        }
+                        if (registration == null) {
+                            ModuleLog.warn(
+                                COMPONENT,
+                                "malformed control-app registration " +
+                                    "package=${fields.packageName} process=${fields.processName} " +
+                                    "tokenPresent=${fields.tokenPresent}",
+                            )
+                            return
+                        }
+                        ModuleLog.debug(
+                            COMPONENT,
+                            "received control-app registration sender=$sentFromPackage " +
+                                "uid=$sentFromUid " +
+                                "package=${registration.packageName} process=${registration.processName}",
+                        )
+                        if (
+                            !controlAppPresence.register(
+                                registration = registration,
+                                senderPackage = sentFromPackage,
+                                senderUid = sentFromUid,
+                            )
+                        ) {
+                            ModuleLog.warn(
+                                COMPONENT,
+                                "rejected unauthenticated control-app registration",
+                            )
+                        }
+                    }
+
                 }
             }
         }
@@ -120,6 +164,7 @@ internal object EarbudSessionService {
             val filter = IntentFilter().apply {
                 addAction(ModuleContract.ACTION_REQUEST_STATE)
                 addAction(ModuleContract.ACTION_CONTROL)
+                addAction(ModuleContract.ACTION_CONTROL_APP_REGISTER)
                 addAction(BluetoothSystemBattery.ACTION_LEVEL_CHANGED)
             }
             context.registerReceiver(
@@ -127,15 +172,23 @@ internal object EarbudSessionService {
                 filter,
                 Context.RECEIVER_EXPORTED,
             )
+            controlAppPresence.requestAnnouncements()
             ModuleLog.debug(COMPONENT, "control receiver registered")
         }
 
         override fun close() {
             connectionManager.close()
+            controlAppPresence.close()
+            settingsSubscription.close()
             runCatching { context.unregisterReceiver(receiver) }
                 .onFailure {
                     ModuleLog.debug(COMPONENT, "control receiver already unregistered")
                 }
+        }
+
+        private fun applySettings(settings: ModuleSettings) {
+            connectionManager.setModulePaused(settings.modulePaused)
+            connectionManager.updateExternalControlEnabled(settings.yieldToVendorControlApp)
         }
     }
 

@@ -1,3 +1,5 @@
+<!-- markdownlint-disable-file MD041 -->
+
 ## Summary
 
 <!-- What changed and why? -->
@@ -18,6 +20,8 @@
 - [ ] Hardware validation, when behavior changes on a physical headset
 - [ ] Logs, screenshots and Bluetooth addresses are redacted
 - [ ] Documentation and compatibility status are updated
+- [ ] If controller apps changed: catalog, Adapter declarations, `scope.list`, tests and
+      `docs/control-apps.md` are synchronized
 
 ## Risks and rollback
 

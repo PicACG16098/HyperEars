@@ -29,4 +29,6 @@ object ProcessStateStore {
     fun containsKnown(address: String): Boolean = registry.containsKnown(address)
 
     fun snapshots(): List<EarbudState> = registry.states()
+
+    fun clear() = registry.clear()
 }

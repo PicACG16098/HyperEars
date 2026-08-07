@@ -6,6 +6,7 @@
 > The current implementation independently models the captured interoperability facts.
 >
 > **Evidence levels:**
+>
 > - **W860NB PRO** — Full real-device verification (ANC, battery, capabilities, SPP framing)
 > - **花再 Evo Pro** — Real-device verification (BES framing, `ancIndex=0x1B`, aggregate battery
 >   via `0xF2`, and `1/2/3→ANC`, `4→WIND`, `5→TRANSPARENCY`, `6→OFF`)
@@ -24,15 +25,19 @@
 ## Frame Format (BLE v2, confirmed live)
 
 **App → Device (Send):**
-```
+
+```text
 [0xAA][APP_CODE][CMD_INDEX][LEN_H][LEN_L][PAYLOAD...][CRC]
 ```
+
 Example: `AA EC D8 00 00 6E` (device function query)
 
 **Device → App (Response):**
-```
+
+```text
 [0xBB][APP_CODE][CMD_INDEX][LEN_H][LEN_L][PAYLOAD...][CRC]
 ```
+
 Older firmware may use `0xCC`. Example: `BB EC D0 00 01 99 11` (battery response)
 
 | Field | Size | Description |
@@ -63,7 +68,7 @@ Both directions carry XOR-`0xA5`-encrypted payloads. Key source:
 
 ### Set ANC (cmd 0xC1 / 193)
 
-```
+```text
 [ancIndex][ancValue]
 ```
 
@@ -83,10 +88,12 @@ Live example: `AA EC C1 00 02 B5 A6 B4` = set wind noise mode
 
 ### Query ANC (cmd 0xCC / 204)
 
-```
+```text
 [empty payload]
 ```
+
 Response payload is 2-3 bytes, XOR-encrypted. After decrypt:
+
 - byte[0] = ancIndex (`0x10`)
 - byte[1] = ancValue (1-5, see mapping above)
 
@@ -94,9 +101,10 @@ Verified: `BB EC CC 00 02 B5 A0 CA` → `B5 A0` → decrypt `10 05` = NC off.
 
 ### Query Battery (cmd 0xD0 / 208)
 
-```
+```text
 [empty payload]
 ```
+
 Response example: `BB EC D0 00 01 99 11` — single-byte XOR-encrypted payload.
 `0x99 ^ 0xA5 = 0x3C = 60%`. Percent may include charging flag in high bit (not yet confirmed).
 
@@ -140,7 +148,7 @@ AA EC C1 00 02 BE A1 B8
 |---------|-------------|-----------|-------|
 | battery_query | 0xD0 | query | battery |
 | anc_query | 0xCC | query | noise state |
-| anc_set | 0xC1 | set | [ancIndex][ancValue] |
+| anc_set | 0xC1 | set | `[ancIndex][ancValue]` |
 | device_state_query | 0xF2 | query | TWS state |
 | version_query | 0xC6 | query | version |
 | name_query | 0xC9 | query | device name |

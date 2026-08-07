@@ -66,7 +66,7 @@ RFCOMM；若真机报告确认 Air2 仅支持 GATT，则为 Air2 增加独立传
 
 - Air3 Pro：本项目实机抓包，见
   [`vivo-tws-air3-pro-protocol.md`](vivo-tws-air3-pro-protocol.md)。
-- TWS 3e：https://github.com/moculll/ScrewVivoTWS
-- 家族默认 v4 画像：https://github.com/Star-ZER0/Pods-Protocol-Reverse-Engineering
-- Air2 GATT 服务：https://github.com/bluez/bluez/issues/687
+- TWS 3e：<https://github.com/moculll/ScrewVivoTWS>
+- 家族默认 v4 画像：<https://github.com/Star-ZER0/Pods-Protocol-Reverse-Engineering>
+- Air2 GATT 服务：<https://github.com/bluez/bluez/issues/687>
 - 其余型号名称：本地留存的 vivo 官方 App 反编译常量，仅作为家族身份依据。

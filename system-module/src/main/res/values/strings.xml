@@ -4,5 +4,16 @@
     <string-array name="xposed_scope">
         <item>com.android.bluetooth</item>
         <item>com.milink.service</item>
+        <item>com.vivo.vivotws</item>
+        <item>com.heytap.headset</item>
+        <item>com.oplus.melody</item>
+        <item>com.coloros.oppopods</item>
+        <item>com.bose.bosemusic</item>
+        <item>com.bose.monet</item>
+        <item>com.edifier.edifierconnect</item>
+        <item>cn.ikaile.ruoshui.client</item>
+        <item>cn.lightyeartech.android</item>
+        <item>com.yuandao.nicehck</item>
+        <item>com.sony.songpal.mdr</item>
     </string-array>
 </resources>

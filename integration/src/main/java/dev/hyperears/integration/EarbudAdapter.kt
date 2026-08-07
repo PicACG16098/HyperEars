@@ -54,6 +54,9 @@ abstract class EarbudAdapter(
     /** Minimum ms between ANC switch commands; 0 = no cooldown. */
     open val ancSwitchCooldownMs: Long = 0L
 
+    /** Vendor applications that must own the private channel while their process is alive. */
+    open val controlApps: List<ControlAppSpec> = emptyList()
+
     /** How this runtime adapter was selected. */
     open val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
 
@@ -251,6 +254,7 @@ abstract class EarbudAdapter(
             }
         },
         ancSwitchCooldownMs = ancSwitchCooldownMs,
+        controlApps = controlApps,
     )
 
     fun resetProtocolSession() {

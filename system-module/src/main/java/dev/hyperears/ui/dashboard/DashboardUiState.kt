@@ -3,6 +3,7 @@ package dev.hyperears.ui.dashboard
 import dev.hyperears.bridge.BridgeReceipt
 import dev.hyperears.bridge.BridgeStage
 import dev.hyperears.integration.EarbudState
+import dev.hyperears.integration.ControlOwnership
 import dev.hyperears.integration.PrivateTransportState
 import dev.hyperears.integration.ProtocolHandshakeState
 import dev.hyperears.integration.SystemProfileState
@@ -29,6 +30,8 @@ data class DeviceSessionSnapshot(
         get() = when {
             state.lifecycle.systemProfile == SystemProfileState.DISCONNECTED ->
                 DevicePhase.SYSTEM_DISCONNECTED
+            state.lifecycle.controlOwnership == ControlOwnership.EXTERNAL_APP ->
+                DevicePhase.EXTERNAL_CONTROL_APP
             state.lifecycle.privateTransport == PrivateTransportState.CONNECTING ->
                 DevicePhase.TRANSPORT_CONNECTING
             state.lifecycle.privateTransport == PrivateTransportState.RECOVERING ->
@@ -114,6 +117,7 @@ data class DashboardUiState(
 
 enum class DevicePhase(val label: String) {
     SYSTEM_DISCONNECTED("系统音频未连接"),
+    EXTERNAL_CONTROL_APP("专有控制 App 运行中"),
     TRANSPORT_CONNECTING("私有传输连接中"),
     TRANSPORT_RECOVERING("私有传输恢复中"),
     TRANSPORT_DORMANT("私有传输已休眠"),

@@ -2,6 +2,7 @@ package dev.hyperears.ui.dashboard
 
 import dev.hyperears.integration.BatteryReading
 import dev.hyperears.integration.BatterySource
+import dev.hyperears.integration.ControlOwnership
 import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.HeadsetFormFactor
 import dev.hyperears.integration.NoiseMode
@@ -29,9 +30,15 @@ data class DeviceSessionUiModel(
 data class DeviceLinkStage(
     val label: String,
     val value: String,
-    val complete: Boolean,
-    val active: Boolean,
+    val status: DeviceLinkStatus,
 )
+
+enum class DeviceLinkStatus {
+    READY,
+    ACTIVE,
+    INACTIVE,
+    ERROR,
+}
 
 data class DeviceMetric(
     val label: String,
@@ -57,7 +64,7 @@ object DeviceSessionUiProjector {
             controlSummary = adapter?.controlSummary() ?: "能力未知",
             adapterResolved = adapter != null,
             phase = session.phase,
-            headsetLifecycle = headsetLifecycle(session, adapter),
+            headsetLifecycle = headsetLifecycle(session),
             miLinkLifecycle = session.miLinkLifecycle,
             metrics = metrics(session, adapter),
         )
@@ -65,48 +72,57 @@ object DeviceSessionUiProjector {
 
     private fun headsetLifecycle(
         session: DeviceSessionSnapshot,
-        adapter: AdapterSnapshot?,
     ): List<DeviceLinkStage> = buildList {
         val state = session.state
         add(
             DeviceLinkStage(
-                label = "系统音频",
+                label = "系统连接",
                 value = state.lifecycle.systemProfile.displayName(),
-                complete = state.lifecycle.systemProfile == SystemProfileState.CONNECTED,
-                active = state.lifecycle.systemProfile != SystemProfileState.CONNECTED,
+                status = if (state.lifecycle.systemProfile == SystemProfileState.CONNECTED) {
+                    DeviceLinkStatus.READY
+                } else {
+                    DeviceLinkStatus.ERROR
+                },
             ),
         )
         add(
             DeviceLinkStage(
-                label = "Adapter",
-                value = adapter?.resolution?.displayName() ?: "未解析",
-                complete = adapter != null,
-                active = adapter == null,
+                label = "控制",
+                value = state.lifecycle.externalControlApp?.displayName ?: "HyperEars",
+                status = if (state.lifecycle.controlOwnership == ControlOwnership.EXTERNAL_APP) {
+                    DeviceLinkStatus.ACTIVE
+                } else {
+                    DeviceLinkStatus.READY
+                },
             ),
         )
         add(
             DeviceLinkStage(
-                label = "私有传输",
+                label = "私有通道",
                 value = state.lifecycle.privateTransport.displayName(),
-                complete = state.lifecycle.privateTransport in setOf(
+                status = when (state.lifecycle.privateTransport) {
                     PrivateTransportState.NOT_REQUIRED,
                     PrivateTransportState.CONNECTED,
-                ),
-                active = state.lifecycle.privateTransport in setOf(
+                    -> DeviceLinkStatus.READY
                     PrivateTransportState.CONNECTING,
                     PrivateTransportState.RECOVERING,
-                ),
+                    -> DeviceLinkStatus.ACTIVE
+                    PrivateTransportState.IDLE -> DeviceLinkStatus.INACTIVE
+                    PrivateTransportState.DORMANT -> DeviceLinkStatus.ERROR
+                },
             ),
         )
         add(
             DeviceLinkStage(
-                label = "协议确认",
+                label = "协议",
                 value = state.lifecycle.protocolHandshake.displayName(),
-                complete = state.lifecycle.protocolHandshake in setOf(
+                status = when (state.lifecycle.protocolHandshake) {
                     ProtocolHandshakeState.NOT_REQUIRED,
                     ProtocolHandshakeState.CONFIRMED,
-                ),
-                active = state.lifecycle.protocolHandshake == ProtocolHandshakeState.PENDING,
+                    -> DeviceLinkStatus.READY
+                    ProtocolHandshakeState.PENDING -> DeviceLinkStatus.ACTIVE
+                    ProtocolHandshakeState.REJECTED -> DeviceLinkStatus.ERROR
+                },
             ),
         )
     }
