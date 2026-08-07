@@ -21,24 +21,34 @@ StarRing, ROSESELSA, NiceHCK and Sony devices.
 
 ## Scope
 
-- Publishes eligible third-party headsets to MiLink while retaining Android's A2DP/HFP routing.
-- Reads model-appropriate battery telemetry and maps verified private noise-control protocols.
-- Opens an installed vendor controller declared by the current Adapter from a HyperEars MiLink
-  card when enabled, otherwise the real Android Bluetooth-device details page.
-- Falls back to handoff, volume and Android's aggregate battery for standard Bluetooth headsets.
-- Exposes a per-device lifecycle dashboard for recognition, channel, protocol and publication.
-- Provides settings for vendor-controller navigation and runtime yielding, plus root-only
-  log export and shortcuts for restarting MiLink, restarting Bluetooth and stopping supported
-  controller apps.
-- Can pause HyperEars integration without disabling Android's native Bluetooth or audio routing;
-  reconnect the headset after resuming to create a fresh module session.
-- Produces no module diagnostics while detailed logging is disabled. When enabled, injected-process
-  logs are written through the LSPosed daemon and exported together with a bounded companion-app log.
+### System integration
 
-HyperEars does not proxy audio, continuously scan for Bluetooth devices, inject the HyperOS
-Settings UI or poll MiLink views. Private GATT, RFCOMM or BR/EDR L2CAP channels are created only
-for adapters that need vendor telemetry, and their lifetime is bound to the physical device
-session.
+- Publishes eligible third-party headsets to the MiLink device center for device handoff and system volume.
+- Provides the same handoff and volume path to standard A2DP/HFP headsets, with Android aggregate-battery fallback.
+
+### Device capabilities
+
+- Publishes the battery topology declared by the current Adapter: left/right and case, headphone aggregate, or Android system battery.
+- Publishes noise cancellation, off, transparency and model-specific modes only after private-protocol confirmation; unconfirmed private controls remain unavailable.
+- The MiLink card's “More settings” action opens the launchable vendor controller declared by the Adapter; when disabled or unavailable, it opens the real Android Bluetooth-device details page.
+
+### Sessions and ownership
+
+- Maintains recognition, transport, protocol and MiLink-publication state independently for each connected headset; the app displays these per-device sessions.
+- When runtime yielding is enabled and the declared vendor controller is hooked by LSPosed, HyperEars yields private-protocol ownership while that app is running. MiLink handoff, system volume and Android audio routing remain available.
+- HyperEars integration can be paused without disabling Android Bluetooth or audio routing; reconnect the headset after resuming to create a new module session.
+
+### Settings and diagnostics
+
+- Provides settings for vendor-controller navigation, runtime yielding and pausing the integration.
+- Provides log export and root-only shortcuts for restarting MiLink, restarting Bluetooth and stopping supported vendor controllers.
+- No module diagnostics are produced while detailed logging is disabled. When enabled, injected-process logs are written through the LSPosed daemon; settings changes and shortcut results are kept in the app's bounded local log and merged during export.
+
+## Runtime boundary
+
+HyperEars does not replace Android's A2DP/HFP audio path, proxy audio streams or continuously scan for
+Bluetooth devices. Private GATT, RFCOMM or BR/EDR L2CAP channels are created only for adapters that
+need vendor telemetry and remain bound to the corresponding device session.
 
 ## Requirements
 
