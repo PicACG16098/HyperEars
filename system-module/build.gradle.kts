@@ -75,7 +75,7 @@ android {
 
     lint {
         // Android 16 is the deliberate deployment target for the current HyperOS device.
-        disable += "OldTargetApi"
+        disable += setOf("OldTargetApi", "ObsoleteSdkInt")
         warningsAsErrors = true
     }
 }

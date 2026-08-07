@@ -12,22 +12,35 @@
 
 - **Furina Endless Solo of Solitude**：新增已实机验证的具体型号适配。通过 BudsFeel
   RFCOMM 通道确认协议后，发布左右耳与充电盒私有电量，以及降噪、关闭、通透和抗风噪四种模式。
+- **系统原生耳机退避**：MiLink 已经原生识别的耳机优先由系统接管。HyperEars 不再覆盖同一
+  设备的身份、能力、卡片或控制请求；该规则也适用于系统原生支持的 Apple 等品牌耳机。
+- **旧版 MiLink 设置入口兼容**：为已验证的 `17.2.0.1.2601081906` 增加严格版本限定的
+  “更多设置”入口兼容。HyperEars 卡片可继续跳转至厂商控制 App 或真实蓝牙设备详情。
 
 ### 修复
 
 - BudsFeel 响应按实际帧长度、校验和和结束标记解析；支持设备独立上报的组件电量帧与聚合状态帧，
   不再把独立电量响应遗漏为未知数据。
-- Apple 耳机保留给系统原生集成处理；模块不再把它们纳入标准蓝牙耳机回退链路。
+- 修复家族协议首次试探始终未确认后仍保留私有通道和控制项的问题。此时会降级为对应品牌的
+  标准耳机能力，保留流转、音量和系统电量回退。
+- 修复卡片缓存仍保留旧型号呈现信息的问题；Adapter 降级后，MiLink 同步移除不再适用的
+  私有卡片扩展。
 
 ### 调整
 
 - 移除 Furina 协议测试版的逐帧强制追踪。正式版仅在用户开启“详细日志”时产生常规模块诊断日志。
 - 私有传输候选的创建失败会继续尝试同一 Adapter 声明的后续候选，不会提前终止本次有界连接尝试。
+- 应用图标改为自适应设计：白色画布和图形安全留白由图标本身提供，桌面、Dock 及其他
+  系统入口保持一致的视觉比例。
+- 调整主页、设置和关于页的底部安全区，移除页面内容与底部导航之间的空白；设置项标题和说明
+  采用与关于页一致的 Material 文字层级。
 
 ### 验证
 
 - 基于实机导出的 BudsFeel RFCOMM 日志，覆盖协议握手、四种模式控制、状态回读、独立组件电量、
   分片、合帧和异常长度帧重同步。
+- 覆盖 MiLink 原生所有权仲裁、家族协议降级与卡片解绑回归场景；在 Xiaomi 设备上完成
+  Release 构建、签名校验和安装验证。
 
 ## [1.3.0] - 2026-08-07
 
@@ -234,7 +247,8 @@
 - Release 构建改用独立环境变量签名，不再使用 debug 证书。
 - 增加 CI、标签发布、APK 签名验证和 SHA-256 产物。
 
-[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.3.1
 [1.3.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.3.0
 [1.2.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.2.0
 [1.1.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.1.0

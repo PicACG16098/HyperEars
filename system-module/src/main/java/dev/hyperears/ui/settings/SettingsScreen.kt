@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.hyperears.root.RootAction
 import dev.hyperears.root.RootActionState
@@ -203,11 +204,18 @@ private fun TogglePreference(
 ) {
     val haptics = rememberSwitchHaptics()
     ListItem(
-        headlineContent = { Text(title) },
+        headlineContent = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+            )
+        },
         supportingContent = {
             Text(
                 text = detail,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
         trailingContent = {
@@ -240,11 +248,18 @@ private fun ActionPreference(
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     }
     ListItem(
-        headlineContent = { Text(title, color = contentColor) },
+        headlineContent = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = contentColor,
+            )
+        },
         supportingContent = {
             Text(
                 text = detail,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = contentColor,
             )
         },

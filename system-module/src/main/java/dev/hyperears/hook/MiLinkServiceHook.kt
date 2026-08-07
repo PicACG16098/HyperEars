@@ -29,7 +29,6 @@ import java.lang.reflect.Method
 import java.util.Collections
 import java.util.Locale
 import java.util.WeakHashMap
-import java.util.concurrent.CompletableFuture
 
 /**
  * Supplies the minimum truthful Xiaomi identity required for native audio handoff.
@@ -135,7 +134,6 @@ internal class MiLinkServiceHook : HookContext() {
         hookHeadsetRuntime()
         hookSupportedAncModes()
         hookHeadsetPresentationMetadata()
-        hookHeadsetSettingsNavigation()
         hookHeadsetDetailExtension()
     }
 
@@ -247,44 +245,19 @@ internal class MiLinkServiceHook : HookContext() {
             getObjectField(serviceInfo, "deviceId") as? String
         }.getOrNull()?.takeIf(::isBluetoothAddress)
 
-    /**
-     * Routes HyperEars cards to Android's real Bluetooth-device details.
-     *
-     * Xiaomi's stock action resolves the borrowed carrier ID and therefore opens that carrier's
-     * private headset page. The semantic controller boundary already receives the real Bluetooth
-     * address in [CirculateServiceInfo.deviceId], so redirecting here avoids replacing card views
-     * or participating in their lifecycle. Stock Xiaomi headsets continue through untouched.
-     */
     private fun hookHeadsetSettingsNavigation() {
-        runCatching {
-            val serviceInfoClass =
-                findClass("com.miui.circulate.api.service.CirculateServiceInfo")
-            val method = findClass(
-                "com.miui.circulate.api.protocol.headset.HeadsetServiceController",
-            ).declaredMethods.single { candidate ->
-                candidate.name == "switchToHeadsetActivity" &&
-                    candidate.parameterTypes.contentEquals(arrayOf(serviceInfoClass)) &&
-                    CompletableFuture::class.java.isAssignableFrom(candidate.returnType)
-            }.apply { isAccessible = true }
-
-            hookBefore(method) {
-                if (ModuleRuntimeGate.paused) return@hookBefore
-                val serviceInfo = args.singleOrNull() ?: return@hookBefore
-                val address = serviceInfoAddress(serviceInfo) ?: return@hookBefore
-                if (!isTargetAddress(address) || !openPreferredHeadsetSettings(address)) {
-                    return@hookBefore
-                }
-
-                result = CompletableFuture.completedFuture(HEADSET_OPERATION_SUCCESS)
-                ModuleLog.debug(
-                    "MiLink",
-                    "opened headset settings for ${maskBluetoothAddress(address)}",
-                )
-            }
-            ModuleLog.debug("MiLink", "headset settings navigation installed")
-        }.onFailure {
-            ModuleLog.warn("MiLink", "headset settings navigation unavailable", it)
-        }
+        MiLinkHeadsetSettingsNavigationBridge(
+            contextProvider = { context },
+            isHyperEarsCard = { serviceInfo, address ->
+                presentationIdFrom(serviceInfo) != null || isTargetAddress(address)
+            },
+            serviceInfoAddress = ::serviceInfoAddress,
+            openPreferredSettings = ::openPreferredHeadsetSettings,
+        ).also {
+            it.module = module
+            it.appClassLoader = appClassLoader
+            it.packageName = packageName
+        }.install()
     }
 
     private fun openPreferredHeadsetSettings(address: String): Boolean {
@@ -381,6 +354,7 @@ internal class MiLinkServiceHook : HookContext() {
                 ),
             ) {
                 registerStateReceiver(args[0] as? Context)
+                hookHeadsetSettingsNavigation()
             }
         }.onFailure {
             ModuleLog.warn("MiLink", "Application.attach hook unavailable", it)
