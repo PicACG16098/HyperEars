@@ -28,13 +28,13 @@ StarRing, ROSESELSA, NiceHCK and Sony devices.
 
 ### Device capabilities
 
-- Publishes the battery topology declared by the current Adapter: left/right and case, headphone aggregate, or Android system battery.
+- Publishes battery according to the headset form and confirmed protocol: left/right and case, headphone aggregate, or Android system battery.
 - Publishes noise cancellation, off, transparency and model-specific modes only after private-protocol confirmation; unconfirmed private controls remain unavailable.
-- The MiLink card's “More settings” action opens the launchable vendor controller declared by the Adapter; when disabled or unavailable, it opens the real Android Bluetooth-device details page.
+- The MiLink card's “More settings” action opens the launchable controller for that headset; when disabled or unavailable, it opens the real Android Bluetooth-device details page.
 
 ### Sessions and ownership
 
-- Maintains recognition, transport, protocol and MiLink-publication state independently for each connected headset; the app displays these per-device sessions.
+- Maintains recognition, connection channel, protocol and MiLink-publication state independently for each connected headset; the app displays these per-device sessions.
 - When runtime yielding is enabled and the declared vendor controller is hooked by LSPosed, HyperEars yields private-protocol ownership while that app is running. MiLink handoff, system volume and Android audio routing remain available.
 - HyperEars integration can be paused without disabling Android Bluetooth or audio routing; reconnect the headset after resuming to create a new module session.
 
