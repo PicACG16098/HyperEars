@@ -202,6 +202,7 @@ SHA-256 文件。
 - [Sony Headphones 协议](docs/sony-headphones-protocol.md)
 - [StarRing Ultra 协议](docs/starring-ultra-protocol.md)
 - [Edifier (BES) 协议](docs/edifier-bes-protocol.md)
+- [荣耀 X5s Pro 协议](docs/honor-x5s-protocol.md)
 
 ## 贡献
 
