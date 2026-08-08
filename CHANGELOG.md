@@ -4,7 +4,14 @@
 
 ## [Unreleased]
 
-后续变更将在此记录。
+### 架构
+
+- 将 MiLink 卡片、详情扩展和蓝牙设备会话的控制路径统一为强类型 `ControlRequest`。
+- 标准 `Refresh` 与 `SetNoiseMode` 由所有 Adapter 继承的请求契约统一校验；现有 vivo、
+  OPPO、Bose、StarRing、Edifier、ROSESELSA、NiceHCK、Sony 及保留的 Apple 协议实现全部
+  迁移到 `StandardControlRequest`。
+- 使用版本化、严格校验且有大小上限的自动序列化控制信封替代手写控制 Intent extra；
+  后续厂商请求可通过请求子类型和 Adapter 契约扩展，不需要修改公共 IPC 分发。
 
 ## [1.3.1] - 2026-08-08
 

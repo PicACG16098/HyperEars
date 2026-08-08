@@ -244,11 +244,13 @@ private class RoseEarfreeProtocolSession : ProtocolSession {
         RoseEarfreeI5WireCodec.queryNoiseMode,
     )
 
-    override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> initialReadCommands()
-        is ControlRequest.SetNoiseMode -> listOf(
+    override fun encode(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> initialReadCommands()
+        request is StandardControlRequest.SetNoiseMode -> listOf(
             RoseEarfreeI5WireCodec.setNoiseMode(request.mode.toWireMode()),
         )
+
+        else -> emptyList()
     }
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> = buildList {
@@ -311,16 +313,19 @@ private class RoseBudsFeelProtocolSession : ProtocolSession {
 
     override fun initialReadCommands(): List<ByteArray> = listOf(queryStatus())
 
-    override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> listOf(queryStatus())
-        is ControlRequest.SetNoiseMode -> listOf(
+    override fun encode(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> listOf(queryStatus())
+        request is StandardControlRequest.SetNoiseMode -> listOf(
             RoseBudsFeelMk2WireCodec.setNoiseMode(nextSequence(), request.mode.toWireMode()),
         )
+
+        else -> emptyList()
     }
 
-    override fun readback(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> emptyList()
-        is ControlRequest.SetNoiseMode -> listOf(queryStatus())
+    override fun readback(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> emptyList()
+        request is StandardControlRequest.SetNoiseMode -> listOf(queryStatus())
+        else -> emptyList()
     }
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> {

@@ -31,12 +31,14 @@ internal class BoseBmapProtocolSession(
         BoseBmapWireCodec.queryBattery,
     )
 
-    override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> initialReadCommands() + activeConfig.noiseReadCommands()
-        is ControlRequest.SetNoiseMode -> activeConfig
+    override fun encode(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> initialReadCommands() + activeConfig.noiseReadCommands()
+        request is StandardControlRequest.SetNoiseMode -> activeConfig
             ?.noiseControl
             ?.encode(request.mode)
             .orEmpty()
+
+        else -> emptyList()
     }
 
     override fun followUpCommands(event: ProtocolEvent): List<ByteArray> = when {
@@ -51,9 +53,10 @@ internal class BoseBmapProtocolSession(
         else -> emptyList()
     }
 
-    override fun readback(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> emptyList()
-        is ControlRequest.SetNoiseMode -> activeConfig.noiseStateReadCommands()
+    override fun readback(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> emptyList()
+        request is StandardControlRequest.SetNoiseMode -> activeConfig.noiseStateReadCommands()
+        else -> emptyList()
     }
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> = buildList {

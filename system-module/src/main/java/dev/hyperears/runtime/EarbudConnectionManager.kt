@@ -7,6 +7,7 @@ import dev.hyperears.bridge.StateBroadcaster
 import dev.hyperears.hook.ModuleLog
 import dev.hyperears.hook.maskBluetoothAddress
 import dev.hyperears.integration.ControlRequest
+import dev.hyperears.integration.StandardControlRequest
 import dev.hyperears.integration.DeviceLifecycle
 import dev.hyperears.integration.EarbudAdapter
 import dev.hyperears.integration.EarbudIdentity
@@ -253,15 +254,10 @@ internal class EarbudConnectionManager(
         } ?: return false
         val (record, connected) = target
 
-        if (request is ControlRequest.SetNoiseMode &&
-            (
-                !record.session.adapter.effectiveCapabilities().noiseControl ||
-                    request.mode !in record.session.adapter.effectiveSupportedNoiseModes()
-                )
-        ) {
+        if (!record.session.adapter.supportsControl(request)) {
             return false
         }
-        if (request is ControlRequest.Refresh && !connected) {
+        if (request is StandardControlRequest.Refresh && !connected) {
             return record.session.requestConnection()
         }
         if (!connected) return false

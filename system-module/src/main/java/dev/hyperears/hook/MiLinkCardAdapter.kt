@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.view.View
 import android.widget.LinearLayout
+import dev.hyperears.integration.ControlRequest
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.NoiseMode
@@ -46,7 +47,7 @@ internal fun interface MiLinkCardBinding {
 internal data class MiLinkCardEnvironment(
     val hostClassLoader: ClassLoader,
     val stateProvider: (String) -> EarbudState,
-    val controlSender: (String, NoiseMode) -> Unit,
+    val controlSender: (String, ControlRequest) -> Unit,
 )
 
 /**

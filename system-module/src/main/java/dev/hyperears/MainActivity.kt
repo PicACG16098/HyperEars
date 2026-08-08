@@ -15,7 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.hyperears.bridge.ModuleContract
 import dev.hyperears.diagnostics.AppDiagnosticLog
 import dev.hyperears.diagnostics.DiagnosticLogExporter
-import dev.hyperears.integration.ControlRequest
+import dev.hyperears.integration.StandardControlRequest
 import dev.hyperears.root.RootAction
 import dev.hyperears.root.RootActionState
 import dev.hyperears.root.RootCommandRunner
@@ -206,7 +206,7 @@ class MainActivity : ComponentActivity() {
         val address = session.state.address ?: return
         if (!session.state.connected) return
         sendBroadcast(
-            ModuleContract.control(ControlRequest.Refresh, address, session.sessionToken)
+            ModuleContract.control(StandardControlRequest.Refresh, address, session.sessionToken)
                 .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
         )
     }

@@ -288,12 +288,12 @@ private class EdifierProtocolSession(
         add(EdifierWireCodec.queryFunction)
     }
 
-    override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> buildList {
+    override fun encode(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> buildList {
             addAll(configuration.batteryQueries.map { batteryQueryPacket(it) })
             add(EdifierWireCodec.queryAnc)
         }
-        is ControlRequest.SetNoiseMode -> {
+        request is StandardControlRequest.SetNoiseMode -> {
             val dialect = activeAncDialect
             val ancValue = dialect?.writeValues?.get(request.mode)
             if (ancValue != null) {
@@ -302,13 +302,16 @@ private class EdifierProtocolSession(
                 emptyList()
             }
         }
+
+        else -> emptyList()
     }
 
-    override fun readback(request: ControlRequest): List<ByteArray> = when (request) {
+    override fun readback(request: ControlRequest): List<ByteArray> = when {
         // The W860NB PRO executes ANC writes immediately and reports state via the write
         // acknowledgement. Skip the extra readback round-trip to reduce perceived latency.
-        ControlRequest.Refresh -> emptyList()
-        is ControlRequest.SetNoiseMode -> emptyList()
+        request === StandardControlRequest.Refresh -> emptyList()
+        request is StandardControlRequest.SetNoiseMode -> emptyList()
+        else -> emptyList()
     }
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> = buildList {

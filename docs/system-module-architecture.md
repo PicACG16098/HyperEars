@@ -100,6 +100,57 @@ EarbudAdapter
        └─ WireCodec（纯字节转换）
 ```
 
+### 3.4 ControlRequest
+
+控制操作使用强类型 `ControlRequest`。当前标准请求族包含 `Refresh` 和
+`SetNoiseMode`；所有 Adapter 默认继承 `StandardControlRequestContract`，由当前 Adapter
+的有效能力和已确认模式决定是否接受请求。普通标准耳机因此只保留刷新和 Android 原生
+能力，不会因为卡片传入模式请求而创建私有控制通道。
+
+跨进程链路如下：
+
+```text
+MiLink/CardAdapter
+    -> ControlRequest
+    -> ControlRequestTransport (versioned JSON envelope)
+    -> Bluetooth process decode
+    -> EarbudAdapter.supportsControl(request)
+    -> ProtocolSession.encode(request)
+    -> vendor bytes
+```
+
+`ControlRequestTransport` 使用 Kotlin Serialization 自动生成请求层级的序列化代码，采用
+稳定的 `@SerialName`、严格 schema 和 4 KiB 载荷上限。CardAdapter、Adapter 和
+ProtocolSession 不手写 Intent extra、JSON、Bundle 或信封字段。未知版本、未知请求、未知
+字段、畸形内容和超限载荷均拒绝；请求未通过 Adapter 契约时不会写入耳机。
+
+新增厂商或型号专属控制时，在 `integration` 中声明带厂商命名空间 `@SerialName` 的
+`@Serializable` 请求子类型，家族 Adapter 通过 `controlRequestContract.extending { ... }`
+增加已验证的请求和参数范围，具体型号继续收窄能力，ProtocolSession 仅增加该请求的
+字节映射。卡片只构造请求对象并调用 `environment.controlSender(address, request)`。
+
+例如，新增分级降噪请求只需要声明业务类型和 Adapter 契约：
+
+```kotlin
+@Serializable
+sealed interface HonorControlRequest : ControlRequest {
+    @Serializable
+    @SerialName("honor.set_anc_depth")
+    data class SetAncDepth(val depth: Int) : HonorControlRequest
+}
+
+open class HonorEarbudAdapter : StandardEarbudAdapter() {
+    override val controlRequestContract =
+        StandardControlRequestContract.extending { _, request ->
+            request is HonorControlRequest.SetAncDepth && request.depth in 0..10
+        }
+}
+```
+
+框架在构建时自动生成该 sealed 请求层级的序列化与反序列化代码。CardAdapter 直接发送
+`HonorControlRequest.SetAncDepth(depth)`；对应 ProtocolSession 通过类型分支读取 `depth`，
+不注册命令字符串，不进行强制转换，也不维护传输层反序列化工具。
+
 ## 4. 首次匹配与协议细化
 
 `EarbudAdapterRegistry` 仅在系统耳机连接时执行一次初始匹配，顺序为：
@@ -251,7 +302,8 @@ Bluetooth 进程发布的状态包含：
 - 地址、会话令牌和单调 revision。
 
 MiLink 和应用 UI 直接消费快照，不按 `modelId` 重新访问 Registry。旧版布尔 extra 只在
-IPC 边界保留兼容编码，新版接收端优先读取三个生命周期枚举。
+状态 IPC 边界保留兼容编码，新版控制请求使用版本化信封；接收端先严格反序列化，再由当前
+Adapter 校验请求。状态与控制仍使用不同的消息模型，状态快照不会被当作控制请求执行。
 
 MiLink 设备 ID 只由 `AdapterSnapshot.formFactor` 映射：TWS 使用一个已知原生耳机载体，
 头戴耳机使用一个已知原生头戴载体。具体型号不伪造新的设备 ID 查找表。

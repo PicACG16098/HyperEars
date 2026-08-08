@@ -35,6 +35,12 @@ node tools/validate-docs.mjs
 5. 原生系统耳机必须留在官方路径。
 6. 优先 Hook 稳定的语义边界；避免按混淆方法名、视图层级或定时轮询打补丁。
 7. 新增后台工作必须说明生命周期、退避、并发和耗电影响。
+8. 控制操作必须使用 `ControlRequest`。新增厂商或型号请求在 `integration` 的 sealed
+   请求层级中声明为 `@Serializable` 子类型，并使用带命名空间的稳定 `@SerialName`。
+9. 禁止 CardAdapter 手写 Intent extra、JSON、`Bundle`、`Map<String, Any>` 或直接写蓝牙
+   通道；统一调用 `environment.controlSender(address, request)`。
+10. Adapter 通过继承的 `controlRequestContract` 声明请求支持范围；ProtocolSession 只
+    处理已通过当前会话校验的请求，并负责字节编码。
 
 新增或变更厂商控制 App 时，还必须同步更新 `ControlAppCatalog`、对应 Adapter 的
 `controlApps`、`META-INF/xposed/scope.list` 和

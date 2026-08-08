@@ -1,9 +1,20 @@
 package dev.hyperears.integration
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class NoiseMode {
+    @SerialName("anc")
     ANC,
+
+    @SerialName("off")
     OFF,
+
+    @SerialName("transparency")
     TRANSPARENCY,
+
+    @SerialName("wind")
     WIND,
 }
 
@@ -171,11 +182,6 @@ sealed interface ProtocolEvent {
         val command: Int,
         val payloadSize: Int,
     ) : ProtocolEvent
-}
-
-sealed interface ControlRequest {
-    data object Refresh : ControlRequest
-    data class SetNoiseMode(val mode: NoiseMode) : ControlRequest
 }
 
 /** A model-declared private-protocol transport candidate. */

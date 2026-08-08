@@ -17,6 +17,7 @@ import dev.hyperears.bridge.ModuleContract
 import dev.hyperears.bridge.ModuleRuntimeGate
 import dev.hyperears.bridge.ProcessStateStore
 import dev.hyperears.integration.ControlRequest
+import dev.hyperears.integration.StandardControlRequest
 import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.MiLinkCardPresentationId
@@ -198,8 +199,8 @@ internal class MiLinkServiceHook : HookContext() {
             val extension = MiLinkHeadsetDetailExtension(
                 hostClassLoader = appClassLoader,
                 stateProvider = ::stateForAddress,
-                controlSender = { address, mode ->
-                    sendControl(ControlRequest.SetNoiseMode(mode), address)
+                controlSender = { address, request ->
+                    sendControl(request, address)
                 },
             )
             hookAfter(
@@ -433,7 +434,7 @@ internal class MiLinkServiceHook : HookContext() {
                     instance,
                 )
                 sendControl(
-                    ControlRequest.SetNoiseMode(requestedMode),
+                    StandardControlRequest.SetNoiseMode(requestedMode),
                     device,
                 )
                 result = HEADSET_OPERATION_SUCCESS
@@ -645,7 +646,7 @@ internal class MiLinkServiceHook : HookContext() {
                 }
                 rememberRuntimeOwner(className, instance)
                 captureContext(instance)
-                sendControl(ControlRequest.SetNoiseMode(mode), device)
+                sendControl(StandardControlRequest.SetNoiseMode(mode), device)
                 result = HEADSET_OPERATION_SUCCESS
             }
         }.onFailure {
@@ -1280,7 +1281,7 @@ internal class MiLinkServiceHook : HookContext() {
                     .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
             )
         }
-        if (request is ControlRequest.SetNoiseMode) {
+        if (request is StandardControlRequest.SetNoiseMode) {
             val cooldown = adapterForAddress(address)?.ancSwitchCooldownMs ?: 0L
             if (!ancSwitchCooldownGate.runIfReady(address, cooldown, send)) {
                 ModuleLog.debug(

@@ -8,6 +8,7 @@ import android.os.SystemClock
 import dev.hyperears.hook.ModuleLog
 import dev.hyperears.hook.maskBluetoothAddress
 import dev.hyperears.integration.ControlRequest
+import dev.hyperears.integration.StandardControlRequest
 import dev.hyperears.integration.ControlAppSpec
 import dev.hyperears.integration.ControlAppCatalog
 import dev.hyperears.integration.ControlOwnership
@@ -260,18 +261,13 @@ internal class EarbudDeviceSession(
     fun execute(request: ControlRequest): Boolean {
         if (closed.get()) return false
         if (externalControlApp != null) {
-            if (request === ControlRequest.Refresh) publishSnapshot()
-            return request === ControlRequest.Refresh
+            if (request === StandardControlRequest.Refresh) publishSnapshot()
+            return request === StandardControlRequest.Refresh
         }
         if (!adapter.privateProtocolRequired) {
-            return request === ControlRequest.Refresh
+            return request === StandardControlRequest.Refresh
         }
-        if (request is ControlRequest.SetNoiseMode &&
-            (
-                !adapter.effectiveCapabilities().noiseControl ||
-                    request.mode !in adapter.effectiveSupportedNoiseModes()
-                )
-        ) {
+        if (!adapter.supportsControl(request)) {
             return false
         }
         val activeChannel = channel ?: run {
@@ -789,9 +785,10 @@ internal class EarbudDeviceSession(
         )
     }
 
-    private fun ControlRequest.description(): String = when (this) {
-        ControlRequest.Refresh -> "refresh"
-        is ControlRequest.SetNoiseMode -> "noise=${mode.name}"
+    private fun ControlRequest.description(): String = when {
+        this === StandardControlRequest.Refresh -> "refresh"
+        this is StandardControlRequest.SetNoiseMode -> "noise=${mode.name}"
+        else -> "custom=${javaClass.name}"
     }
 
     private fun ByteArray.toHex(): String =

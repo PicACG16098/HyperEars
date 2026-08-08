@@ -2,9 +2,9 @@ package dev.hyperears.hook
 
 import android.os.Looper
 import android.view.View
+import dev.hyperears.integration.ControlRequest
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.MiLinkCardPresentationId
-import dev.hyperears.integration.NoiseMode
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.Locale
@@ -17,7 +17,7 @@ import java.util.Locale
 internal class MiLinkHeadsetDetailExtension(
     hostClassLoader: ClassLoader,
     stateProvider: (String) -> EarbudState,
-    controlSender: (String, NoiseMode) -> Unit,
+    controlSender: (String, ControlRequest) -> Unit,
 ) {
     private class Target(
         root: View,

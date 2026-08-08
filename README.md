@@ -134,6 +134,10 @@ MiLinkServiceHook         ── 最小身份、状态与控制映射
 - `system-module`：LSPosed 入口、蓝牙生命周期、MiLink 桥和运行看板。
 - `protocol-test`：开发者使用的只读/显式控制协议实验工具，不随正式 Release 发布。
 
+控制操作统一以强类型请求表示：卡片提交标准或型号专属请求，Adapter 按当前已确认能力
+校验，框架自动完成 MiLink 与 Bluetooth 进程之间的版本化传输，ProtocolSession 只把通过
+校验的请求转换为厂商字节帧。新增型号不需要手写 IPC 或 JSON。
+
 系统模块不注入 HyperOS 设置页，不轮询 UI，也不替换系统蓝牙音频服务。型号专属卡片
 扩展只在 MiLink 卡片绑定时执行，并由具体 Adapter 声明。完整架构见
 [系统模块架构](docs/system-module-architecture.md)。

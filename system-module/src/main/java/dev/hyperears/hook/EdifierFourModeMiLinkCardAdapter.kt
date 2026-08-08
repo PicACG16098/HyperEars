@@ -7,6 +7,7 @@ import android.widget.TextView
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.EdifierMiLinkPresentationIds
 import dev.hyperears.integration.NoiseMode
+import dev.hyperears.integration.StandardControlRequest
 import java.lang.ref.WeakReference
 
 /**
@@ -112,7 +113,10 @@ internal object EdifierFourModeMiLinkCardAdapter : MiLinkCardAdapter {
         fun onWindClick() {
             val current = environment.stateProvider(address)
             val target = EdifierFourModeControlPolicy.request(current) ?: return
-            environment.controlSender(address, target)
+            environment.controlSender(
+                address,
+                StandardControlRequest.SetNoiseMode(target),
+            )
         }
 
         override fun unbind() {

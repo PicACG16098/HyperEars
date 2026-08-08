@@ -83,11 +83,13 @@ private class StarRingUltraProtocolSession : ProtocolSession {
         StarRingWireCodec.queryBattery,
     )
 
-    override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> initialReadCommands()
-        is ControlRequest.SetNoiseMode -> listOf(
+    override fun encode(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> initialReadCommands()
+        request is StandardControlRequest.SetNoiseMode -> listOf(
             StarRingWireCodec.setNoiseMode(request.mode.toProtocolMode()),
         )
+
+        else -> emptyList()
     }
 
     override fun readback(request: ControlRequest): List<ByteArray> = emptyList()

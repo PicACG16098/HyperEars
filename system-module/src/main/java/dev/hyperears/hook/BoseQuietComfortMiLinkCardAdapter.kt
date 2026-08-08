@@ -9,6 +9,7 @@ import dev.hyperears.integration.BoseMiLinkPresentationIds
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.NoiseMode
+import dev.hyperears.integration.StandardControlRequest
 import java.lang.ref.WeakReference
 
 /** Quiet/Aware/Wind: Bose's verified wind preset occupies MiLink's unsupported Off slot. */
@@ -168,7 +169,10 @@ private class BoseWindSlotCardAdapter(
             if (!current.sessionActive || !current.connected || current.noiseMode == NoiseMode.WIND) {
                 return
             }
-            environment.controlSender(address, NoiseMode.WIND)
+            environment.controlSender(
+                address,
+                StandardControlRequest.SetNoiseMode(NoiseMode.WIND),
+            )
         }
 
         override fun unbind() {

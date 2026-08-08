@@ -60,6 +60,9 @@ abstract class EarbudAdapter(
     /** How this runtime adapter was selected. */
     open val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
 
+    /** Semantic request contract inherited from the standard control family by default. */
+    open val controlRequestContract: ControlRequestContract = StandardControlRequestContract
+
     abstract fun matches(identity: EarbudIdentity): Boolean
 
     /**
@@ -204,24 +207,23 @@ abstract class EarbudAdapter(
 
     fun effectiveBatterySource(): BatterySource = confirmedBatterySource ?: batterySource
 
+    /** Validates a control against the effective adapter capability and request contract. */
+    fun supportsControl(request: ControlRequest): Boolean =
+        controlRequestContract.supports(this, request)
+
     fun executeControl(request: ControlRequest): AdapterControlResult {
-        if (request is ControlRequest.SetNoiseMode &&
-            (
-                !effectiveCapabilities().noiseControl ||
-                    request.mode !in effectiveSupportedNoiseModes()
-                )
-        ) {
+        if (!supportsControl(request)) {
             return AdapterControlResult(accepted = false)
         }
         if (!privateProtocolRequired) {
-            return AdapterControlResult(accepted = request === ControlRequest.Refresh)
+            return AdapterControlResult(accepted = request === StandardControlRequest.Refresh)
         }
         val commands = protocolSession.encode(request)
-        if (commands.isEmpty() && request !== ControlRequest.Refresh) {
+        if (commands.isEmpty() && request !== StandardControlRequest.Refresh) {
             return AdapterControlResult(accepted = false)
         }
         var changed = false
-        if (request is ControlRequest.SetNoiseMode &&
+        if (request is StandardControlRequest.SetNoiseMode &&
             noiseControlConfirmation != ControlConfirmationPolicy.DEVICE_REPORT &&
             runtimeState.noiseMode != request.mode
         ) {

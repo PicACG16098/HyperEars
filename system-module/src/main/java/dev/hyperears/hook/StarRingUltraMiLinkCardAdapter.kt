@@ -15,6 +15,7 @@ import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.NoiseMode
 import dev.hyperears.integration.StarRingUltraAdapter
+import dev.hyperears.integration.StandardControlRequest
 import java.lang.ref.WeakReference
 
 /**
@@ -160,7 +161,10 @@ internal open class WindNoiseToggleMiLinkCardAdapter(
             }
 
             val requestedMode = StarRingWindControlPolicy.request(current, checked) ?: return
-            environment.controlSender(address, requestedMode)
+            environment.controlSender(
+                address,
+                StandardControlRequest.SetNoiseMode(requestedMode),
+            )
         }
 
         override fun unbind() {

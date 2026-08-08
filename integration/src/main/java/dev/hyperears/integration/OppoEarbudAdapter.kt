@@ -149,14 +149,16 @@ private class OppoProtocolSession(
         OppoWireCodec.queryAnc,
     )
 
-    override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> initialReadCommands()
-        is ControlRequest.SetNoiseMode -> request.mode.toWireCommand()?.let(::listOf).orEmpty()
+    override fun encode(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> initialReadCommands()
+        request is StandardControlRequest.SetNoiseMode -> request.mode.toWireCommand()?.let(::listOf).orEmpty()
+        else -> emptyList()
     }
 
-    override fun readback(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> emptyList()
-        is ControlRequest.SetNoiseMode -> listOf(OppoWireCodec.queryAnc)
+    override fun readback(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> emptyList()
+        request is StandardControlRequest.SetNoiseMode -> listOf(OppoWireCodec.queryAnc)
+        else -> emptyList()
     }
 
     override fun followUpCommands(event: ProtocolEvent): List<ByteArray> {

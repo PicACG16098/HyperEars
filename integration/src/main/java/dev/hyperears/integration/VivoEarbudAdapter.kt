@@ -110,14 +110,16 @@ private class VivoProtocolSession(
         VivoTwsProtocol.queryBattery(),
     )
 
-    override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> initialReadCommands()
-        is ControlRequest.SetNoiseMode -> listOf(
+    override fun encode(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> initialReadCommands()
+        request is StandardControlRequest.SetNoiseMode -> listOf(
             VivoTwsProtocol.setNoiseMode(
                 mode = request.mode.toProtocolMode(),
                 configuration = config,
             ),
         )
+
+        else -> emptyList()
     }
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> =

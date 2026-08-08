@@ -9,6 +9,7 @@ import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.BatteryReading
 import dev.hyperears.integration.BatterySource
 import dev.hyperears.integration.ControlRequest
+import dev.hyperears.integration.ControlRequestTransport
 import dev.hyperears.integration.ControlAppSpec
 import dev.hyperears.integration.ControlOwnership
 import dev.hyperears.integration.EarbudCapabilities
@@ -45,7 +46,7 @@ object ModuleContract {
 
     private const val EXTRA_REPLY_PACKAGE = "reply_package"
     private const val EXTRA_SESSION_TOKEN = "session_token"
-    private const val EXTRA_CONTROL = "control"
+    private const val EXTRA_CONTROL_ENVELOPE = "control_envelope"
     private const val EXTRA_NOISE_MODE = "noise_mode"
     private const val EXTRA_MODEL_ID = "model_id"
     private const val EXTRA_ADAPTER_DISPLAY_NAME = "adapter_display_name"
@@ -93,9 +94,6 @@ object ModuleContract {
     private const val EXTRA_OVERALL = "overall_battery"
     private const val EXTRA_OVERALL_CHARGING = "overall_charging"
 
-    private const val CONTROL_REFRESH = "refresh"
-    private const val CONTROL_SET_NOISE = "set_noise"
-
     val stateConsumerPackages = setOf(
         MODULE_PACKAGE,
         MILINK_PACKAGE,
@@ -119,15 +117,7 @@ object ModuleContract {
         .setPackage(BLUETOOTH_PACKAGE)
         .putExtra(EXTRA_ADDRESS, address)
         .putExtra(EXTRA_SESSION_TOKEN, sessionToken)
-        .apply {
-            when (request) {
-                ControlRequest.Refresh -> putExtra(EXTRA_CONTROL, CONTROL_REFRESH)
-                is ControlRequest.SetNoiseMode -> {
-                    putExtra(EXTRA_CONTROL, CONTROL_SET_NOISE)
-                    putExtra(EXTRA_NOISE_MODE, request.mode.name)
-                }
-            }
-        }
+        .putExtra(EXTRA_CONTROL_ENVELOPE, ControlRequestTransport.encode(request))
 
     fun stateChanged(
         state: EarbudState,
@@ -276,13 +266,9 @@ object ModuleContract {
 
     fun Intent.readAddress(): String? = getStringExtra(EXTRA_ADDRESS)
 
-    fun Intent.readControl(): ControlRequest? = when (getStringExtra(EXTRA_CONTROL)) {
-        CONTROL_REFRESH -> ControlRequest.Refresh
-        CONTROL_SET_NOISE -> getStringExtra(EXTRA_NOISE_MODE)
-            ?.let { runCatching { NoiseMode.valueOf(it) }.getOrNull() }
-            ?.let { ControlRequest.SetNoiseMode(it) }
-        else -> null
-    }
+    fun Intent.readControl(): ControlRequest? =
+        getStringExtra(EXTRA_CONTROL_ENVELOPE)
+            ?.let(ControlRequestTransport::decode)
 
     fun Intent.putState(state: EarbudState): Intent = apply {
         putExtra(EXTRA_MODEL_ID, state.modelId)

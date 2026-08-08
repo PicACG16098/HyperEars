@@ -281,9 +281,10 @@ private class SonyHeadphonesProtocolSession(
     @Synchronized
     override fun encode(request: ControlRequest): List<ByteArray> {
         if (version == null) return emptyList()
-        when (request) {
-            ControlRequest.Refresh -> enqueueStateReads()
-            is ControlRequest.SetNoiseMode -> enqueueNoiseWrite(request.mode)
+        when {
+            request === StandardControlRequest.Refresh -> enqueueStateReads()
+            request is StandardControlRequest.SetNoiseMode -> enqueueNoiseWrite(request.mode)
+            else -> return emptyList()
         }
         return nextRequestIfIdle()?.let(::listOf).orEmpty()
     }

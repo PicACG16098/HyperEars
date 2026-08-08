@@ -155,7 +155,7 @@ class EarbudAdapterHierarchyTest {
         val adapter = EdifierEarbudAdapter()
         adapter.receive(hex("BB EC CC 00 02 B5 A0 CA"))
 
-        val result = adapter.executeControl(ControlRequest.SetNoiseMode(NoiseMode.ANC))
+        val result = adapter.executeControl(StandardControlRequest.SetNoiseMode(NoiseMode.ANC))
 
         assertTrue(result.accepted)
         assertEquals(
@@ -203,7 +203,7 @@ class EarbudAdapterHierarchyTest {
             NoiseMode.TRANSPARENCY to 5,
             NoiseMode.OFF to 6,
         ).forEach { (mode, value) ->
-            val control = adapter.executeControl(ControlRequest.SetNoiseMode(mode))
+            val control = adapter.executeControl(StandardControlRequest.SetNoiseMode(mode))
             assertTrue(control.accepted)
             assertEquals(
                 EdifierWireCodec.setAnc(value, ancIndex = 0x1B).toList(),
@@ -224,7 +224,7 @@ class EarbudAdapterHierarchyTest {
             adapter.snapshot().supportedNoiseModes,
         )
 
-        val control = adapter.executeControl(ControlRequest.SetNoiseMode(NoiseMode.WIND))
+        val control = adapter.executeControl(StandardControlRequest.SetNoiseMode(NoiseMode.WIND))
         assertEquals(
             EdifierWireCodec.setAnc(ancValue = 4, ancIndex = 0x1B).toList(),
             control.commands.single().toList(),

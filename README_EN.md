@@ -111,6 +111,11 @@ The public signing-certificate fingerprint and verification procedure are docume
 - `system-module`: production LSPosed module, Bluetooth lifecycle, MiLink bridge and dashboard.
 - `protocol-test`: developer protocol laboratory; not shipped as a production artifact.
 
+Controls use typed requests throughout: cards submit standard or model-specific requests, adapters
+validate confirmed capabilities, the framework automatically transports versioned requests between
+MiLink and Bluetooth, and `ProtocolSession` turns only accepted requests into vendor bytes. New
+models do not write IPC or JSON by hand.
+
 Architecture, process boundaries, state revisioning and extension rules are described in
 [system-module-architecture.md](docs/system-module-architecture.md).
 

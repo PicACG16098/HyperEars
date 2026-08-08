@@ -72,16 +72,19 @@ private class NiceHckOrigProtocolSession : ProtocolSession {
         NiceHckWireCodec.queryNoiseMode,
     )
 
-    override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> initialReadCommands()
-        is ControlRequest.SetNoiseMode -> listOf(
+    override fun encode(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> initialReadCommands()
+        request is StandardControlRequest.SetNoiseMode -> listOf(
             NiceHckWireCodec.setNoiseMode(request.mode.toWireMode()),
         )
+
+        else -> emptyList()
     }
 
-    override fun readback(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> emptyList()
-        is ControlRequest.SetNoiseMode -> listOf(NiceHckWireCodec.queryNoiseMode)
+    override fun readback(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> emptyList()
+        request is StandardControlRequest.SetNoiseMode -> listOf(NiceHckWireCodec.queryNoiseMode)
+        else -> emptyList()
     }
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> = buildList {

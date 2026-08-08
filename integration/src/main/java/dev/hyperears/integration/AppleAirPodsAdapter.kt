@@ -88,11 +88,13 @@ private class AppleAapProtocolSession : ProtocolSession {
         AppleAapWireCodec.requestNotifications,
     )
 
-    override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
-        ControlRequest.Refresh -> listOf(AppleAapWireCodec.requestNotifications)
-        is ControlRequest.SetNoiseMode -> listOf(
+    override fun encode(request: ControlRequest): List<ByteArray> = when {
+        request === StandardControlRequest.Refresh -> listOf(AppleAapWireCodec.requestNotifications)
+        request is StandardControlRequest.SetNoiseMode -> listOf(
             AppleAapWireCodec.setNoiseMode(request.mode.toWireMode()),
         )
+
+        else -> emptyList()
     }
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> =
