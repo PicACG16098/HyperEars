@@ -4,19 +4,38 @@
 
 ## [Unreleased]
 
+后续变更将在此记录。
+
+## [2.0.0] - 2026-08-08
+
 ### 架构
 
-- 将 MiLink 卡片、详情扩展和蓝牙设备会话的控制路径统一为强类型 `ControlRequest`。
-- 标准 `Refresh` 与 `SetNoiseMode` 由所有 Adapter 继承的请求契约统一校验；现有 vivo、
-  OPPO、Bose、StarRing、Edifier、ROSESELSA、NiceHCK、Sony 及保留的 Apple 协议实现全部
-  迁移到 `StandardControlRequest`。
-- 使用版本化、严格校验且有大小上限的自动序列化控制信封替代手写控制 Intent extra；
-  后续厂商请求可通过请求子类型和 Adapter 契约扩展，不需要修改公共 IPC 分发。
-- 将电量、噪声模式和未来型号专属状态统一迁移为 `DeviceFeatureState` 快照。协议事件、
-  Adapter 运行态、状态 IPC 和 MiLink 投影共用同一特性状态链路，不再维护固定电量/降噪
-  字段或专属状态广播 extra。
-- 将请求确认、乐观状态发布和命令冷却统一收敛到请求级 `ControlExecutionPolicy`；W860NB
-  PRO、Evo Pro 等型号只覆盖自身已验证的策略，MiLink UI 不再维护降噪专属限流状态。
+- 将 MiLink 卡片、详情扩展和蓝牙设备会话的控制路径统一为强类型 `ControlRequest`。标准刷新和
+  三态模式控制由 Adapter 的当前已确认能力统一校验，现有 vivo、OPPO、Bose、StarRing、
+  Edifier、ROSESELSA、NiceHCK、Sony 及保留的 Apple 协议实现均已完成迁移。
+- 使用版本化、严格校验且有大小上限的自动序列化控制信封替代手写 Intent extra。后续型号可通过
+  请求子类型和 Adapter 契约增加专属控制，不需要修改公共 IPC 分发或 MiLink 生命周期代码。
+- 将电量、噪声模式和后续型号专属状态统一为带类型的 `DeviceFeatureState` 快照。协议事件、
+  Adapter 运行态、跨进程状态传输、运行看板和 MiLink 平台投影共用同一状态链路，不再维护固定
+  电量/降噪字段或型号专属状态 extra。
+- 将命令确认、乐观状态发布和冷却统一收敛为 Adapter 声明的请求级 `ControlExecutionPolicy`。
+  W860NB PRO、Evo Pro 等型号只保留各自已验证的控制策略，MiLink UI 不再维护型号专属限流状态。
+
+### 兼容性与可靠性
+
+- 私有控制仍以当前 Adapter 已确认的能力为准：未通过协议证据确认的请求会在 Bluetooth 会话中
+  被拒绝，不会写入耳机；来自设备的状态报告才是最终状态来源。
+- 家族探测、具体型号升级和保守回退均保留同一设备会话中的有效状态，并过滤替换后 Adapter
+  不理解的状态，避免旧协议或旧型号状态泄漏到新的卡片呈现。
+- 保持现有的 MiLink 原生电量和三态降噪投影，以及各型号已有的私有协议行为；本次不增加 UI
+  轮询、常驻扫描或额外系统注入范围。
+
+### 验证
+
+- 增加控制请求传输、状态快照传输、状态替换/过滤、请求能力校验、请求确认策略和各适配器
+  迁移的单元测试。
+- 覆盖畸形、未知、版本不符或超出大小限制的跨进程请求与状态载荷拒绝路径，确保它们不会触发
+  耳机写入或污染已发布的会话状态。
 
 ## [1.3.1] - 2026-08-08
 
@@ -259,7 +278,8 @@
 - Release 构建改用独立环境变量签名，不再使用 debug 证书。
 - 增加 CI、标签发布、APK 签名验证和 SHA-256 产物。
 
-[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/silverpoetry/HyperEars/compare/v1.3.1...v2.0.0
 [1.3.1]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.3.1
 [1.3.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.3.0
 [1.2.0]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.2.0
