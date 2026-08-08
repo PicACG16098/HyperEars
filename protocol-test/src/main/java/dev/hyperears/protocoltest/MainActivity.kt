@@ -424,6 +424,9 @@ private fun ConnectionCard(
 
                             ProtocolTarget.EDIFIER_BES ->
                                 "将依次探测 Edifier SPP UUID、通道 1、标准 SPP"
+
+                            ProtocolTarget.ROSE_BUDSFEEL ->
+                                "将依次探测 BudsFeel UUID 0cf12d31、标准 SPP、通道 1/5"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -879,10 +882,13 @@ private fun ApiTestCard(
 
             ProtocolTarget.EDIFIER_BES ->
                 "发送 Edifier 电量、降噪状态和设备功能查询，不改变耳机设置。"
+
+            ProtocolTarget.ROSE_BUDSFEEL ->
+                "发送 BudsFeel 状态查询（0x1E），读取电量与噪声模式，不改变耳机设置。"
         },
     ) {
         if (target == ProtocolTarget.VIVO_TWS || target == ProtocolTarget.BOSE_BMAP ||
-            target == ProtocolTarget.EDIFIER_BES) {
+            target == ProtocolTarget.EDIFIER_BES || target == ProtocolTarget.ROSE_BUDSFEEL) {
             ApiStatusRow(
                 when (target) {
                     ProtocolTarget.BOSE_BMAP -> "产品判型"
@@ -892,7 +898,8 @@ private fun ApiTestCard(
                 handshakeStatus,
             )
         }
-        if (target == ProtocolTarget.VIVO_TWS || target == ProtocolTarget.EDIFIER_BES) {
+        if (target == ProtocolTarget.VIVO_TWS || target == ProtocolTarget.EDIFIER_BES ||
+            target == ProtocolTarget.ROSE_BUDSFEEL) {
             ApiStatusRow("降噪查询", noiseStatus)
         }
         ApiStatusRow("电量查询", batteryStatus)
@@ -907,6 +914,7 @@ private fun ApiTestCard(
                     ProtocolTarget.STARRING_ULTRA -> "查询 StarRing 电量"
                     ProtocolTarget.BOSE_BMAP -> "读取 Bose 型号与电量"
                     ProtocolTarget.EDIFIER_BES -> "运行 Edifier 只读探测"
+                    ProtocolTarget.ROSE_BUDSFEEL -> "运行 BudsFeel 只读探测"
                 },
             )
         }
@@ -1001,6 +1009,9 @@ private fun RawCommandCard(
 
             ProtocolTarget.EDIFIER_BES ->
                 "高级诊断入口；输入完整 Edifier BES 帧，例如电量查询 BB EC D0 00 00 xx。"
+
+            ProtocolTarget.ROSE_BUDSFEEL ->
+                "高级诊断入口；输入完整 BudsFeel 帧，例如状态查询 FF 00 1E FA 01 07 08 09 0C … E9 AA。"
         },
     ) {
         OutlinedTextField(
