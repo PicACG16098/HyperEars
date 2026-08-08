@@ -78,18 +78,36 @@ object RoseBudsFeelMk2WireCodec {
         val checksumIndex = FRAME_HEADER_SIZE + payloadLength
         val terminatorIndex = checksumIndex + 1
         if (size <= terminatorIndex) return INCOMPLETE_FRAME
-        if (this[terminatorIndex] != TERMINATOR) return INVALID_FRAME
 
-        val expected = copyOfRange(0, checksumIndex).checksum()
-        return if (this[checksumIndex] == expected) terminatorIndex else INVALID_FRAME
+        // Compact frame: checksum and terminator immediately follow the payload.
+        if (this[terminatorIndex] == TERMINATOR) {
+            val expected = copyOfRange(0, checksumIndex).checksum()
+            if (this[checksumIndex] == expected) return terminatorIndex
+        }
+
+        // Extended frame: the payload block is followed by a lengthless [len type value…]
+        // TLV stream (used by ROSE Ceramics Ultra); checksum covers the whole body and the
+        // terminator is the final byte.
+        if (size >= terminatorIndex + 2 && this[size - 1] == TERMINATOR) {
+            val expected = copyOfRange(0, size - 2).checksum()
+            if (this[size - 2] == expected) return size - 1
+        }
+        return INVALID_FRAME
     }
 
     private fun parseFrame(frame: ByteArray): List<State> {
         if (frame.size < MIN_FRAME_SIZE) return emptyList()
         val payloadLength = frame[PAYLOAD_LENGTH_INDEX].unsigned()
         val payloadEnd = FRAME_HEADER_SIZE + payloadLength
-        if (payloadEnd + FRAME_TRAILER_SIZE != frame.size) return emptyList()
-        return parsePayload(frame.copyOfRange(FRAME_HEADER_SIZE, payloadEnd))
+        if (payloadEnd + FRAME_TRAILER_SIZE > frame.size) return emptyList()
+        val states = parsePayload(
+            frame.copyOfRange(FRAME_HEADER_SIZE, payloadEnd),
+        ).toMutableList()
+        val extensionEnd = frame.size - FRAME_TRAILER_SIZE
+        if (payloadEnd < extensionEnd) {
+            states += parseTlvBlock(frame, payloadEnd, extensionEnd)
+        }
+        return states
     }
 
     private fun parsePayload(payload: ByteArray): List<State> {

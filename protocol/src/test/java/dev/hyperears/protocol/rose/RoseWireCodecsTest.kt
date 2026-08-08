@@ -108,6 +108,32 @@ class RoseWireCodecsTest {
         )
     }
 
+    @Test
+    fun budsFeelDecodesExtendedTlvStreamFromCapturedCeramicsUltraResponse() {
+        // Captured from ROSE Ceramics U: `DD seq 15 <21-byte block> <TLV extension> checksum AA`.
+        // The noise (09) and battery (0C) records live in the lengthless extension stream.
+        val captured = hex(
+            "DD 03 15 01 01 04 02 01 03 02 04 07 05 00 11 05 12 01 13 03 14 08 " +
+                "15 00 02 07 00 02 09 03 04 0C 61 62 5C 04 0D 00 03 04 02 0E 00 " +
+                "02 12 01 02 2A 04 02 2B 01 02 2C 05 02 2D 01 02 2E 01 02 31 00 " +
+                "02 32 00 02 33 00 05 36 01 01 01 01 D3 AA",
+        )
+        val decoder = RoseBudsFeelMk2WireCodec.Decoder()
+
+        assertEquals(
+            listOf(
+                RoseBudsFeelMk2WireCodec.State.Noise(
+                    RoseBudsFeelMk2WireCodec.NoiseMode.TRANSPARENCY,
+                ),
+                RoseBudsFeelMk2WireCodec.State.Battery(leftPercent = 97, rightPercent = 98, casePercent = 92),
+            ),
+            decoder.offer(captured),
+        )
+    }
+
+    private fun hex(value: String): ByteArray =
+        value.split(" ").map { it.toInt(16).toByte() }.toByteArray()
+
     private fun responseFrame(sequence: Int, payload: ByteArray): ByteArray {
         val body = byteArrayOf(
             0xDD.toByte(),

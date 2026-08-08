@@ -4,7 +4,15 @@
 
 ## [Unreleased]
 
-后续变更将在此记录。
+### 兼容性与可靠性
+
+- 新增弱水时砂 ROSE Ceramics Ultra（琉璃 Ultra）具体型号适配。实机验证该型号通过
+  RoseLink 官方 App 使用同一 BudsFeel RFCOMM `0cf12d31` 通道控制；其状态响应在首个
+  payload 块后追加无长度头的扩展 TLV 流（噪声 `09`、电量 `0C` 记录位于扩展流内）。
+  BudsFeel 解码器新增扩展帧路径：先按紧凑帧校验，失败后按帧尾 checksum 解析扩展
+  TLV 流；保持原有紧凑帧和分片重同步行为不变。
+- `protocol-test` 新增 ROSE BudsFeel 探测目标：连接 0cf12d31 / 标准 SPP / 通道 1/5，
+  自动发送状态查询并解析电量与噪声模式，用于实机验证与协议采集。
 
 ## [2.1.1] - 2026-08-09
 
