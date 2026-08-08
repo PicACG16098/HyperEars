@@ -51,8 +51,6 @@ class StarRingUltraAdapter : StarRingEarbudAdapter() {
             id = "starring-official-gatt",
         ),
     ) + super.transports
-    override val noiseControlConfirmation: ControlConfirmationPolicy =
-        ControlConfirmationPolicy.DEVICE_REPORT
     override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
     override val capabilities: EarbudCapabilities = super.capabilities.copy(
         noiseControl = true,
@@ -97,17 +95,17 @@ private class StarRingUltraProtocolSession : ProtocolSession {
     override fun offer(bytes: ByteArray): List<ProtocolEvent> =
         decoder.offer(bytes).map { frame ->
             StarRingWireCodec.parseBatteryState(frame)?.let {
-                return@map ProtocolEvent.BatteryChanged(
-                    EarbudBattery(
+                return@map ProtocolEvent.FeatureStateChanged(
+                    BatteryFeatureState(EarbudBattery(
                         left = BatteryReading(it.leftPercent, charging = false),
                         right = BatteryReading(it.rightPercent, charging = false),
                         case = BatteryReading(it.casePercent, charging = false),
-                    ),
+                    )),
                 )
             }
             StarRingWireCodec.parseNoiseState(frame)?.let {
-                return@map ProtocolEvent.NoiseModeChanged(
-                    mode = it.mode.toDomainMode(),
+                return@map ProtocolEvent.FeatureStateChanged(
+                    NoiseModeFeatureState(it.mode.toDomainMode()),
                 )
             }
             ProtocolEvent.UnknownFrame(

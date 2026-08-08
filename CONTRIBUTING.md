@@ -41,6 +41,9 @@ node tools/validate-docs.mjs
    通道；统一调用 `environment.controlSender(address, request)`。
 10. Adapter 通过继承的 `controlRequestContract` 声明请求支持范围；ProtocolSession 只
     处理已通过当前会话校验的请求，并负责字节编码。
+11. 动态设备状态必须使用 `DeviceFeatureState` 子类型和 Adapter 的 `featureStateContract`；
+    不得向 `EarbudState`、`AdapterRuntimeState`、Intent extra 或公共枚举增加型号专属字段。
+    协议身份、能力证据和连接生命周期保持为独立模型。
 
 新增或变更厂商控制 App 时，还必须同步更新 `ControlAppCatalog`、对应 Adapter 的
 `controlApps`、`META-INF/xposed/scope.list` 和
@@ -65,6 +68,7 @@ node tools/validate-docs.mjs
 - 厂商控制 App 的显示名和 Android 包名（如适用），以及是否验证页面跳转和运行时退避；
 - 只读查询、响应和字段解释；
 - 每个控制命令的写入帧、设备回读和失败行为；
+- 每项新增动态状态的读取证据、稳定 `@SerialName`、状态替换语义和卡片投影条件；
 - 至少一个解析器单元测试和一个 Adapter 选择测试；
 - 对应 `docs/*-protocol.md` 更新。
 

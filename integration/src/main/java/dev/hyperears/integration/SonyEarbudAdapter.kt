@@ -340,7 +340,7 @@ private class SonyHeadphonesProtocolSession(
             battery = updated
             return listOf(
                 ProtocolEvent.CapabilitiesIdentified(battery = true),
-                ProtocolEvent.BatteryChanged(updated),
+                ProtocolEvent.FeatureStateChanged(BatteryFeatureState(updated)),
             )
         }
         parseNoiseMode(activeVersion, payload)?.let { mode ->
@@ -349,7 +349,7 @@ private class SonyHeadphonesProtocolSession(
                     battery = false,
                     noiseModes = supportedModes(configuration.ambientDialect),
                 ),
-                ProtocolEvent.NoiseModeChanged(mode),
+                ProtocolEvent.FeatureStateChanged(NoiseModeFeatureState(mode)),
             )
         }
         return listOf(

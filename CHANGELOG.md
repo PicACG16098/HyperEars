@@ -12,6 +12,11 @@
   迁移到 `StandardControlRequest`。
 - 使用版本化、严格校验且有大小上限的自动序列化控制信封替代手写控制 Intent extra；
   后续厂商请求可通过请求子类型和 Adapter 契约扩展，不需要修改公共 IPC 分发。
+- 将电量、噪声模式和未来型号专属状态统一迁移为 `DeviceFeatureState` 快照。协议事件、
+  Adapter 运行态、状态 IPC 和 MiLink 投影共用同一特性状态链路，不再维护固定电量/降噪
+  字段或专属状态广播 extra。
+- 将请求确认、乐观状态发布和命令冷却统一收敛到请求级 `ControlExecutionPolicy`；W860NB
+  PRO、Evo Pro 等型号只覆盖自身已验证的策略，MiLink UI 不再维护降噪专属限流状态。
 
 ## [1.3.1] - 2026-08-08
 

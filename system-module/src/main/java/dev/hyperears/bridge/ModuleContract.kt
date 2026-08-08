@@ -6,15 +6,14 @@ import android.os.Bundle
 import android.os.IBinder
 import dev.hyperears.integration.AdapterResolution
 import dev.hyperears.integration.AdapterSnapshot
-import dev.hyperears.integration.BatteryReading
 import dev.hyperears.integration.BatterySource
 import dev.hyperears.integration.ControlRequest
 import dev.hyperears.integration.ControlRequestTransport
 import dev.hyperears.integration.ControlAppSpec
 import dev.hyperears.integration.ControlOwnership
 import dev.hyperears.integration.EarbudCapabilities
-import dev.hyperears.integration.EarbudBattery
 import dev.hyperears.integration.EarbudState
+import dev.hyperears.integration.FeatureStateTransport
 import dev.hyperears.integration.DeviceLifecycle
 import dev.hyperears.integration.HeadsetFormFactor
 import dev.hyperears.integration.MiLinkCardPresentationId
@@ -47,7 +46,7 @@ object ModuleContract {
     private const val EXTRA_REPLY_PACKAGE = "reply_package"
     private const val EXTRA_SESSION_TOKEN = "session_token"
     private const val EXTRA_CONTROL_ENVELOPE = "control_envelope"
-    private const val EXTRA_NOISE_MODE = "noise_mode"
+    private const val EXTRA_FEATURE_STATE_ENVELOPE = "feature_state_envelope"
     private const val EXTRA_MODEL_ID = "model_id"
     private const val EXTRA_ADAPTER_DISPLAY_NAME = "adapter_display_name"
     private const val EXTRA_ADAPTER_RESOLUTION = "adapter_resolution"
@@ -56,7 +55,6 @@ object ModuleContract {
     private const val EXTRA_ADAPTER_PRESENTATION = "adapter_presentation"
     private const val EXTRA_ADAPTER_NOISE_MODES = "adapter_noise_modes"
     private const val EXTRA_ADAPTER_TRANSPORT_KINDS = "adapter_transport_kinds"
-    private const val EXTRA_ADAPTER_ANC_COOLDOWN = "adapter_anc_cooldown"
     private const val EXTRA_ADAPTER_CONTROL_APP_PACKAGES = "adapter_control_app_packages"
     private const val EXTRA_ADAPTER_CONTROL_APP_NAMES = "adapter_control_app_names"
     private const val EXTRA_CAP_BATTERY = "cap_battery"
@@ -85,14 +83,6 @@ object ModuleContract {
     private const val EXTRA_CONTROL_APP_PACKAGE = "control_app_package"
     private const val EXTRA_CONTROL_APP_PROCESS = "control_app_process"
     private const val EXTRA_CONTROL_APP_TOKEN = "control_app_token"
-    private const val EXTRA_LEFT = "left_battery"
-    private const val EXTRA_LEFT_CHARGING = "left_charging"
-    private const val EXTRA_RIGHT = "right_battery"
-    private const val EXTRA_RIGHT_CHARGING = "right_charging"
-    private const val EXTRA_CASE = "case_battery"
-    private const val EXTRA_CASE_CHARGING = "case_charging"
-    private const val EXTRA_OVERALL = "overall_battery"
-    private const val EXTRA_OVERALL_CHARGING = "overall_charging"
 
     val stateConsumerPackages = setOf(
         MODULE_PACKAGE,
@@ -280,7 +270,6 @@ object ModuleContract {
             putExtra(EXTRA_ADAPTER_PRESENTATION, adapter.presentationId?.value)
             putExtra(EXTRA_ADAPTER_NOISE_MODES, adapter.supportedNoiseModes.map(NoiseMode::name).toTypedArray())
             putExtra(EXTRA_ADAPTER_TRANSPORT_KINDS, adapter.transportKinds.map(TransportKind::name).toTypedArray())
-            putExtra(EXTRA_ADAPTER_ANC_COOLDOWN, adapter.ancSwitchCooldownMs)
             putExtra(
                 EXTRA_ADAPTER_CONTROL_APP_PACKAGES,
                 adapter.controlApps.map(ControlAppSpec::packageName).toTypedArray(),
@@ -317,32 +306,20 @@ object ModuleContract {
             state.lifecycle.externalControlApp?.displayName,
         )
         putExtra(EXTRA_REVISION, state.revision)
-        putExtra(EXTRA_NOISE_MODE, state.noiseMode?.name)
-        putExtra(EXTRA_LEFT, state.battery.left.percent ?: -1)
-        putExtra(EXTRA_LEFT_CHARGING, state.battery.left.charging)
-        putExtra(EXTRA_RIGHT, state.battery.right.percent ?: -1)
-        putExtra(EXTRA_RIGHT_CHARGING, state.battery.right.charging)
-        putExtra(EXTRA_CASE, state.battery.case.percent ?: -1)
-        putExtra(EXTRA_CASE_CHARGING, state.battery.case.charging)
-        putExtra(EXTRA_OVERALL, state.battery.overall.percent ?: -1)
-        putExtra(EXTRA_OVERALL_CHARGING, state.battery.overall.charging)
+        putExtra(EXTRA_FEATURE_STATE_ENVELOPE, FeatureStateTransport.encode(state.features))
     }
 
     fun Intent.readState(): EarbudState? {
         if (action != ACTION_STATE_CHANGED || !hasExtra(EXTRA_REVISION)) return null
+        val features = getStringExtra(EXTRA_FEATURE_STATE_ENVELOPE)
+            ?.let(FeatureStateTransport::decode)
+            ?: return null
         return EarbudState(
             adapter = readAdapterSnapshot(),
             deviceName = getStringExtra(EXTRA_DEVICE_NAME),
             address = getStringExtra(EXTRA_ADDRESS),
             lifecycle = readLifecycle(),
-            battery = EarbudBattery(
-                left = batteryReading(EXTRA_LEFT, EXTRA_LEFT_CHARGING),
-                right = batteryReading(EXTRA_RIGHT, EXTRA_RIGHT_CHARGING),
-                case = batteryReading(EXTRA_CASE, EXTRA_CASE_CHARGING),
-                overall = batteryReading(EXTRA_OVERALL, EXTRA_OVERALL_CHARGING),
-            ),
-            noiseMode = getStringExtra(EXTRA_NOISE_MODE)
-                ?.let { runCatching { NoiseMode.valueOf(it) }.getOrNull() },
+            features = features,
             revision = getLongExtra(EXTRA_REVISION, 0),
         )
     }
@@ -458,16 +435,7 @@ object ModuleContract {
                 ?.takeIf(String::isNotBlank)
                 ?.let(::MiLinkCardPresentationId),
             transportKinds = transportKinds,
-            ancSwitchCooldownMs = getLongExtra(EXTRA_ADAPTER_ANC_COOLDOWN, 0L),
             controlApps = controlApps,
-        )
-    }
-
-    private fun Intent.batteryReading(levelKey: String, chargingKey: String): BatteryReading {
-        val value = getIntExtra(levelKey, -1)
-        return BatteryReading(
-            percent = value.takeIf { it in 0..100 },
-            charging = value in 0..100 && getBooleanExtra(chargingKey, false),
         )
     }
 }

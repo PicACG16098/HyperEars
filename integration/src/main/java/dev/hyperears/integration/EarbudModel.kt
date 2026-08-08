@@ -2,6 +2,7 @@ package dev.hyperears.integration
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 enum class NoiseMode {
@@ -18,6 +19,7 @@ enum class NoiseMode {
     WIND,
 }
 
+@Serializable
 data class BatteryReading(
     val percent: Int?,
     val charging: Boolean,
@@ -29,6 +31,7 @@ data class BatteryReading(
     val available: Boolean get() = percent != null
 }
 
+@Serializable
 data class EarbudBattery(
     val left: BatteryReading = BatteryReading(null, false),
     val right: BatteryReading = BatteryReading(null, false),
@@ -56,6 +59,93 @@ data class EarbudBattery(
             return fromAggregate(percent)
         }
     }
+}
+
+/**
+ * A typed, device-facing state value emitted by a protocol and retained by its Adapter.
+ *
+ * Standard telemetry and vendor/model-specific state intentionally share this boundary. The
+ * platform bridge may project selected standard values onto MiLink callbacks, while CardAdapters
+ * can consume any state type declared by their concrete Adapter. The stable feature id is kept out
+ * of the wire payload; the serializer discriminator is the transport identity.
+ */
+@Serializable
+sealed interface DeviceFeatureState {
+    @Transient
+    val featureId: String
+}
+
+@Serializable
+@SerialName("standard.battery")
+data class BatteryFeatureState(
+    val battery: EarbudBattery,
+) : DeviceFeatureState {
+    @Transient
+    override val featureId: String = FEATURE_ID
+
+    companion object {
+        const val FEATURE_ID = "standard.battery"
+    }
+}
+
+@Serializable
+@SerialName("standard.noise_mode")
+data class NoiseModeFeatureState(
+    val mode: NoiseMode,
+) : DeviceFeatureState {
+    @Transient
+    override val featureId: String = FEATURE_ID
+
+    companion object {
+        const val FEATURE_ID = "standard.noise_mode"
+    }
+}
+
+/** Immutable state collection with replacement semantics per feature identity. */
+@Serializable
+data class DeviceFeatureSnapshot(
+    val values: List<DeviceFeatureState> = emptyList(),
+) {
+    fun get(featureId: String): DeviceFeatureState? =
+        values.firstOrNull { it.featureId == featureId }
+
+    inline fun <reified T : DeviceFeatureState> get(): T? =
+        values.filterIsInstance<T>().firstOrNull()
+
+    fun update(next: DeviceFeatureState): DeviceFeatureSnapshot =
+        copy(values = values.filterNot { it.featureId == next.featureId } + next)
+
+    fun remove(featureId: String): DeviceFeatureSnapshot =
+        copy(values = values.filterNot { it.featureId == featureId })
+
+    /** Retains only values that are understood by the receiving Adapter. */
+    fun retain(accept: (DeviceFeatureState) -> Boolean): DeviceFeatureSnapshot =
+        copy(values = values.filter(accept))
+}
+
+/**
+ * Declares which typed state values one Adapter understands and may retain.
+ *
+ * Capability evidence separately decides whether a retained standard value is exposed through
+ * MiLink. This lets a family Adapter safely keep a valid report received in the same frame that
+ * confirms its capability, while still rejecting state types owned by another model family.
+ */
+fun interface DeviceFeatureStateContract {
+    fun accepts(adapter: EarbudAdapter, state: DeviceFeatureState): Boolean
+}
+
+/** Baseline feature contract inherited by every Adapter. */
+object StandardDeviceFeatureStateContract : DeviceFeatureStateContract {
+    override fun accepts(adapter: EarbudAdapter, state: DeviceFeatureState): Boolean =
+        state.featureId == BatteryFeatureState.FEATURE_ID ||
+            state.featureId == NoiseModeFeatureState.FEATURE_ID
+}
+
+/** Adds a family/model feature predicate without weakening standard state handling. */
+fun DeviceFeatureStateContract.extending(
+    additionalSupport: (EarbudAdapter, DeviceFeatureState) -> Boolean,
+): DeviceFeatureStateContract = DeviceFeatureStateContract { adapter, state ->
+    accepts(adapter, state) || additionalSupport(adapter, state)
 }
 
 enum class BatterySource {
@@ -146,10 +236,16 @@ data class EarbudState(
     val deviceName: String? = null,
     val address: String? = null,
     val lifecycle: DeviceLifecycle = DeviceLifecycle(),
-    val battery: EarbudBattery = EarbudBattery(),
-    val noiseMode: NoiseMode? = null,
+    val features: DeviceFeatureSnapshot = DeviceFeatureSnapshot(),
     val revision: Long = 0,
 ) {
+    /** Read-only standard feature projections used by platform bridges and generic UI. */
+    val battery: EarbudBattery
+        get() = features.get<BatteryFeatureState>()?.battery ?: EarbudBattery()
+
+    val noiseMode: NoiseMode?
+        get() = features.get<NoiseModeFeatureState>()?.mode
+
     /** Compatibility views. Lifecycle truth is stored only in [lifecycle]. */
     val modelId: String? get() = adapter?.id
     val sessionActive: Boolean get() = lifecycle.active
@@ -158,6 +254,20 @@ data class EarbudState(
     val privateChannelConnected: Boolean get() = lifecycle.privateTransportConnected
     val handshakeAccepted: Boolean get() = lifecycle.protocolConfirmed
 }
+
+/** Returns a copy with one feature replaced by its stable feature identity. */
+fun EarbudState.withFeature(state: DeviceFeatureState): EarbudState =
+    copy(features = features.update(state))
+
+/** Replaces the standard noise-mode feature without reintroducing a stored legacy field. */
+fun EarbudState.withNoiseMode(mode: NoiseMode?): EarbudState =
+    copy(
+        features = if (mode == null) {
+            features.remove(NoiseModeFeatureState.FEATURE_ID)
+        } else {
+            features.update(NoiseModeFeatureState(mode))
+        },
+    )
 
 /** Evidence decoded from a vendor byte stream. It never represents system lifecycle state. */
 sealed interface ProtocolEvent {
@@ -173,8 +283,7 @@ sealed interface ProtocolEvent {
         val noiseModes: Set<NoiseMode> = emptySet(),
     ) : ProtocolEvent
 
-    data class BatteryChanged(val battery: EarbudBattery) : ProtocolEvent
-    data class NoiseModeChanged(val mode: NoiseMode) : ProtocolEvent
+    data class FeatureStateChanged(val state: DeviceFeatureState) : ProtocolEvent
 
     data class UnknownFrame(
         val version: Int,
@@ -289,7 +398,6 @@ data class AdapterSnapshot(
     val supportedNoiseModes: Set<NoiseMode>,
     val presentationId: MiLinkCardPresentationId?,
     val transportKinds: Set<TransportKind>,
-    val ancSwitchCooldownMs: Long,
     val controlApps: List<ControlAppSpec> = emptyList(),
 )
 
@@ -310,13 +418,18 @@ fun AdapterSnapshot.standardIntegrationProjection(): AdapterSnapshot = copy(
     supportedNoiseModes = emptySet(),
     presentationId = null,
     transportKinds = emptySet(),
-    ancSwitchCooldownMs = 0L,
 )
 
 data class AdapterRuntimeState(
-    val battery: EarbudBattery = EarbudBattery(),
-    val noiseMode: NoiseMode? = null,
-)
+    val features: DeviceFeatureSnapshot = DeviceFeatureSnapshot(),
+) {
+    /** Read-only standard feature projections for protocol-independent consumers. */
+    val battery: EarbudBattery
+        get() = features.get<BatteryFeatureState>()?.battery ?: EarbudBattery()
+
+    val noiseMode: NoiseMode?
+        get() = features.get<NoiseModeFeatureState>()?.mode
+}
 
 enum class AdapterActivation {
     KEEP_CHANNEL_READY,

@@ -116,6 +116,10 @@ validate confirmed capabilities, the framework automatically transports versione
 MiLink and Bluetooth, and `ProtocolSession` turns only accepted requests into vendor bytes. New
 models do not write IPC or JSON by hand.
 
+Battery, noise mode, and future model-specific state use one typed feature snapshot. Handshake,
+capability evidence, and connection lifecycle remain separate concerns; MiLink's native battery
+and ANC callbacks are only projections at the bridge boundary and do not constrain new state types.
+
 Architecture, process boundaries, state revisioning and extension rules are described in
 [system-module-architecture.md](docs/system-module-architecture.md).
 

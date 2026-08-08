@@ -13,7 +13,7 @@ internal class BoseBmapProtocolSession(
     private var activeConfig: BoseWireConfig? = null
     var discoveredConfig: BoseWireConfig? = null
         private set
-    private var pendingBattery: ProtocolEvent.BatteryChanged? = null
+    private var pendingBattery: ProtocolEvent.FeatureStateChanged? = null
     private var currentModeIndex: Int? = null
     private var currentCncEnabled: Boolean? = null
     private var requiredProductId: Int? = expectedProductId
@@ -81,13 +81,13 @@ internal class BoseBmapProtocolSession(
             }
 
             BoseBmapWireCodec.parseBatteryState(frame)?.let { battery ->
-                val event = ProtocolEvent.BatteryChanged(
-                    EarbudBattery(
+                val event = ProtocolEvent.FeatureStateChanged(
+                    BatteryFeatureState(EarbudBattery(
                         left = BatteryReading(battery.leftPercent, charging = false),
                         right = BatteryReading(battery.rightPercent, charging = false),
                         case = BatteryReading(battery.casePercent, charging = false),
                         overall = BatteryReading(battery.overallPercent, charging = false),
-                    ),
+                    )),
                 )
                 when {
                     requiredProductId == null || identityAccepted == true -> {
@@ -121,14 +121,14 @@ internal class BoseBmapProtocolSession(
                         currentModeIndex
                             ?.takeIf { it == config.index }
                             ?.toNoiseMode(noiseControl)
-                            ?.let { add(ProtocolEvent.NoiseModeChanged(it)) }
+                            ?.let { add(ProtocolEvent.FeatureStateChanged(NoiseModeFeatureState(it))) }
                         return@forEach
                     }
 
                     BoseBmapWireCodec.parseCurrentMode(frame)?.let { modeIndex ->
                         currentModeIndex = modeIndex
                         modeIndex.toNoiseMode(noiseControl)?.let { mode ->
-                            add(ProtocolEvent.NoiseModeChanged(mode))
+                            add(ProtocolEvent.FeatureStateChanged(NoiseModeFeatureState(mode)))
                         }
                         return@forEach
                     }
@@ -137,7 +137,7 @@ internal class BoseBmapProtocolSession(
                 is BoseNoiseControlConfig.Anr -> {
                     BoseBmapWireCodec.parseAnrState(frame)?.let { state ->
                         state.level.toNoiseMode(noiseControl)?.let { mode ->
-                            add(ProtocolEvent.NoiseModeChanged(mode))
+                            add(ProtocolEvent.FeatureStateChanged(NoiseModeFeatureState(mode)))
                         }
                         return@forEach
                     }
@@ -147,14 +147,14 @@ internal class BoseBmapProtocolSession(
                     BoseBmapWireCodec.parseCncState(frame)?.let { state ->
                         currentCncEnabled = state.enabled
                         add(
-                            ProtocolEvent.NoiseModeChanged(
+                            ProtocolEvent.FeatureStateChanged(NoiseModeFeatureState(
                                 mode = when {
                                     !state.enabled -> NoiseMode.OFF
                                     state.rawLevel >= state.maximumRawLevel ->
                                         NoiseMode.TRANSPARENCY
                                     else -> NoiseMode.ANC
                                 },
-                            ),
+                            )),
                         )
                         return@forEach
                     }

@@ -128,7 +128,11 @@ class SonyEarbudAdapterTest {
             listOf(ProtocolEvent.CapabilitiesIdentified(battery = true)),
             batteryEvents.filterIsInstance<ProtocolEvent.CapabilitiesIdentified>(),
         )
-        val batteryEvent = batteryEvents.filterIsInstance<ProtocolEvent.BatteryChanged>().single()
+        val batteryEvent = batteryEvents
+            .filterIsInstance<ProtocolEvent.FeatureStateChanged>()
+            .map(ProtocolEvent.FeatureStateChanged::state)
+            .filterIsInstance<BatteryFeatureState>()
+            .single()
         assertEquals(90, batteryEvent.battery.overall.percent)
 
         val noiseEvents = protocol.offer(command(0, "67 02 01 02 02 01 00 00"))
@@ -138,7 +142,11 @@ class SonyEarbudAdapterTest {
                 .single()
                 .noiseModes,
         )
-        val noiseEvent = noiseEvents.filterIsInstance<ProtocolEvent.NoiseModeChanged>().single()
+        val noiseEvent = noiseEvents
+            .filterIsInstance<ProtocolEvent.FeatureStateChanged>()
+            .map(ProtocolEvent.FeatureStateChanged::state)
+            .filterIsInstance<NoiseModeFeatureState>()
+            .single()
         assertEquals(NoiseMode.ANC, noiseEvent.mode)
     }
 
@@ -176,7 +184,9 @@ class SonyEarbudAdapterTest {
         assertArrayEquals(bytes("22 01"), batteryQuery.payload)
 
         val batteryEvent = protocol.offer(command(0, "23 01 4b 00 50 01"))
-            .filterIsInstance<ProtocolEvent.BatteryChanged>()
+            .filterIsInstance<ProtocolEvent.FeatureStateChanged>()
+            .map(ProtocolEvent.FeatureStateChanged::state)
+            .filterIsInstance<BatteryFeatureState>()
             .single()
         assertEquals(75, batteryEvent.battery.left.percent)
         assertEquals(80, batteryEvent.battery.right.percent)

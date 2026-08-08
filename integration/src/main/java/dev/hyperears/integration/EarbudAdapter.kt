@@ -29,10 +29,6 @@ abstract class EarbudAdapter(
     /** Whether the adapter requires an additional vendor channel before it becomes ready. */
     open val privateProtocolRequired: Boolean = false
 
-    /** How the session confirms and publishes a successful noise-control write. */
-    open val noiseControlConfirmation: ControlConfirmationPolicy =
-        ControlConfirmationPolicy.DEVICE_REPORT
-
     /** Noise states that this model can truthfully expose through MiLink's native controls. */
     open val supportedNoiseModes: Set<NoiseMode> = emptySet()
 
@@ -51,9 +47,6 @@ abstract class EarbudAdapter(
     /** Evidence required before a transport candidate becomes the session's active channel. */
     open val transportReadiness: TransportReadiness = TransportReadiness.CONNECTED
 
-    /** Minimum ms between ANC switch commands; 0 = no cooldown. */
-    open val ancSwitchCooldownMs: Long = 0L
-
     /** Vendor applications that must own the private channel while their process is alive. */
     open val controlApps: List<ControlAppSpec> = emptyList()
 
@@ -62,6 +55,10 @@ abstract class EarbudAdapter(
 
     /** Semantic request contract inherited from the standard control family by default. */
     open val controlRequestContract: ControlRequestContract = StandardControlRequestContract
+
+    /** Typed state contract inherited from the standard feature family by default. */
+    open val featureStateContract: DeviceFeatureStateContract =
+        StandardDeviceFeatureStateContract
 
     abstract fun matches(identity: EarbudIdentity): Boolean
 
@@ -119,16 +116,11 @@ abstract class EarbudAdapter(
         // decoded from this transport read, independent of event ordering inside a codec.
         events.forEach { event ->
             when (event) {
-                is ProtocolEvent.BatteryChanged -> {
-                    if (runtimeState.battery != event.battery) {
-                        runtimeState = runtimeState.copy(battery = event.battery)
-                        changed = true
-                    }
-                }
-
-                is ProtocolEvent.NoiseModeChanged -> {
-                    if (runtimeState.noiseMode != event.mode) {
-                        runtimeState = runtimeState.copy(noiseMode = event.mode)
+                is ProtocolEvent.FeatureStateChanged -> {
+                    if (!featureStateContract.accepts(this, event.state)) return@forEach
+                    val nextFeatures = runtimeState.features.update(event.state)
+                    if (nextFeatures != runtimeState.features) {
+                        runtimeState = runtimeState.copy(features = nextFeatures)
                         changed = true
                     }
                 }
@@ -211,6 +203,18 @@ abstract class EarbudAdapter(
     fun supportsControl(request: ControlRequest): Boolean =
         controlRequestContract.supports(this, request)
 
+    /**
+     * Returns the execution policy for one typed request. Concrete adapters override this for
+     * verified device-specific confirmation or pacing requirements.
+     */
+    open fun controlPolicy(request: ControlRequest): ControlExecutionPolicy = when (request) {
+        is StandardControlRequest.SetNoiseMode -> ControlExecutionPolicy(
+            stateAfterWrite = NoiseModeFeatureState(request.mode),
+        )
+
+        else -> ControlExecutionPolicy()
+    }
+
     fun executeControl(request: ControlRequest): AdapterControlResult {
         if (!supportsControl(request)) {
             return AdapterControlResult(accepted = false)
@@ -222,18 +226,28 @@ abstract class EarbudAdapter(
         if (commands.isEmpty() && request !== StandardControlRequest.Refresh) {
             return AdapterControlResult(accepted = false)
         }
+        val policy = controlPolicy(request)
         var changed = false
-        if (request is StandardControlRequest.SetNoiseMode &&
-            noiseControlConfirmation != ControlConfirmationPolicy.DEVICE_REPORT &&
-            runtimeState.noiseMode != request.mode
+        val stateAfterWrite = policy.stateAfterWrite
+        if (policy.confirmation != ControlConfirmationPolicy.DEVICE_REPORT &&
+            stateAfterWrite != null
         ) {
-            runtimeState = runtimeState.copy(noiseMode = request.mode)
-            changed = true
+            val nextFeatures = runtimeState.features.update(stateAfterWrite)
+            if (nextFeatures != runtimeState.features) {
+                runtimeState = runtimeState.copy(features = nextFeatures)
+                changed = true
+            }
+        }
+        val readback = when (policy.confirmation) {
+            ControlConfirmationPolicy.PUBLISH_AFTER_WRITE -> emptyList()
+            ControlConfirmationPolicy.DEVICE_REPORT,
+            ControlConfirmationPolicy.PUBLISH_AFTER_WRITE_THEN_REFRESH,
+            -> protocolSession.readback(request)
         }
         return AdapterControlResult(
             accepted = true,
             commands = commands,
-            readback = protocolSession.readback(request),
+            readback = readback,
             stateChanged = changed,
         )
     }
@@ -241,8 +255,26 @@ abstract class EarbudAdapter(
     fun onSystemBatteryChanged(percent: Int?): Boolean {
         if (effectiveBatterySource() != BatterySource.SYSTEM_AGGREGATE) return false
         val battery = EarbudBattery.fromSystemAggregate(percent)
-        if (runtimeState.battery == battery) return false
-        runtimeState = runtimeState.copy(battery = battery)
+        val nextFeatures = runtimeState.features.update(BatteryFeatureState(battery))
+        if (nextFeatures == runtimeState.features) return false
+        runtimeState = runtimeState.copy(features = nextFeatures)
+        return true
+    }
+
+    /**
+     * Transfers session-scoped telemetry during an Adapter replacement.
+     *
+     * Product and capability discovery can replace a family Adapter without reconnecting its
+     * channel. The replacement receives only feature types it declares, so a former family or
+     * model cannot leak a vendor-specific state into a conservative fallback.
+     */
+    fun adoptRuntimeState(source: AdapterRuntimeState): Boolean {
+        val retained = source.features.retain { state ->
+            featureStateContract.accepts(this, state)
+        }
+        val next = source.copy(features = retained)
+        if (next == runtimeState) return false
+        runtimeState = next
         return true
     }
 
@@ -265,7 +297,6 @@ abstract class EarbudAdapter(
                 is L2capEndpointSpec -> TransportKind.L2CAP
             }
         },
-        ancSwitchCooldownMs = ancSwitchCooldownMs,
         controlApps = controlApps,
     )
 

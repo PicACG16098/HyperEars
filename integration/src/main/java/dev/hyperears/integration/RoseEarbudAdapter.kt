@@ -260,12 +260,12 @@ private class RoseEarfreeProtocolSession : ProtocolSession {
                 acceptedFrame = true
                 add(ProtocolEvent.CapabilitiesIdentified(battery = true))
                 add(
-                    ProtocolEvent.BatteryChanged(
-                        EarbudBattery(
+                    ProtocolEvent.FeatureStateChanged(
+                        BatteryFeatureState(EarbudBattery(
                             left = BatteryReading(battery.leftPercent, battery.leftCharging),
                             right = BatteryReading(battery.rightPercent, battery.rightCharging),
                             case = BatteryReading(battery.casePercent, false),
-                        ),
+                        )),
                     ),
                 )
             }
@@ -277,7 +277,11 @@ private class RoseEarfreeProtocolSession : ProtocolSession {
                         noiseModes = NoiseMode.entries.toSet(),
                     ),
                 )
-                add(ProtocolEvent.NoiseModeChanged(mode.toDomainMode()))
+                add(
+                    ProtocolEvent.FeatureStateChanged(
+                        NoiseModeFeatureState(mode.toDomainMode()),
+                    ),
+                )
             }
         }
         if (acceptedFrame && !handshakePublished) {
@@ -340,19 +344,19 @@ private class RoseBudsFeelProtocolSession : ProtocolSession {
                 add(
                     when (state) {
                         is RoseBudsFeelMk2WireCodec.State.Battery ->
-                            ProtocolEvent.BatteryChanged(
-                                EarbudBattery(
+                            ProtocolEvent.FeatureStateChanged(
+                                BatteryFeatureState(EarbudBattery(
                                     left = BatteryReading(state.leftPercent, false),
                                     right = BatteryReading(state.rightPercent, false),
                                     case = BatteryReading(state.casePercent, false),
-                                ),
+                                )),
                             ).also {
                                 add(ProtocolEvent.CapabilitiesIdentified(battery = true))
                             }
 
                         is RoseBudsFeelMk2WireCodec.State.Noise ->
-                            ProtocolEvent.NoiseModeChanged(
-                                state.mode.toDomainMode(),
+                            ProtocolEvent.FeatureStateChanged(
+                                NoiseModeFeatureState(state.mode.toDomainMode()),
                             ).also {
                                 add(
                                     ProtocolEvent.CapabilitiesIdentified(

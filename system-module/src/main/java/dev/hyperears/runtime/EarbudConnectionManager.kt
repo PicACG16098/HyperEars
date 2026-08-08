@@ -117,8 +117,7 @@ internal class EarbudConnectionManager(
                     deviceName = session.deviceName,
                     address = address,
                     lifecycle = runtime.lifecycle,
-                    battery = runtime.runtime.battery,
-                    noiseMode = runtime.runtime.noiseMode,
+                    features = runtime.runtime.features,
                     revision = initialState.revision + 1,
                 )
                 val record = SessionRecord(
@@ -285,8 +284,7 @@ internal class EarbudConnectionManager(
             val projected = previous.copy(
                 adapter = update.adapter,
                 lifecycle = update.lifecycle,
-                battery = update.runtime.battery,
-                noiseMode = update.runtime.noiseMode,
+                features = update.runtime.features,
             )
             if (projected == previous) return
             val next = projected.copy(revision = previous.revision + 1)
@@ -357,13 +355,17 @@ internal class EarbudConnectionManager(
             snapshot.sessionToken,
         )
         val state = snapshot.state
+        val featureSummary = state.features.values.joinToString(
+            prefix = "[",
+            postfix = "]",
+        ) { feature ->
+            "${feature.featureId}=$feature"
+        }
         ModuleLog.debug(
             COMPONENT,
             "state address=${maskBluetoothAddress(state.address)} rev=${state.revision} " +
                 "active=${state.sessionActive} connected=${state.connected} " +
-                "handshake=${state.handshakeAccepted} anc=${state.noiseMode} " +
-                "battery=${state.battery.left.percent}/${state.battery.right.percent}/" +
-                "${state.battery.case.percent}",
+                "handshake=${state.handshakeAccepted} features=$featureSummary",
         )
     }
 

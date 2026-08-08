@@ -7,6 +7,7 @@ import dev.hyperears.integration.PrivateTransportState
 import dev.hyperears.integration.ProtocolHandshakeState
 import dev.hyperears.integration.SystemProfileState
 import dev.hyperears.integration.VivoTwsAir3ProAdapter
+import dev.hyperears.integration.withNoiseMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -81,9 +82,7 @@ class DeviceStateRegistryTest {
     @Test
     fun dormantStateCannotAuthorizeControlsButSeedsTheNextSession() {
         val registry = DeviceStateRegistry()
-        val active = activeState(FIRST_ADDRESS, 4).copy(
-            noiseMode = NoiseMode.ANC,
-        )
+        val active = activeState(FIRST_ADDRESS, 4).withNoiseMode(NoiseMode.ANC)
         val ended = active.copy(
             lifecycle = DeviceLifecycle(),
             revision = 5,

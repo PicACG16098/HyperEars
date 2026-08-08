@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
-import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
 import dev.hyperears.bridge.BridgeStage
@@ -23,6 +22,8 @@ import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.MiLinkStateCodec
 import dev.hyperears.integration.NoiseMode
+import dev.hyperears.integration.NoiseModeFeatureState
+import dev.hyperears.integration.withFeature
 import dev.hyperears.settings.ModuleSettings
 import dev.hyperears.settings.ModuleSettingsRuntime
 import java.io.Closeable
@@ -56,7 +57,6 @@ internal class MiLinkServiceHook : HookContext() {
     private val observationLock = Any()
     private val sessionStages = mutableMapOf<String, SessionStages>()
     private val pendingStages = mutableMapOf<String, MutableSet<BridgeStage>>()
-    private val ancSwitchCooldownGate = AncSwitchCooldownGate()
 
     @Volatile
     private var context: Context? = null
@@ -110,7 +110,7 @@ internal class MiLinkServiceHook : HookContext() {
             }
             hookBluetoothDeviceResult(className, "getAncState") { device, adapter ->
                 if (adapter.capabilities.noiseControl) {
-                    MiLinkStateCodec.ancState(stateFor(device))
+                    nativeAncState(stateFor(device))
                 } else {
                     NO_ANC_STATE
                 }
@@ -1123,7 +1123,7 @@ internal class MiLinkServiceHook : HookContext() {
         )
 
         val battery = batteryLevelsFor(snapshot)?.toIntArray() ?: return
-        val anc = MiLinkStateCodec.ancState(snapshot)
+        val anc = nativeAncState(snapshot)
         val deviceId = adapterIdentity(snapshot)
             ?.let(MiLinkCarrierIdentity::deviceId)
             ?: return
@@ -1209,11 +1209,10 @@ internal class MiLinkServiceHook : HookContext() {
         val presentation = adapterIdentity(state)
             ?.presentationId
             ?.let(MiLinkCardAdapterRegistry::resolve)
+        val projectedMode = presentation?.projectNativeNoiseMode(state.noiseMode)
+            ?: state.noiseMode
         return MiLinkStateCodec.ancState(
-            state.copy(
-                noiseMode = presentation?.projectNativeNoiseMode(state.noiseMode)
-                    ?: state.noiseMode,
-            ),
+            projectedMode?.let { state.withFeature(NoiseModeFeatureState(it)) } ?: state,
         )
     }
 
@@ -1281,19 +1280,7 @@ internal class MiLinkServiceHook : HookContext() {
                     .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
             )
         }
-        if (request is StandardControlRequest.SetNoiseMode) {
-            val cooldown = adapterForAddress(address)?.ancSwitchCooldownMs ?: 0L
-            if (!ancSwitchCooldownGate.runIfReady(address, cooldown, send)) {
-                ModuleLog.debug(
-                    "MiLink",
-                    "suppressed ANC command during ${cooldown}ms cooldown " +
-                        "address=${maskBluetoothAddress(address)}",
-                )
-                return
-            }
-        } else {
-            send()
-        }
+        send()
         ModuleLog.debug("MiLink", "forwarded ${request.javaClass.simpleName}")
     }
 
@@ -1326,33 +1313,5 @@ internal class MiLinkServiceHook : HookContext() {
         const val HEADSET_PROPERTY_CHANGED = 4
         val BLUETOOTH_ADDRESS_PATTERN =
             Regex("^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
-    }
-}
-
-/** Per-device command gate used only by adapters that declare an ANC prompt window. */
-internal class AncSwitchCooldownGate(
-    private val clockMillis: () -> Long = SystemClock::elapsedRealtime,
-) {
-    private val lock = Any()
-    private val lastCommandAt = mutableMapOf<String, Long>()
-
-    fun runIfReady(
-        address: String,
-        cooldownMs: Long,
-        action: () -> Unit,
-    ): Boolean = synchronized(lock) {
-        if (cooldownMs <= 0L) {
-            action()
-            return@synchronized true
-        }
-        val key = address.uppercase(Locale.ROOT)
-        val now = clockMillis()
-        val last = lastCommandAt[key]
-        if (last != null && now - last < cooldownMs) {
-            return@synchronized false
-        }
-        action()
-        lastCommandAt[key] = clockMillis()
-        true
     }
 }

@@ -35,6 +35,25 @@ sealed interface StandardControlRequest : ControlRequest {
     ) : StandardControlRequest
 }
 
+/**
+ * Adapter-owned execution behavior for one request.
+ *
+ * The policy is request-scoped so vendor controls such as ANC depth can use the same confirmation,
+ * optimistic-state and rate-limit machinery as the standard noise-mode request.
+ */
+data class ControlExecutionPolicy(
+    val confirmation: ControlConfirmationPolicy = ControlConfirmationPolicy.DEVICE_REPORT,
+    val cooldownMs: Long = 0L,
+    val stateAfterWrite: DeviceFeatureState? = null,
+) {
+    init {
+        require(cooldownMs >= 0L) { "Control cooldown cannot be negative" }
+        require(
+            confirmation == ControlConfirmationPolicy.DEVICE_REPORT || stateAfterWrite != null,
+        ) { "Optimistic control policies require a state to publish" }
+    }
+}
+
 /** Declares the requests that one Adapter may execute in its current confirmed state. */
 fun interface ControlRequestContract {
     fun supports(adapter: EarbudAdapter, request: ControlRequest): Boolean

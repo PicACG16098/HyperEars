@@ -46,7 +46,7 @@ system-module -> integration -> protocol
 - 型号/家族身份与匹配分辨率；
 - 物理形态和 MiLink 呈现 ID；
 - 当前已确认的能力与支持的噪声模式；
-- 电量、噪声模式等运行状态；
+- 统一的动态特性快照 `DeviceFeatureSnapshot`；
 - 候选传输和控制确认策略；
 - 一个 `ProtocolSession`。
 
@@ -100,7 +100,40 @@ EarbudAdapter
        └─ WireCodec（纯字节转换）
 ```
 
-### 3.4 ControlRequest
+### 3.4 DeviceFeatureState
+
+`DeviceFeatureState` 表示一项可随耳机运行过程变化的、带类型的设备事实。电量、噪声模式和
+后续的降噪深度、空间音频、EQ 等状态都以该模型表达，不再向 `EarbudState` 或
+`AdapterRuntimeState` 增加全局字段。
+
+```text
+ProtocolSession
+  -> ProtocolEvent.FeatureStateChanged
+  -> EarbudAdapter.runtimeState.features
+  -> EarbudState.features
+  -> FeatureStateTransport
+  -> MiLink / 应用 UI
+```
+
+`DeviceFeatureSnapshot` 按稳定 `featureId` 替换同类值，保证同一状态只保留最新值。
+Adapter 通过 `featureStateContract` 声明可保留的状态类型；在家族探测细化、具体型号升级或
+保守回退时，会话把旧快照转移给新 Adapter，并过滤新 Adapter 不理解的特性状态。
+
+`CapabilitiesIdentified`、`ProductIdentified`、握手结果和 `DeviceLifecycle` 不属于动态特性
+状态：前两者是协议证据，决定能否向用户开放能力；后两者描述会话生命周期。有效能力和状态
+报告可以出现在同一帧中，但只有能力快照声明支持时，MiLink 才会显示相应控制。这个分离避免
+把“设备当前值”“协议确认”和“连接状态”混成一组可互相矛盾的字段。
+
+`EarbudState.battery` 与 `EarbudState.noiseMode` 只是由标准特性派生的只读平台视图。它们仅为
+MiLink 的既有电量和 ANC 回调、以及通用诊断 UI 提供投影，不是核心状态存储。型号专属卡片
+应读取自己声明的特性类型，不向公共状态类添加厂商字段。
+
+新增特性状态时，在 `integration` 定义带稳定命名空间 `@SerialName` 的 `@Serializable`
+`DeviceFeatureState` 子类型，在具体 Adapter 的 `featureStateContract` 中声明支持，并由
+ProtocolSession 产出 `FeatureStateChanged`。跨进程 JSON、Intent extra 和状态替换均由框架处理，
+CardAdapter 不需要也不得手写这些细节。
+
+### 3.5 ControlRequest
 
 控制操作使用强类型 `ControlRequest`。当前标准请求族包含 `Refresh` 和
 `SetNoiseMode`；所有 Adapter 默认继承 `StandardControlRequestContract`，由当前 Adapter
@@ -123,6 +156,11 @@ MiLink/CardAdapter
 稳定的 `@SerialName`、严格 schema 和 4 KiB 载荷上限。CardAdapter、Adapter 和
 ProtocolSession 不手写 Intent extra、JSON、Bundle 或信封字段。未知版本、未知请求、未知
 字段、畸形内容和超限载荷均拒绝；请求未通过 Adapter 契约时不会写入耳机。
+
+Adapter 可为一个请求返回 `ControlExecutionPolicy`：`DEVICE_REPORT` 仅等待 ProtocolSession 的
+权威回读，`PUBLISH_AFTER_WRITE` 在完整写事务成功后发布声明的特性状态且不增加回读，
+`PUBLISH_AFTER_WRITE_THEN_REFRESH` 则先发布再执行回读。命令冷却同样属于该策略，且只在
+Bluetooth 会话已持有活动通道时计入；MiLink UI 不维护型号专属的节流状态。
 
 新增厂商或型号专属控制时，在 `integration` 中声明带厂商命名空间 `@SerialName` 的
 `@Serializable` 请求子类型，家族 Adapter 通过 `controlRequestContract.extending { ... }`
@@ -298,19 +336,22 @@ Bluetooth 进程发布的状态包含：
 
 - 完整 `AdapterSnapshot`；
 - `DeviceLifecycle`；
-- 电量和噪声模式运行态；
+- 一个版本化 `DeviceFeatureSnapshot`；
 - 地址、会话令牌和单调 revision。
 
-MiLink 和应用 UI 直接消费快照，不按 `modelId` 重新访问 Registry。旧版布尔 extra 只在
-状态 IPC 边界保留兼容编码，新版控制请求使用版本化信封；接收端先严格反序列化，再由当前
-Adapter 校验请求。状态与控制仍使用不同的消息模型，状态快照不会被当作控制请求执行。
+`FeatureStateTransport` 把完整快照放入单一版本化状态信封；接收端拒绝未知 schema、未知
+状态类型、畸形内容和超限载荷。状态 IPC 不再维护电量、充电、降噪等固定字段的散乱 extra。
+MiLink 和应用 UI 直接消费完整快照，不按 `modelId` 重新访问 Registry。控制请求仍使用独立的
+版本化信封，先严格反序列化，再由当前 Adapter 校验；状态快照不会被当作控制请求执行。
 
 MiLink 设备 ID 只由 `AdapterSnapshot.formFactor` 映射：TWS 使用一个已知原生耳机载体，
 头戴耳机使用一个已知原生头戴载体。具体型号不伪造新的设备 ID 查找表。
 
-常规电量、噪声模式和能力通过官方查询路径提供。只有原生卡片无法表达的、已验证的少量
-呈现差异，才由 `MiLinkCardAdapter` 在 View 创建/绑定时进行一次性处理；该层不连接蓝牙
-也不轮询。卡片扩展只依赖稳定的原生 View ID，不 Hook 混淆回调：例如 Bose
+常规电量、噪声模式和能力通过官方查询路径提供。MiLink 仅认识原生电量和 ANC 三态，故桥层
+在最后一步将对应标准特性投影到这些回调；该平台限制不会回流到核心状态模型。只有原生卡片
+无法表达的、已验证的少量呈现差异，才由 `MiLinkCardAdapter` 在 View 创建/绑定时进行一次性
+处理；该层只读取不可变状态快照，不连接蓝牙、不持有 Adapter 或 ProtocolSession、也不轮询。
+卡片扩展只依赖稳定的原生 View ID，不 Hook 混淆回调：例如 Bose
 AudioModes 两态设备保留系统三项布局，但把协议不支持的“关闭”项设为不可点击；支持
 抗风噪的具体型号则由对应 Adapter 选择明确的卡片呈现 ID。
 
@@ -336,10 +377,12 @@ Compose 不导入具体 Adapter、ProtocolSession、WireCodec 或厂商类型。
 3. 同一协议状态机、产品身份可确认：在 Adapter 握手阶段返回 `Replace`；
 4. 新状态机：增加 ProtocolSession；
 5. 新帧格式：增加 WireCodec；
-6. 原生卡片无法表达的呈现：增加独立 MiLinkCardAdapter。
+6. 新动态状态：增加 `DeviceFeatureState` 子类型与 Adapter 状态契约；
+7. 原生卡片无法表达的呈现：增加独立 MiLinkCardAdapter。
 
 不得让 Registry、UI 或 MiLink Hook 解析厂商帧；不得让 ProtocolSession 按零售名称选择
-设备；不得通过共享 Adapter/ProtocolSession 单例复用会话状态。
+设备；不得通过共享 Adapter/ProtocolSession 单例复用会话状态；不得为型号专属状态向
+`EarbudState`、`AdapterRuntimeState` 或 IPC 新增固定字段。
 
 ## 11. 性能约束
 
@@ -358,7 +401,8 @@ Compose 不导入具体 Adapter、ProtocolSession、WireCodec 或厂商类型。
 - 具体型号、家族和标准回退顺序；
 - 家族能力在协议证据前保持关闭；
 - Adapter 替换时 ProtocolSession 与运行状态正确转移；
+- 特性快照在状态 IPC 往返中保持类型和替换语义，畸形或未知状态被拒绝；
 - 生命周期枚举不会组合出虚假的 ready 状态；
-- 跨进程 AdapterSnapshot 和 DeviceLifecycle 往返一致；
+- 跨进程 AdapterSnapshot、DeviceLifecycle 和特性快照往返一致；
 - UI/MiLink 不依赖 Registry 按 ID 重建运行时对象；
 - 一次控制只产生一次完整写事务。

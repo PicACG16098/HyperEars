@@ -138,6 +138,10 @@ MiLinkServiceHook         ── 最小身份、状态与控制映射
 校验，框架自动完成 MiLink 与 Bluetooth 进程之间的版本化传输，ProtocolSession 只把通过
 校验的请求转换为厂商字节帧。新增型号不需要手写 IPC 或 JSON。
 
+电量、噪声模式和后续型号专属状态统一使用带类型的特性快照传递。协议握手、能力确认和
+连接生命周期保持独立；MiLink 的原生电量与 ANC 回调只在桥接边界读取标准特性投影，不会
+限制新型号的状态模型。
+
 系统模块不注入 HyperOS 设置页，不轮询 UI，也不替换系统蓝牙音频服务。型号专属卡片
 扩展只在 MiLink 卡片绑定时执行，并由具体 Adapter 声明。完整架构见
 [系统模块架构](docs/system-module-architecture.md)。

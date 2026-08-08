@@ -142,12 +142,12 @@ private class VivoProtocolSession(
                 return@flatMap buildList {
                     add(ProtocolEvent.CapabilitiesIdentified(battery = true))
                     add(
-                        ProtocolEvent.BatteryChanged(
-                            EarbudBattery(
+                        ProtocolEvent.FeatureStateChanged(
+                            BatteryFeatureState(EarbudBattery(
                                 left = BatteryReading(it.leftPercent, it.leftCharging),
                                 right = BatteryReading(it.rightPercent, it.rightCharging),
                                 case = BatteryReading(it.casePercent, it.caseCharging),
-                            ),
+                            )),
                         ),
                     )
                     publishHandshakeIfNeeded()
@@ -161,7 +161,11 @@ private class VivoProtocolSession(
                             noiseModes = VivoEarbudAdapter.THREE_STATE_NOISE_MODES,
                         ),
                     )
-                    add(ProtocolEvent.NoiseModeChanged(mode = it.mode.toDomainMode()))
+                    add(
+                        ProtocolEvent.FeatureStateChanged(
+                            NoiseModeFeatureState(it.mode.toDomainMode()),
+                        ),
+                    )
                     publishHandshakeIfNeeded()
                 }
             }

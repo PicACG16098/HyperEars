@@ -6,6 +6,7 @@ import dev.hyperears.integration.NoiseMode
 import dev.hyperears.integration.PrivateTransportState
 import dev.hyperears.integration.ProtocolHandshakeState
 import dev.hyperears.integration.SystemProfileState
+import dev.hyperears.integration.withNoiseMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -23,11 +24,11 @@ class EdifierFourModeMiLinkCardAdapterTest {
     fun windItemTogglesBetweenWindAndDeepAnc() {
         assertEquals(
             NoiseMode.WIND,
-            EdifierFourModeControlPolicy.request(connected.copy(noiseMode = NoiseMode.ANC)),
+            EdifierFourModeControlPolicy.request(connected.withNoiseMode(NoiseMode.ANC)),
         )
         assertEquals(
             NoiseMode.ANC,
-            EdifierFourModeControlPolicy.request(connected.copy(noiseMode = NoiseMode.WIND)),
+            EdifierFourModeControlPolicy.request(connected.withNoiseMode(NoiseMode.WIND)),
         )
     }
 
@@ -36,7 +37,7 @@ class EdifierFourModeMiLinkCardAdapterTest {
         listOf(NoiseMode.TRANSPARENCY, NoiseMode.OFF, null).forEach { mode ->
             assertEquals(
                 NoiseMode.WIND,
-                EdifierFourModeControlPolicy.request(connected.copy(noiseMode = mode)),
+                EdifierFourModeControlPolicy.request(connected.withNoiseMode(mode)),
             )
         }
     }
@@ -45,12 +46,12 @@ class EdifierFourModeMiLinkCardAdapterTest {
     fun windItemRejectsRequestsWithoutALiveConnection() {
         assertNull(
             EdifierFourModeControlPolicy.request(
-                connected.copy(lifecycle = DeviceLifecycle(), noiseMode = NoiseMode.ANC),
+                connected.copy(lifecycle = DeviceLifecycle()).withNoiseMode(NoiseMode.ANC),
             ),
         )
         assertNull(
             EdifierFourModeControlPolicy.request(
-                connected.copy(lifecycle = DeviceLifecycle(), noiseMode = NoiseMode.WIND),
+                connected.copy(lifecycle = DeviceLifecycle()).withNoiseMode(NoiseMode.WIND),
             ),
         )
     }

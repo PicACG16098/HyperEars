@@ -13,11 +13,13 @@ import dev.hyperears.integration.ControlAppSpec
 import dev.hyperears.integration.ControlAppCatalog
 import dev.hyperears.integration.ControlOwnership
 import dev.hyperears.integration.BatterySource
+import dev.hyperears.integration.BatteryFeatureState
 import dev.hyperears.integration.AdapterActivation
 import dev.hyperears.integration.AdapterIoResult
 import dev.hyperears.integration.AdapterRuntimeState
 import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.DeviceLifecycle
+import dev.hyperears.integration.DeviceFeatureSnapshot
 import dev.hyperears.integration.EarbudAdapter
 import dev.hyperears.integration.HandshakeResult
 import dev.hyperears.integration.InitialProtocolFailureResolution
@@ -82,6 +84,8 @@ internal class EarbudDeviceSession(
     private val transportLock = Any()
     private val transactionMutex = Mutex()
     private val unknownFrameLogTimes = mutableMapOf<Int, Long>()
+    private val controlPacingLock = Any()
+    private var lastControlAt = Long.MIN_VALUE
 
     @Volatile
     private var connectionJob: Job? = null
@@ -146,9 +150,14 @@ internal class EarbudDeviceSession(
                 currentAdapter.runtimeState()
             } else {
                 AdapterRuntimeState(
-                    battery = dev.hyperears.integration.EarbudBattery
-                        .fromSystemAggregate(systemBatteryPercent),
-                    noiseMode = null,
+                    features = DeviceFeatureSnapshot(
+                        values = listOf(
+                            BatteryFeatureState(
+                                dev.hyperears.integration.EarbudBattery
+                                    .fromSystemAggregate(systemBatteryPercent),
+                            ),
+                        ),
+                    ),
                 )
             },
             lifecycle = lifecycle,
@@ -270,9 +279,9 @@ internal class EarbudDeviceSession(
         if (!adapter.supportsControl(request)) {
             return false
         }
-        val activeChannel = channel ?: run {
-            return false
-        }
+        val policy = adapter.controlPolicy(request)
+        val activeChannel = channel ?: return false
+        if (!isControlPacingReady(policy.cooldownMs)) return false
         scope.launch {
             runCatching {
                 transactionMutex.withLock {
@@ -609,6 +618,8 @@ internal class EarbudDeviceSession(
         activeChannel: EarbudChannel,
     ) {
         if (channel !== activeChannel) throw CancellationException("stale adapter replacement")
+        val previous = adapter
+        replacement.adapter.adoptRuntimeState(previous.runtimeState())
         adapter = replacement.adapter
         ControlAppCatalog.activeOwner(adapter.controlApps, activeControlAppPackages)
             ?.takeIf { externalControlEnabled }
@@ -635,6 +646,7 @@ internal class EarbudDeviceSession(
         require(!fallback.privateProtocolRequired) {
             "Initial protocol fallback must not require another private transport"
         }
+        fallback.adoptRuntimeState(previous.runtimeState())
         adapter = fallback
         publishCachedSystemBattery()
         updateLifecycle(
@@ -785,10 +797,20 @@ internal class EarbudDeviceSession(
         )
     }
 
-    private fun ControlRequest.description(): String = when {
-        this === StandardControlRequest.Refresh -> "refresh"
-        this is StandardControlRequest.SetNoiseMode -> "noise=${mode.name}"
-        else -> "custom=${javaClass.name}"
+    private fun ControlRequest.description(): String =
+        javaClass.simpleName.ifBlank { "ControlRequest" }
+
+    private fun isControlPacingReady(cooldownMs: Long): Boolean {
+        if (cooldownMs <= 0L) return true
+        val now = SystemClock.elapsedRealtime()
+        return synchronized(controlPacingLock) {
+            if (lastControlAt != Long.MIN_VALUE && now - lastControlAt < cooldownMs) {
+                false
+            } else {
+                lastControlAt = now
+                true
+            }
+        }
     }
 
     private fun ByteArray.toHex(): String =

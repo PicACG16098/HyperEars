@@ -100,16 +100,16 @@ private class AppleAapProtocolSession : ProtocolSession {
     override fun offer(bytes: ByteArray): List<ProtocolEvent> =
         decoder.offer(bytes).map { state ->
             when (state) {
-                is AppleAapWireCodec.State.Battery -> ProtocolEvent.BatteryChanged(
-                    EarbudBattery(
+                is AppleAapWireCodec.State.Battery -> ProtocolEvent.FeatureStateChanged(
+                    BatteryFeatureState(EarbudBattery(
                         left = state.left.toDomainReading(),
                         right = state.right.toDomainReading(),
                         case = state.case.toDomainReading(),
-                    ),
+                    )),
                 )
 
-                is AppleAapWireCodec.State.Noise -> ProtocolEvent.NoiseModeChanged(
-                    mode = state.mode.toDomainMode(),
+                is AppleAapWireCodec.State.Noise -> ProtocolEvent.FeatureStateChanged(
+                    NoiseModeFeatureState(state.mode.toDomainMode()),
                 )
             }
         }

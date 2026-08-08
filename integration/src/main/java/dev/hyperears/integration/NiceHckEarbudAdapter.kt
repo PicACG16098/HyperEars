@@ -97,17 +97,21 @@ private class NiceHckOrigProtocolSession : ProtocolSession {
             }
             battery?.let {
                 add(
-                    ProtocolEvent.BatteryChanged(
-                        EarbudBattery(
+                    ProtocolEvent.FeatureStateChanged(
+                        BatteryFeatureState(EarbudBattery(
                             left = BatteryReading(it.leftPercent, false),
                             right = BatteryReading(it.rightPercent, false),
                             case = BatteryReading(it.casePercent, false),
-                        ),
+                        )),
                     ),
                 )
             }
             noiseMode?.let { mode ->
-                add(ProtocolEvent.NoiseModeChanged(mode.toDomainMode()))
+                add(
+                    ProtocolEvent.FeatureStateChanged(
+                        NoiseModeFeatureState(mode.toDomainMode()),
+                    ),
+                )
             }
         }
     }

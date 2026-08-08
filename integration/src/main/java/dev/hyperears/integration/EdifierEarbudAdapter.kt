@@ -124,15 +124,21 @@ class EdifierW860NBProAdapter : EdifierHeadphonesAdapter() {
         NoiseMode.WIND,
         NoiseMode.OFF,
     )
-    override val noiseControlConfirmation: ControlConfirmationPolicy =
-        ControlConfirmationPolicy.PUBLISH_AFTER_WRITE
-
     /**
      * The W860NB PRO plays a voice prompt for ~1.9 s after an ANC switch and ignores commands
-     * during the prompt. Refuse new switches in the MiLink hook so the UI stays on the current
-     * mode instead of jumping to one the headset never applied.
+     * during the prompt. The request policy keeps this pacing at the session boundary.
      */
-    override val ancSwitchCooldownMs: Long = 1_800L
+    override fun controlPolicy(request: ControlRequest): ControlExecutionPolicy =
+        super.controlPolicy(request).let { policy ->
+            if (request is StandardControlRequest.SetNoiseMode) {
+                policy.copy(
+                    confirmation = ControlConfirmationPolicy.PUBLISH_AFTER_WRITE,
+                    cooldownMs = 1_800L,
+                )
+            } else {
+                policy
+            }
+        }
 
     override fun matches(identity: EarbudIdentity): Boolean =
         super.matches(identity) &&
@@ -167,8 +173,14 @@ class EdifierEvoProAdapter : EdifierEarbudAdapter() {
     )
     override val supportedNoiseModes: Set<NoiseMode> =
         EdifierAncDialects.EVO_PRO.supportedModes
-    override val noiseControlConfirmation: ControlConfirmationPolicy =
-        ControlConfirmationPolicy.PUBLISH_AFTER_WRITE
+    override fun controlPolicy(request: ControlRequest): ControlExecutionPolicy =
+        super.controlPolicy(request).let { policy ->
+            if (request is StandardControlRequest.SetNoiseMode) {
+                policy.copy(confirmation = ControlConfirmationPolicy.PUBLISH_AFTER_WRITE)
+            } else {
+                policy
+            }
+        }
 
     override fun matches(identity: EarbudIdentity): Boolean =
         super.matches(identity) &&
@@ -325,12 +337,12 @@ private class EdifierProtocolSession(
                 add(ProtocolEvent.CapabilitiesIdentified(battery = true))
                 val reading = BatteryReading(battery.wholeUnit, charging = false)
                 add(
-                    ProtocolEvent.BatteryChanged(
-                        when (configuration.batteryProjection) {
+                    ProtocolEvent.FeatureStateChanged(
+                        BatteryFeatureState(when (configuration.batteryProjection) {
                             EdifierBatteryProjection.OVERALL -> EarbudBattery(overall = reading)
                             EdifierBatteryProjection.TWS_AGGREGATE ->
                                 EarbudBattery.fromAggregate(battery.wholeUnit)
-                        },
+                        }),
                     ),
                 )
                 publishHandshakeIfNeeded()
@@ -348,7 +360,7 @@ private class EdifierProtocolSession(
                             noiseModes = dialect.supportedModes,
                         ),
                     )
-                    add(ProtocolEvent.NoiseModeChanged(mode))
+                    add(ProtocolEvent.FeatureStateChanged(NoiseModeFeatureState(mode)))
                 }
                 publishHandshakeIfNeeded()
                 return@forEach

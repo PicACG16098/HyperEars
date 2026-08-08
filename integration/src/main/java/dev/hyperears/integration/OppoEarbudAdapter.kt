@@ -196,7 +196,7 @@ private class OppoProtocolSession(
                         right = state.right?.toDomainReading() ?: battery.right,
                         case = state.case?.toDomainReading() ?: battery.case,
                     )
-                    add(ProtocolEvent.BatteryChanged(battery))
+                    add(ProtocolEvent.FeatureStateChanged(BatteryFeatureState(battery)))
                     return@buildList
                 }
                 OppoWireCodec.parseAncState(frame)
@@ -209,7 +209,7 @@ private class OppoProtocolSession(
                                 noiseModes = OPPO_NOISE_MODES,
                             ),
                         )
-                        add(ProtocolEvent.NoiseModeChanged(mode))
+                        add(ProtocolEvent.FeatureStateChanged(NoiseModeFeatureState(mode)))
                         return@buildList
                     }
                 add(
