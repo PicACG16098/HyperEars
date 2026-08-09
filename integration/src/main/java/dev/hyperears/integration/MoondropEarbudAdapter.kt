@@ -57,6 +57,18 @@ class MoondropRobinAdapter : MoondropEarbudAdapter() {
 
     override fun createProtocolSession(): ProtocolSession = MoondropRobinProtocolSession()
 
+    override fun controlPolicy(request: ControlRequest): ControlExecutionPolicy =
+        super.controlPolicy(request).let { policy ->
+            if (request is StandardControlRequest.SetNoiseMode) {
+                policy.copy(
+                    confirmation = ControlConfirmationPolicy.PUBLISH_AFTER_WRITE_THEN_REFRESH,
+                    readbackDelayMs = MODE_READBACK_DELAY_MS,
+                )
+            } else {
+                policy
+            }
+        }
+
     /** A known exact model remains eligible for the normal bounded retry and dormant wake path. */
     override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
         InitialProtocolFailureResolution.KeepDormant
@@ -64,6 +76,7 @@ class MoondropRobinAdapter : MoondropEarbudAdapter() {
     companion object {
         const val ID = "moondrop-robin"
         const val STANDARD_SPP_UUID = "00001101-0000-1000-8000-00805f9b34fb"
+        internal const val MODE_READBACK_DELAY_MS = 600L
 
         private val EXACT_NAMES = setOf(
             "robinsearphones",

@@ -108,7 +108,7 @@ class MoondropRobinAdapterTest {
     }
 
     @Test
-    fun noiseModeWriteWaitsForDeviceReadbackAndExactModelKeepsDormantOnFailure() {
+    fun noiseModeWritePublishesOptimisticallyThenRequestsDelayedReadback() {
         val adapter = MoondropRobinAdapter()
         adapter.receive(
             MoondropRobinWireCodec.frame(
@@ -130,8 +130,20 @@ class MoondropRobinAdapterTest {
         val result = adapter.executeControl(
             StandardControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY),
         )
+        val policy = adapter.controlPolicy(
+            StandardControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY),
+        )
         assertTrue(result.accepted)
-        assertFalse(result.stateChanged)
+        assertTrue(result.stateChanged)
+        assertEquals(
+            ControlConfirmationPolicy.PUBLISH_AFTER_WRITE_THEN_REFRESH,
+            policy.confirmation,
+        )
+        assertEquals(MoondropRobinAdapter.MODE_READBACK_DELAY_MS, policy.readbackDelayMs)
+        assertEquals(
+            NoiseModeFeatureState(NoiseMode.TRANSPARENCY),
+            policy.stateAfterWrite,
+        )
         assertEquals(
             listOf(
                 MoondropRobinWireCodec
@@ -144,10 +156,20 @@ class MoondropRobinAdapterTest {
             listOf(MoondropRobinWireCodec.queryNoiseMode.toList()),
             result.readback.map(ByteArray::toList),
         )
-        assertEquals(NoiseMode.OFF, adapter.runtimeState().noiseMode)
+        assertEquals(NoiseMode.TRANSPARENCY, adapter.runtimeState().noiseMode)
         assertEquals(
             InitialProtocolFailureResolution.KeepDormant,
             adapter.onInitialProtocolUnavailable(),
+        )
+    }
+
+    @Test
+    fun nonModeControlsKeepTheDefaultReadbackDelay() {
+        val policy = MoondropRobinAdapter().controlPolicy(StandardControlRequest.Refresh)
+
+        assertEquals(
+            ControlExecutionPolicy.DEFAULT_READBACK_DELAY_MS,
+            policy.readbackDelayMs,
         )
     }
 

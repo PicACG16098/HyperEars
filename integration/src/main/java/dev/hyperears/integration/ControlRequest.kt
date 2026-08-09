@@ -44,13 +44,19 @@ sealed interface StandardControlRequest : ControlRequest {
 data class ControlExecutionPolicy(
     val confirmation: ControlConfirmationPolicy = ControlConfirmationPolicy.DEVICE_REPORT,
     val cooldownMs: Long = 0L,
+    val readbackDelayMs: Long = DEFAULT_READBACK_DELAY_MS,
     val stateAfterWrite: DeviceFeatureState? = null,
 ) {
     init {
         require(cooldownMs >= 0L) { "Control cooldown cannot be negative" }
+        require(readbackDelayMs >= 0L) { "Control readback delay cannot be negative" }
         require(
             confirmation == ControlConfirmationPolicy.DEVICE_REPORT || stateAfterWrite != null,
         ) { "Optimistic control policies require a state to publish" }
+    }
+
+    companion object {
+        const val DEFAULT_READBACK_DELAY_MS = 120L
     }
 }
 

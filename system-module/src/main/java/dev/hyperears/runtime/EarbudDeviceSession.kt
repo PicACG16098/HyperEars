@@ -302,7 +302,7 @@ internal class EarbudDeviceSession(
                     if (result.stateChanged) publishSnapshot()
                     val readback = result.readback
                     if (readback.isNotEmpty()) {
-                        delay(CONTROL_READBACK_DELAY_MS)
+                        delay(policy.readbackDelayMs)
                         sendCommands(
                             activeChannel = activeChannel,
                             commands = readback,
@@ -847,7 +847,6 @@ internal class EarbudDeviceSession(
         const val PROTOCOL_HANDSHAKE_TIMEOUT_MS = 2_500L
         const val INITIAL_COMMAND_GAP_MS = 150L
         const val COMMAND_GAP_MS = 120L
-        const val CONTROL_READBACK_DELAY_MS = 120L
         const val STABLE_CONNECTION_MS = 30_000L
         const val UNKNOWN_FRAME_LOG_INTERVAL_MS = 5 * 60_000L
         const val READ_BUFFER_SIZE = 1_024
