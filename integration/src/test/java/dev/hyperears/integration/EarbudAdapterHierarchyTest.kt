@@ -404,7 +404,7 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun roseProtocolFamilyConfirmsCapabilitiesInsideTheSameStatefulAdapter() {
+    fun capabilityEvidenceAloneDoesNotReplaceTheCurrentBatterySource() {
         val adapter = TestRoseEarfreeProtocolFamilyAdapter()
 
         assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
@@ -422,7 +422,7 @@ class EarbudAdapterHierarchyTest {
         )
 
         assertEquals(null, result)
-        assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
         assertTrue(adapter.snapshot().capabilities.noiseControl)
         assertTrue(adapter.snapshot().capabilities.windNoiseControl)
         assertEquals(

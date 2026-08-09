@@ -44,6 +44,9 @@ node tools/validate-docs.mjs
 11. 动态设备状态必须使用 `DeviceFeatureState` 子类型和 Adapter 的 `featureStateContract`；
     不得向 `EarbudState`、`AdapterRuntimeState`、Intent extra 或公共枚举增加型号专属字段。
     协议身份、能力证据和连接生命周期保持为独立模型。
+12. 协议状态观测默认由 Adapter 立即接受。若实测证明某型号存在连接初期暂态值，必须通过
+    `FeatureObservationDecision` 和有界 `DeferredTelemetryQuery` 表达；不得在 WireCodec、
+    Android 会话、MiLink Hook 或 UI 中按型号判断、固定休眠或建立常驻轮询。
 
 新增或变更厂商控制 App 时，还必须同步更新 `ControlAppCatalog`、对应 Adapter 的
 `controlApps`、`META-INF/xposed/scope.list` 和

@@ -154,6 +154,8 @@ abstract class EarbudAdapter(
         var changed = false
         var handshake: HandshakeResult? = null
         val unknown = mutableListOf<ProtocolEvent.UnknownFrame>()
+        val deferredTelemetry = mutableListOf<DeferredTelemetryQuery>()
+        val cancelledTelemetry = linkedSetOf<String>()
 
         // Apply telemetry first so a replacement Adapter receives the complete runtime snapshot
         // decoded from this transport read, independent of event ordering inside a codec.
@@ -161,14 +163,26 @@ abstract class EarbudAdapter(
             when (event) {
                 is ProtocolEvent.FeatureStateChanged -> {
                     if (!featureStateContract.accepts(this, event.state)) return@forEach
-                    if (event.state is BatteryFeatureState) {
-                        batterySourceAfterProtocolEvidence()
-                            ?.let { confirmedBatterySource = it }
-                    }
-                    val nextFeatures = runtimeState.features.update(event.state)
-                    if (nextFeatures != runtimeState.features) {
-                        runtimeState = runtimeState.copy(features = nextFeatures)
-                        changed = true
+                    when (val decision = reconcileFeatureObservation(event.state)) {
+                        is FeatureObservationDecision.Accept -> {
+                            val acceptedState = decision.state
+                            if (!featureStateContract.accepts(this, acceptedState)) return@forEach
+                            if (acceptedState is BatteryFeatureState) {
+                                batterySourceAfterProtocolEvidence()
+                                    ?.let { confirmedBatterySource = it }
+                            }
+                            val nextFeatures = runtimeState.features.update(acceptedState)
+                            if (nextFeatures != runtimeState.features) {
+                                runtimeState = runtimeState.copy(features = nextFeatures)
+                                changed = true
+                            }
+                            cancelledTelemetry += decision.cancelDeferredTelemetryKeys
+                        }
+
+                        is FeatureObservationDecision.Defer ->
+                            deferredTelemetry += decision.followUp
+
+                        FeatureObservationDecision.Ignore -> Unit
                     }
                 }
 
@@ -218,8 +232,20 @@ abstract class EarbudAdapter(
             handshake = handshake,
             stateChanged = changed,
             unknownFrames = unknown,
+            deferredTelemetry = deferredTelemetry,
+            cancelDeferredTelemetryKeys = cancelledTelemetry,
         )
     }
+
+    /**
+     * Reconciles one decoded observation before it enters the public Adapter state.
+     *
+     * Concrete models override this only for verified transient-report behavior. The default keeps
+     * all existing protocols on the direct observation-to-state path.
+     */
+    protected open fun reconcileFeatureObservation(
+        state: DeviceFeatureState,
+    ): FeatureObservationDecision = FeatureObservationDecision.Accept(state)
 
     /** Maps authoritative vendor identity evidence to a new concrete adapter when needed. */
     protected open fun onProductIdentified(productId: Int): HandshakeResult? = null
@@ -236,9 +262,6 @@ abstract class EarbudAdapter(
             noiseControl = nextModes.isNotEmpty(),
             windNoiseControl = NoiseMode.WIND in nextModes,
         )
-        if (battery) {
-            batterySourceAfterProtocolEvidence()?.let { confirmedBatterySource = it }
-        }
         return null
     }
 
@@ -307,6 +330,10 @@ abstract class EarbudAdapter(
             stateChanged = changed,
         )
     }
+
+    /** Encodes an Adapter-owned internal telemetry query on the current protocol session. */
+    fun queryTelemetry(request: TelemetryQuery): List<ByteArray> =
+        protocolSession.query(request)
 
     fun onSystemBatteryChanged(percent: Int?): Boolean {
         if (effectiveBatterySource() != BatterySource.SYSTEM_AGGREGATE) return false

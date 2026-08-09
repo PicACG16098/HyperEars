@@ -118,6 +118,7 @@ EarbudAdapter
 ```text
 ProtocolSession
   -> ProtocolEvent.FeatureStateChanged
+  -> EarbudAdapter.reconcileFeatureObservation
   -> EarbudAdapter.runtimeState.features
   -> EarbudState.features
   -> FeatureStateTransport
@@ -127,6 +128,13 @@ ProtocolSession
 `DeviceFeatureSnapshot` 按稳定 `featureId` 替换同类值，保证同一状态只保留最新值。
 Adapter 通过 `featureStateContract` 声明可保留的状态类型；在家族探测细化、具体型号升级或
 保守回退时，会话把旧快照转移给新 Adapter，并过滤新 Adapter 不理解的特性状态。
+
+`FeatureStateChanged` 表示结构合法的设备观测，并不绕过 Adapter 聚合边界。默认 Adapter 立即
+接受观测；已验证存在连接初期暂态报告的具体型号可以通过 `FeatureObservationDecision` 暂缓
+提交，并声明一个按稳定 key 去重的 `DeferredTelemetryQuery`。Android 会话负责延时、取消和
+串行写入，Adapter 负责接受条件和次数上限，ProtocolSession 只通过 `TelemetryQuery` 生成当前
+协议查询字节。获得可接受状态、通道断开、Adapter 替换、厂商 App 接管或会话结束时，待执行
+查询会被取消；该机制不允许 ProtocolSession 持有协程、Socket 或 UI。
 
 `CapabilitiesIdentified`、`ProductIdentified`、握手结果和 `DeviceLifecycle` 不属于动态特性
 状态：前两者是协议证据，决定能否向用户开放能力；后两者描述会话生命周期。有效能力和状态
@@ -245,8 +253,10 @@ MiLink 子进程在收到系统认领前可以消费相同的活动候选快照�
 5. 发布新的完整 AdapterSnapshot；
 6. MiLink 才看到对应控制项。
 
-所有标准耳机从 Android 系统整机电量开始；只有有效私有电量响应才把来源晋升为私有协议，
-握手或噪声能力响应不会提前停止系统电量更新。有效噪声状态/协议能力响应才确认噪声控制。
+所有标准耳机从 Android 系统整机电量开始。`CapabilitiesIdentified(battery=true)` 只确认协议
+具备电量遥测能力；只有经当前 Adapter 接受的私有电量状态才把来源晋升为私有协议。握手、
+噪声能力响应或仍在型号初始化确认中的电量观测都不会提前停止系统电量更新。有效噪声状态/
+协议能力响应才确认噪声控制。
 失败或超时不会把
 静态猜测能力留在卡片上。家族 Adapter 还可通过 `onInitialProtocolUnavailable()` 返回保守
 替代 Adapter；声明的目标已被用户关闭时，统一门禁只允许直接回退到启用中的

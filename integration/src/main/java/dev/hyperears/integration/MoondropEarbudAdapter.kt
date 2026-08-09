@@ -30,6 +30,9 @@ open class MoondropEarbudAdapter(
  * until the strict protocol handshake and corresponding read responses are observed.
  */
 class MoondropRobinAdapter : MoondropEarbudAdapter() {
+    private var batteryBootstrapAttempt = 0
+    private var privateBatteryCommitted = false
+
     override val id: String = ID
     override val displayName: String = "MOONDROP Robin"
     override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
@@ -57,6 +60,35 @@ class MoondropRobinAdapter : MoondropEarbudAdapter() {
 
     override fun createProtocolSession(): ProtocolSession = MoondropRobinProtocolSession()
 
+    override fun reconcileFeatureObservation(
+        state: DeviceFeatureState,
+    ): FeatureObservationDecision {
+        if (state !is BatteryFeatureState || privateBatteryCommitted) {
+            return FeatureObservationDecision.Accept(state)
+        }
+
+        val battery = state.battery
+        val left = battery.left.percent
+        val right = battery.right.percent
+        val provisional = left == null || right == null || left == 0 || right == 0
+        if (!provisional || batteryBootstrapAttempt >= BATTERY_BOOTSTRAP_DELAYS_MS.size) {
+            privateBatteryCommitted = true
+            return FeatureObservationDecision.Accept(
+                state = state,
+                cancelDeferredTelemetryKeys = setOf(BATTERY_BOOTSTRAP_QUERY_KEY),
+            )
+        }
+
+        val delayMs = BATTERY_BOOTSTRAP_DELAYS_MS[batteryBootstrapAttempt++]
+        return FeatureObservationDecision.Defer(
+            DeferredTelemetryQuery(
+                key = BATTERY_BOOTSTRAP_QUERY_KEY,
+                delayMs = delayMs,
+                query = TelemetryQuery.RefreshFeature(BatteryFeatureState.FEATURE_ID),
+            ),
+        )
+    }
+
     override fun controlPolicy(request: ControlRequest): ControlExecutionPolicy =
         super.controlPolicy(request).let { policy ->
             if (request is StandardControlRequest.SetNoiseMode) {
@@ -77,6 +109,8 @@ class MoondropRobinAdapter : MoondropEarbudAdapter() {
         const val ID = "moondrop-robin"
         const val STANDARD_SPP_UUID = "00001101-0000-1000-8000-00805f9b34fb"
         internal const val MODE_READBACK_DELAY_MS = 600L
+        internal const val BATTERY_BOOTSTRAP_QUERY_KEY = "moondrop-robin:battery-bootstrap"
+        internal val BATTERY_BOOTSTRAP_DELAYS_MS = longArrayOf(500L, 800L, 1_200L, 1_600L)
 
         private val EXACT_NAMES = setOf(
             "robinsearphones",
@@ -104,6 +138,16 @@ internal class MoondropRobinProtocolSession : ProtocolSession {
         )
 
         else -> emptyList()
+    }
+
+    override fun query(request: TelemetryQuery): List<ByteArray> = when (request) {
+        TelemetryQuery.RefreshAll -> telemetryQueries()
+        is TelemetryQuery.RefreshFeature ->
+            if (request.featureId == BatteryFeatureState.FEATURE_ID) {
+                listOf(MoondropRobinWireCodec.queryBattery)
+            } else {
+                emptyList()
+            }
     }
 
     override fun readback(request: ControlRequest): List<ByteArray> = when (request) {

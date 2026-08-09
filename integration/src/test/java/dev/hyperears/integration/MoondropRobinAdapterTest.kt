@@ -108,6 +108,80 @@ class MoondropRobinAdapterTest {
     }
 
     @Test
+    fun provisionalBootstrapBatteryKeepsSystemFallbackAndSchedulesOneModelOwnedRead() {
+        val adapter = readyAdapter(systemBattery = 73)
+
+        val result = adapter.receive(batteryFrame(left = 0, right = 100))
+
+        assertFalse(result.stateChanged)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
+        assertEquals(73, adapter.runtimeState().battery.left.percent)
+        assertEquals(73, adapter.runtimeState().battery.right.percent)
+        assertEquals(1, result.deferredTelemetry.size)
+        val followUp = result.deferredTelemetry.single()
+        assertEquals(MoondropRobinAdapter.BATTERY_BOOTSTRAP_QUERY_KEY, followUp.key)
+        assertEquals(MoondropRobinAdapter.BATTERY_BOOTSTRAP_DELAYS_MS.first(), followUp.delayMs)
+        assertEquals(
+            TelemetryQuery.RefreshFeature(BatteryFeatureState.FEATURE_ID),
+            followUp.query,
+        )
+        assertEquals(
+            listOf(MoondropRobinWireCodec.queryBattery.toList()),
+            adapter.queryTelemetry(followUp.query).map(ByteArray::toList),
+        )
+    }
+
+    @Test
+    fun completeBootstrapBatteryCommitsPrivateStateAndCancelsPendingRead() {
+        val adapter = readyAdapter(systemBattery = 73)
+        adapter.receive(batteryFrame(left = 0, right = 100))
+
+        val result = adapter.receive(batteryFrame(left = 96, right = 100))
+
+        assertTrue(result.stateChanged)
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
+        assertEquals(96, adapter.runtimeState().battery.left.percent)
+        assertEquals(100, adapter.runtimeState().battery.right.percent)
+        assertEquals(
+            setOf(MoondropRobinAdapter.BATTERY_BOOTSTRAP_QUERY_KEY),
+            result.cancelDeferredTelemetryKeys,
+        )
+        assertTrue(result.deferredTelemetry.isEmpty())
+
+        val realZeroAfterConfirmation = adapter.receive(batteryFrame(left = 0, right = 100))
+        assertTrue(realZeroAfterConfirmation.stateChanged)
+        assertEquals(0, adapter.runtimeState().battery.left.percent)
+        assertTrue(realZeroAfterConfirmation.deferredTelemetry.isEmpty())
+    }
+
+    @Test
+    fun boundedBootstrapEventuallyAcceptsAStableZeroWithoutPollingForever() {
+        val adapter = readyAdapter(systemBattery = 73)
+
+        MoondropRobinAdapter.BATTERY_BOOTSTRAP_DELAYS_MS.forEach { delayMs ->
+            val result = adapter.receive(batteryFrame(left = 0, right = 100))
+            assertFalse(result.stateChanged)
+            assertEquals(delayMs, result.deferredTelemetry.single().delayMs)
+            assertEquals(
+                MoondropRobinAdapter.BATTERY_BOOTSTRAP_QUERY_KEY,
+                result.deferredTelemetry.single().key,
+            )
+        }
+
+        val finalResult = adapter.receive(batteryFrame(left = 0, right = 100))
+
+        assertTrue(finalResult.stateChanged)
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
+        assertEquals(0, adapter.runtimeState().battery.left.percent)
+        assertEquals(100, adapter.runtimeState().battery.right.percent)
+        assertTrue(finalResult.deferredTelemetry.isEmpty())
+        assertEquals(
+            setOf(MoondropRobinAdapter.BATTERY_BOOTSTRAP_QUERY_KEY),
+            finalResult.cancelDeferredTelemetryKeys,
+        )
+    }
+
+    @Test
     fun noiseModeWritePublishesOptimisticallyThenRequestsDelayedReadback() {
         val adapter = MoondropRobinAdapter()
         adapter.receive(
@@ -178,4 +252,26 @@ class MoondropRobinAdapterTest {
         .filter(String::isNotBlank)
         .map { it.toInt(16).toByte() }
         .toByteArray()
+
+    private fun readyAdapter(systemBattery: Int): MoondropRobinAdapter =
+        MoondropRobinAdapter().also { adapter ->
+            assertTrue(adapter.onSystemBatteryChanged(systemBattery))
+            val result = adapter.receive(
+                MoondropRobinWireCodec.frame(
+                    command = 0x0A,
+                    subcommand = 0x83,
+                    opcode = 0x00,
+                    parameters = hex("00 04 03 01"),
+                ),
+            )
+            assertEquals(HandshakeResult.Ready, result.handshake)
+        }
+
+    private fun batteryFrame(left: Int, right: Int): ByteArray =
+        MoondropRobinWireCodec.frame(
+            command = 0x1D,
+            subcommand = 0x1B,
+            opcode = 0x01,
+            parameters = byteArrayOf(1, left.toByte(), 2, right.toByte()),
+        )
 }

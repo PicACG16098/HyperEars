@@ -20,6 +20,7 @@ import dev.hyperears.integration.AdapterRuntimeState
 import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.DeviceLifecycle
 import dev.hyperears.integration.DeviceFeatureSnapshot
+import dev.hyperears.integration.DeferredTelemetryQuery
 import dev.hyperears.integration.EarbudAdapter
 import dev.hyperears.integration.HandshakeResult
 import dev.hyperears.integration.InitialProtocolFailureResolution
@@ -85,6 +86,8 @@ internal class EarbudDeviceSession(
     private val transactionMutex = Mutex()
     private val unknownFrameLogTimes = mutableMapOf<Int, Long>()
     private val controlPacingLock = Any()
+    private val deferredTelemetryLock = Any()
+    private val deferredTelemetryJobs = mutableMapOf<String, Job>()
     private var lastControlAt = Long.MIN_VALUE
 
     @Volatile
@@ -327,6 +330,7 @@ internal class EarbudDeviceSession(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        cancelAllDeferredTelemetry("device session closed")
         val activeChannel = synchronized(transportLock) {
             channel.also {
                 channel = null
@@ -546,6 +550,10 @@ internal class EarbudDeviceSession(
         bytes: ByteArray,
     ): AdapterIoResult = transactionMutex.withLock {
         val result = adapter.receive(bytes)
+        cancelDeferredTelemetry(
+            keys = result.cancelDeferredTelemetryKeys,
+            reason = "adapter accepted telemetry",
+        )
         if (result.commands.isNotEmpty()) {
             sendCommands(
                 activeChannel = activeChannel,
@@ -553,6 +561,9 @@ internal class EarbudDeviceSession(
                 gapMs = 0L,
                 description = "adapter response",
             )
+        }
+        result.deferredTelemetry.forEach { followUp ->
+            scheduleDeferredTelemetry(activeChannel, adapter, followUp)
         }
         result.unknownFrames.forEach(::logUnknownFrame)
         var publishRequired = result.stateChanged
@@ -627,6 +638,7 @@ internal class EarbudDeviceSession(
         activeChannel: EarbudChannel,
     ) {
         if (channel !== activeChannel) throw CancellationException("stale adapter replacement")
+        cancelAllDeferredTelemetry("adapter replaced")
         adapter = replacement.adapter
         ControlAppCatalog.activeOwner(adapter.controlApps, activeControlAppPackages)
             ?.takeIf { externalControlEnabled }
@@ -732,7 +744,90 @@ internal class EarbudDeviceSession(
         }
     }
 
+    /**
+     * Schedules one Adapter-declared telemetry read without transferring timer or transport
+     * ownership into the integration layer. A stable key guarantees at most one pending task of a
+     * given purpose for this physical device session.
+     */
+    private fun scheduleDeferredTelemetry(
+        activeChannel: EarbudChannel,
+        expectedAdapter: EarbudAdapter,
+        followUp: DeferredTelemetryQuery,
+    ) {
+        val task = scope.launch(start = CoroutineStart.LAZY) {
+            delay(followUp.delayMs)
+            transactionMutex.withLock {
+                currentCoroutineContext().ensureActive()
+                if (
+                    closed.get() ||
+                    externalControlApp != null ||
+                    channel !== activeChannel ||
+                    adapter !== expectedAdapter
+                ) {
+                    return@withLock
+                }
+                val commands = expectedAdapter.queryTelemetry(followUp.query)
+                if (commands.isEmpty()) {
+                    ModuleLog.debug(
+                        COMPONENT,
+                        "deferred telemetry produced no command key=${followUp.key}",
+                    )
+                    return@withLock
+                }
+                sendCommands(
+                    activeChannel = activeChannel,
+                    commands = commands,
+                    gapMs = COMMAND_GAP_MS,
+                    description = "deferred telemetry ${followUp.key}",
+                )
+            }
+        }
+        task.invokeOnCompletion { error ->
+            synchronized(deferredTelemetryLock) {
+                if (deferredTelemetryJobs[followUp.key] === task) {
+                    deferredTelemetryJobs.remove(followUp.key)
+                }
+            }
+            if (error != null && error !is CancellationException) {
+                ModuleLog.warn(
+                    COMPONENT,
+                    "deferred telemetry failed key=${followUp.key}",
+                    error,
+                )
+                activeChannel.close()
+            }
+        }
+        val previous = synchronized(deferredTelemetryLock) {
+            deferredTelemetryJobs.put(followUp.key, task)
+        }
+        previous?.cancel(CancellationException("deferred telemetry rescheduled"))
+        ModuleLog.debug(
+            COMPONENT,
+            "deferred telemetry scheduled key=${followUp.key} delay=${followUp.delayMs}ms",
+        )
+        task.start()
+    }
+
+    private fun cancelDeferredTelemetry(
+        keys: Set<String>,
+        reason: String,
+    ) {
+        if (keys.isEmpty()) return
+        val jobs = synchronized(deferredTelemetryLock) {
+            keys.mapNotNull { key -> deferredTelemetryJobs.remove(key) }
+        }
+        jobs.forEach { job -> job.cancel(CancellationException(reason)) }
+    }
+
+    private fun cancelAllDeferredTelemetry(reason: String) {
+        val jobs = synchronized(deferredTelemetryLock) {
+            deferredTelemetryJobs.values.toList().also { deferredTelemetryJobs.clear() }
+        }
+        jobs.forEach { job -> job.cancel(CancellationException(reason)) }
+    }
+
     private fun clearTransport() {
+        cancelAllDeferredTelemetry("vendor channel cleared")
         val oldChannel = synchronized(transportLock) {
             channel.also {
                 channel = null

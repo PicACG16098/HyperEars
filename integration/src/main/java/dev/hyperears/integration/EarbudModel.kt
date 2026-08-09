@@ -296,6 +296,57 @@ sealed interface ProtocolEvent {
     ) : ProtocolEvent
 }
 
+/**
+ * One internal telemetry read requested by an Adapter.
+ *
+ * Telemetry reads are deliberately separate from user-facing [ControlRequest] values. An Adapter
+ * decides what must be observed, its [ProtocolSession] translates the query into vendor bytes, and
+ * the Android runtime only owns scheduling and transport I/O.
+ */
+sealed interface TelemetryQuery {
+    data object RefreshAll : TelemetryQuery
+
+    data class RefreshFeature(
+        val featureId: String,
+    ) : TelemetryQuery {
+        init {
+            require(featureId.isNotBlank()) { "Telemetry feature id cannot be blank" }
+        }
+    }
+}
+
+/** A session-scoped, cancellable telemetry query that the runtime executes after [delayMs]. */
+data class DeferredTelemetryQuery(
+    val key: String,
+    val delayMs: Long,
+    val query: TelemetryQuery,
+) {
+    init {
+        require(key.isNotBlank()) { "Deferred telemetry key cannot be blank" }
+        require(delayMs >= 0L) { "Deferred telemetry delay cannot be negative" }
+    }
+}
+
+/**
+ * Adapter reconciliation result for one structurally valid protocol observation.
+ *
+ * Most Adapters accept observations immediately. A model with a verified initialization transient
+ * may defer publication and ask the runtime for a bounded follow-up without owning a timer or
+ * transport. Accepted state is the only state allowed to replace the public runtime snapshot.
+ */
+sealed interface FeatureObservationDecision {
+    data class Accept(
+        val state: DeviceFeatureState,
+        val cancelDeferredTelemetryKeys: Set<String> = emptySet(),
+    ) : FeatureObservationDecision
+
+    data class Defer(
+        val followUp: DeferredTelemetryQuery,
+    ) : FeatureObservationDecision
+
+    data object Ignore : FeatureObservationDecision
+}
+
 /** A model-declared private-protocol transport candidate. */
 sealed interface EarbudTransportSpec {
     val id: String
@@ -510,6 +561,8 @@ data class AdapterIoResult(
     val handshake: HandshakeResult? = null,
     val stateChanged: Boolean = false,
     val unknownFrames: List<ProtocolEvent.UnknownFrame> = emptyList(),
+    val deferredTelemetry: List<DeferredTelemetryQuery> = emptyList(),
+    val cancelDeferredTelemetryKeys: Set<String> = emptySet(),
 )
 
 data class AdapterControlResult(
@@ -549,6 +602,17 @@ value class MiLinkCardPresentationId(
 interface ProtocolSession {
     fun initialReadCommands(): List<ByteArray>
     fun encode(request: ControlRequest): List<ByteArray>
+
+    /**
+     * Encodes an internal state read without passing it through the user-control contract.
+     *
+     * The default supports a complete refresh for existing protocols. Feature-specific reads are
+     * opt-in so a runtime follow-up can never send an unrelated vendor command by accident.
+     */
+    fun query(request: TelemetryQuery): List<ByteArray> = when (request) {
+        TelemetryQuery.RefreshAll -> encode(StandardControlRequest.Refresh)
+        is TelemetryQuery.RefreshFeature -> emptyList()
+    }
 
     /**
      * Protocol-generated writes produced while decoding incoming bytes.
