@@ -117,17 +117,12 @@ class MoondropRobinAdapterTest {
         assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
         assertEquals(73, adapter.runtimeState().battery.left.percent)
         assertEquals(73, adapter.runtimeState().battery.right.percent)
-        assertEquals(1, result.deferredTelemetry.size)
-        val followUp = result.deferredTelemetry.single()
-        assertEquals(MoondropRobinAdapter.BATTERY_BOOTSTRAP_QUERY_KEY, followUp.key)
+        val followUp = result.requireStateRequest()
+        assertEquals(BatteryFeatureState.FEATURE_ID, followUp.featureId)
         assertEquals(MoondropRobinAdapter.BATTERY_BOOTSTRAP_DELAYS_MS.first(), followUp.delayMs)
         assertEquals(
-            TelemetryQuery.RefreshFeature(BatteryFeatureState.FEATURE_ID),
-            followUp.query,
-        )
-        assertEquals(
             listOf(MoondropRobinWireCodec.queryBattery.toList()),
-            adapter.queryTelemetry(followUp.query).map(ByteArray::toList),
+            adapter.queryState(followUp.featureId).map(ByteArray::toList),
         )
     }
 
@@ -143,15 +138,14 @@ class MoondropRobinAdapterTest {
         assertEquals(96, adapter.runtimeState().battery.left.percent)
         assertEquals(100, adapter.runtimeState().battery.right.percent)
         assertEquals(
-            setOf(MoondropRobinAdapter.BATTERY_BOOTSTRAP_QUERY_KEY),
-            result.cancelDeferredTelemetryKeys,
+            listOf(AdapterEffect.CancelStateRequest(BatteryFeatureState.FEATURE_ID)),
+            result.effects,
         )
-        assertTrue(result.deferredTelemetry.isEmpty())
 
         val realZeroAfterConfirmation = adapter.receive(batteryFrame(left = 0, right = 100))
         assertTrue(realZeroAfterConfirmation.stateChanged)
         assertEquals(0, adapter.runtimeState().battery.left.percent)
-        assertTrue(realZeroAfterConfirmation.deferredTelemetry.isEmpty())
+        assertTrue(realZeroAfterConfirmation.effects.isEmpty())
     }
 
     @Test
@@ -161,11 +155,9 @@ class MoondropRobinAdapterTest {
         MoondropRobinAdapter.BATTERY_BOOTSTRAP_DELAYS_MS.forEach { delayMs ->
             val result = adapter.receive(batteryFrame(left = 0, right = 100))
             assertFalse(result.stateChanged)
-            assertEquals(delayMs, result.deferredTelemetry.single().delayMs)
-            assertEquals(
-                MoondropRobinAdapter.BATTERY_BOOTSTRAP_QUERY_KEY,
-                result.deferredTelemetry.single().key,
-            )
+            val followUp = result.requireStateRequest()
+            assertEquals(delayMs, followUp.delayMs)
+            assertEquals(BatteryFeatureState.FEATURE_ID, followUp.featureId)
         }
 
         val finalResult = adapter.receive(batteryFrame(left = 0, right = 100))
@@ -174,10 +166,9 @@ class MoondropRobinAdapterTest {
         assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
         assertEquals(0, adapter.runtimeState().battery.left.percent)
         assertEquals(100, adapter.runtimeState().battery.right.percent)
-        assertTrue(finalResult.deferredTelemetry.isEmpty())
         assertEquals(
-            setOf(MoondropRobinAdapter.BATTERY_BOOTSTRAP_QUERY_KEY),
-            finalResult.cancelDeferredTelemetryKeys,
+            listOf(AdapterEffect.CancelStateRequest(BatteryFeatureState.FEATURE_ID)),
+            finalResult.effects,
         )
     }
 
@@ -193,11 +184,7 @@ class MoondropRobinAdapterTest {
         )
         assertTrue(result.accepted)
         assertTrue(result.stateChanged)
-        assertEquals(
-            ControlConfirmationPolicy.PUBLISH_AFTER_WRITE_THEN_REFRESH,
-            policy.confirmation,
-        )
-        assertEquals(MoondropRobinAdapter.MODE_READBACK_DELAY_MS, policy.readbackDelayMs)
+        assertEquals(ControlConfirmationPolicy.PUBLISH_AFTER_WRITE, policy.confirmation)
         assertEquals(
             NoiseModeFeatureState(NoiseMode.TRANSPARENCY),
             policy.stateAfterWrite,
@@ -210,11 +197,18 @@ class MoondropRobinAdapterTest {
             ),
             result.commands.map(ByteArray::toList),
         )
-        assertEquals(
-            listOf(MoondropRobinWireCodec.queryNoiseMode.toList()),
-            result.readback.map(ByteArray::toList),
-        )
+        assertTrue(result.readback.isEmpty())
         assertEquals(NoiseMode.TRANSPARENCY, adapter.runtimeState().noiseMode)
+        assertEquals(
+            listOf(
+                AdapterEffect.CancelStateRequest(NoiseModeFeatureState.FEATURE_ID),
+                AdapterEffect.RequestState(
+                    NoiseModeFeatureState.FEATURE_ID,
+                    MoondropRobinAdapter.INITIAL_MODE_QUERY_DELAY_MS,
+                ),
+            ),
+            adapter.controlWritten(StandardControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY)),
+        )
         assertEquals(
             InitialProtocolFailureResolution.KeepDormant,
             adapter.onInitialProtocolUnavailable(),
@@ -227,6 +221,7 @@ class MoondropRobinAdapterTest {
         val control = adapter.executeControl(
             StandardControlRequest.SetNoiseMode(NoiseMode.ANC),
         )
+        adapter.controlWritten(StandardControlRequest.SetNoiseMode(NoiseMode.ANC))
         assertTrue(control.accepted)
         assertEquals(NoiseMode.ANC, adapter.runtimeState().noiseMode)
 
@@ -235,16 +230,12 @@ class MoondropRobinAdapterTest {
 
             assertFalse(result.stateChanged)
             assertEquals(NoiseMode.ANC, adapter.runtimeState().noiseMode)
-            val followUp = result.deferredTelemetry.single()
-            assertEquals(MoondropRobinAdapter.MODE_CONFIRMATION_QUERY_KEY, followUp.key)
+            val followUp = result.requireStateRequest()
+            assertEquals(NoiseModeFeatureState.FEATURE_ID, followUp.featureId)
             assertEquals(delayMs, followUp.delayMs)
             assertEquals(
-                TelemetryQuery.RefreshFeature(NoiseModeFeatureState.FEATURE_ID),
-                followUp.query,
-            )
-            assertEquals(
                 listOf(MoondropRobinWireCodec.queryNoiseMode.toList()),
-                adapter.queryTelemetry(followUp.query).map(ByteArray::toList),
+                adapter.queryState(followUp.featureId).map(ByteArray::toList),
             )
         }
 
@@ -252,10 +243,9 @@ class MoondropRobinAdapterTest {
 
         assertTrue(finalResult.stateChanged)
         assertEquals(NoiseMode.OFF, adapter.runtimeState().noiseMode)
-        assertTrue(finalResult.deferredTelemetry.isEmpty())
         assertEquals(
-            setOf(MoondropRobinAdapter.MODE_CONFIRMATION_QUERY_KEY),
-            finalResult.cancelDeferredTelemetryKeys,
+            listOf(AdapterEffect.CancelStateRequest(NoiseModeFeatureState.FEATURE_ID)),
+            finalResult.effects,
         )
     }
 
@@ -263,28 +253,29 @@ class MoondropRobinAdapterTest {
     fun expectedModeReadbackCompletesConfirmationWithoutRepublishingTheSameState() {
         val adapter = readyAdapterWithNoiseMode(NoiseMode.OFF)
         adapter.executeControl(StandardControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY))
+        adapter.controlWritten(StandardControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY))
         adapter.receive(noiseModeFrame(NoiseMode.OFF))
 
         val result = adapter.receive(noiseModeFrame(NoiseMode.TRANSPARENCY))
 
         assertFalse(result.stateChanged)
         assertEquals(NoiseMode.TRANSPARENCY, adapter.runtimeState().noiseMode)
-        assertTrue(result.deferredTelemetry.isEmpty())
         assertEquals(
-            setOf(MoondropRobinAdapter.MODE_CONFIRMATION_QUERY_KEY),
-            result.cancelDeferredTelemetryKeys,
+            listOf(AdapterEffect.CancelStateRequest(NoiseModeFeatureState.FEATURE_ID)),
+            result.effects,
         )
 
         val unsolicited = adapter.receive(noiseModeFrame(NoiseMode.OFF))
         assertTrue(unsolicited.stateChanged)
         assertEquals(NoiseMode.OFF, adapter.runtimeState().noiseMode)
-        assertTrue(unsolicited.deferredTelemetry.isEmpty())
+        assertTrue(unsolicited.effects.isEmpty())
     }
 
     @Test
     fun aConfirmedModeInTheSameTransportReadCancelsAnEarlierDeferredQuery() {
         val adapter = readyAdapterWithNoiseMode(NoiseMode.OFF)
         adapter.executeControl(StandardControlRequest.SetNoiseMode(NoiseMode.ANC))
+        adapter.controlWritten(StandardControlRequest.SetNoiseMode(NoiseMode.ANC))
 
         val result = adapter.receive(
             noiseModeFrame(NoiseMode.OFF) + noiseModeFrame(NoiseMode.ANC),
@@ -292,10 +283,15 @@ class MoondropRobinAdapterTest {
 
         assertFalse(result.stateChanged)
         assertEquals(NoiseMode.ANC, adapter.runtimeState().noiseMode)
-        assertTrue(result.deferredTelemetry.isEmpty())
         assertEquals(
-            setOf(MoondropRobinAdapter.MODE_CONFIRMATION_QUERY_KEY),
-            result.cancelDeferredTelemetryKeys,
+            listOf(
+                AdapterEffect.RequestState(
+                    NoiseModeFeatureState.FEATURE_ID,
+                    MoondropRobinAdapter.MODE_CONFIRMATION_DELAYS_MS.first(),
+                ),
+                AdapterEffect.CancelStateRequest(NoiseModeFeatureState.FEATURE_ID),
+            ),
+            result.effects,
         )
     }
 
@@ -303,16 +299,18 @@ class MoondropRobinAdapterTest {
     fun aNewModeControlReplacesThePreviousConfirmationTarget() {
         val adapter = readyAdapterWithNoiseMode(NoiseMode.OFF)
         adapter.executeControl(StandardControlRequest.SetNoiseMode(NoiseMode.ANC))
+        adapter.controlWritten(StandardControlRequest.SetNoiseMode(NoiseMode.ANC))
         adapter.receive(noiseModeFrame(NoiseMode.OFF))
 
         adapter.executeControl(StandardControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY))
+        adapter.controlWritten(StandardControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY))
         val result = adapter.receive(noiseModeFrame(NoiseMode.TRANSPARENCY))
 
         assertFalse(result.stateChanged)
         assertEquals(NoiseMode.TRANSPARENCY, adapter.runtimeState().noiseMode)
         assertEquals(
-            setOf(MoondropRobinAdapter.MODE_CONFIRMATION_QUERY_KEY),
-            result.cancelDeferredTelemetryKeys,
+            listOf(AdapterEffect.CancelStateRequest(NoiseModeFeatureState.FEATURE_ID)),
+            result.effects,
         )
     }
 
@@ -320,6 +318,7 @@ class MoondropRobinAdapterTest {
     fun protocolResetClearsModelOwnedConfirmationState() {
         val adapter = readyAdapterWithNoiseMode(NoiseMode.OFF)
         adapter.executeControl(StandardControlRequest.SetNoiseMode(NoiseMode.ANC))
+        adapter.controlWritten(StandardControlRequest.SetNoiseMode(NoiseMode.ANC))
 
         adapter.resetProtocolSession()
         acceptHandshake(adapter)
@@ -327,7 +326,7 @@ class MoondropRobinAdapterTest {
 
         assertTrue(result.stateChanged)
         assertEquals(NoiseMode.OFF, adapter.runtimeState().noiseMode)
-        assertTrue(result.deferredTelemetry.isEmpty())
+        assertTrue(result.effects.isEmpty())
     }
 
     @Test
@@ -396,4 +395,9 @@ class MoondropRobinAdapterTest {
                 0,
             ),
         )
+
+    private fun AdapterIoResult.requireStateRequest(): AdapterEffect.RequestState {
+        assertEquals(1, effects.size)
+        return effects.single() as AdapterEffect.RequestState
+    }
 }

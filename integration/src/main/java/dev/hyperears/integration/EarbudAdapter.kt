@@ -154,8 +154,7 @@ abstract class EarbudAdapter(
         var changed = false
         var handshake: HandshakeResult? = null
         val unknown = mutableListOf<ProtocolEvent.UnknownFrame>()
-        val deferredTelemetry = mutableListOf<DeferredTelemetryQuery>()
-        val cancelledTelemetry = linkedSetOf<String>()
+        val eventScope = RecordingAdapterEventScope()
 
         // Apply telemetry first so a replacement Adapter receives the complete runtime snapshot
         // decoded from this transport read, independent of event ordering inside a codec.
@@ -163,24 +162,21 @@ abstract class EarbudAdapter(
             when (event) {
                 is ProtocolEvent.FeatureStateChanged -> {
                     if (!featureStateContract.accepts(this, event.state)) return@forEach
-                    when (val decision = reconcileFeatureObservation(event.state)) {
-                        is FeatureObservationDecision.Accept -> {
-                            val acceptedState = decision.state
-                            if (!featureStateContract.accepts(this, acceptedState)) return@forEach
-                            if (acceptedState is BatteryFeatureState) {
-                                batterySourceAfterProtocolEvidence()
-                                    ?.let { confirmedBatterySource = it }
+                    when (onFeatureReported(event.state, eventScope)) {
+                        FeatureReportDecision.ACCEPT -> {
+                            if (event.state is BatteryFeatureState) {
+                                batterySourceAfterProtocolEvidence()?.let {
+                                    confirmedBatterySource = it
+                                }
                             }
-                            val nextFeatures = runtimeState.features.update(acceptedState)
+                            val nextFeatures = runtimeState.features.update(event.state)
                             if (nextFeatures != runtimeState.features) {
                                 runtimeState = runtimeState.copy(features = nextFeatures)
                                 changed = true
                             }
-                            cancelledTelemetry += decision.cancelDeferredTelemetryKeys
                         }
 
-                        is FeatureObservationDecision.Defer ->
-                            deferredTelemetry += decision.followUp
+                        FeatureReportDecision.HOLD -> Unit
                     }
                 }
 
@@ -230,22 +226,20 @@ abstract class EarbudAdapter(
             handshake = handshake,
             stateChanged = changed,
             unknownFrames = unknown,
-            deferredTelemetry = deferredTelemetry.filterNot { followUp ->
-                followUp.key in cancelledTelemetry
-            },
-            cancelDeferredTelemetryKeys = cancelledTelemetry,
+            effects = eventScope.effects(),
         )
     }
 
     /**
-     * Reconciles one decoded observation before it enters the public Adapter state.
+     * Handles one decoded report after structural validation but before public-state admission.
      *
-     * Concrete models override this only for verified transient-report behavior. The default keeps
-     * all existing protocols on the direct observation-to-state path.
+     * A concrete model may hold a verified transient and record a one-shot state request through
+     * [scope]. The default preserves the direct report-to-state behavior of every existing Adapter.
      */
-    protected open fun reconcileFeatureObservation(
+    protected open fun onFeatureReported(
         state: DeviceFeatureState,
-    ): FeatureObservationDecision = FeatureObservationDecision.Accept(state)
+        scope: AdapterEventScope,
+    ): FeatureReportDecision = FeatureReportDecision.ACCEPT
 
     /** Maps authoritative vendor identity evidence to a new concrete adapter when needed. */
     protected open fun onProductIdentified(productId: Int): HandshakeResult? = null
@@ -323,29 +317,34 @@ abstract class EarbudAdapter(
             ControlConfirmationPolicy.PUBLISH_AFTER_WRITE_THEN_REFRESH,
             -> protocolSession.readback(request)
         }
-        val result = AdapterControlResult(
+        return AdapterControlResult(
             accepted = true,
             commands = commands,
             readback = readback,
             stateChanged = changed,
         )
-        onControlAccepted(request, result)
-        return result
     }
 
     /**
-     * Observes one locally accepted and encoded control without changing the common execution
-     * contract. Model adapters use this only to initialize verified, response-driven confirmation
-     * state; transport success and all physical I/O remain owned by the Android device session.
+     * Records model-owned follow-up effects after the complete control write succeeds.
+     *
+     * The Android runtime invokes this exactly once after [executeControl] commands are written. A
+     * failed write never arms model confirmation state.
      */
-    protected open fun onControlAccepted(
+    fun controlWritten(request: ControlRequest): List<AdapterEffect> {
+        val scope = RecordingAdapterEventScope()
+        onControlWritten(request, scope)
+        return scope.effects()
+    }
+
+    protected open fun onControlWritten(
         request: ControlRequest,
-        result: AdapterControlResult,
+        scope: AdapterEventScope,
     ) = Unit
 
-    /** Encodes an Adapter-owned internal telemetry query on the current protocol session. */
-    fun queryTelemetry(request: TelemetryQuery): List<ByteArray> =
-        protocolSession.query(request)
+    /** Encodes one Adapter-requested state read on the current protocol session. */
+    fun queryState(featureId: String): List<ByteArray> =
+        protocolSession.query(TelemetryQuery.RefreshFeature(featureId))
 
     fun onSystemBatteryChanged(percent: Int?): Boolean {
         if (effectiveBatterySource() != BatterySource.SYSTEM_AGGREGATE) return false
@@ -411,14 +410,28 @@ abstract class EarbudAdapter(
 
     fun resetProtocolSession() {
         protocolSession.reset()
-        onProtocolSessionReset()
+        onProtocolReset()
     }
 
     /** Clears model-owned transient protocol state whenever the physical conversation is reset. */
-    protected open fun onProtocolSessionReset() = Unit
+    protected open fun onProtocolReset() = Unit
 
     protected fun normalizeDeviceName(value: String): String =
         value.lowercase().filter(Char::isLetterOrDigit)
+}
+
+private class RecordingAdapterEventScope : AdapterEventScope {
+    private val recordedEffects = mutableListOf<AdapterEffect>()
+
+    override fun requestState(featureId: String, delayMs: Long) {
+        recordedEffects += AdapterEffect.RequestState(featureId, delayMs)
+    }
+
+    override fun cancelStateRequest(featureId: String) {
+        recordedEffects += AdapterEffect.CancelStateRequest(featureId)
+    }
+
+    fun effects(): List<AdapterEffect> = recordedEffects.toList()
 }
 
 private class StandardBluetoothProtocolSession : ProtocolSession {

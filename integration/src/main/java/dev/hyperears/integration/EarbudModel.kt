@@ -315,34 +315,43 @@ sealed interface TelemetryQuery {
     }
 }
 
-/** A session-scoped, cancellable telemetry query that the runtime executes after [delayMs]. */
-data class DeferredTelemetryQuery(
-    val key: String,
-    val delayMs: Long,
-    val query: TelemetryQuery,
-) {
-    init {
-        require(key.isNotBlank()) { "Deferred telemetry key cannot be blank" }
-        require(delayMs >= 0L) { "Deferred telemetry delay cannot be negative" }
+/** Whether one structurally valid protocol report may enter the public Adapter state. */
+enum class FeatureReportDecision {
+    ACCEPT,
+    HOLD,
+}
+
+/** Ordered, declarative effects recorded while an Adapter handles one framework event. */
+sealed interface AdapterEffect {
+    data class RequestState(
+        val featureId: String,
+        val delayMs: Long,
+    ) : AdapterEffect {
+        init {
+            require(featureId.isNotBlank()) { "Requested feature ID cannot be blank" }
+            require(delayMs >= 0L) { "State-request delay cannot be negative" }
+        }
+    }
+
+    data class CancelStateRequest(
+        val featureId: String,
+    ) : AdapterEffect {
+        init {
+            require(featureId.isNotBlank()) { "Cancelled feature ID cannot be blank" }
+        }
     }
 }
 
 /**
- * Adapter reconciliation result for one structurally valid protocol observation.
+ * Event-local control surface exposed to an Adapter.
  *
- * Most Adapters accept observations immediately. A model with a verified initialization transient
- * may defer publication and ask the runtime for a bounded follow-up without owning a timer or
- * transport. Accepted state is the only state allowed to replace the public runtime snapshot.
+ * Calls only record ordered [AdapterEffect] values. They never start a timer, touch a transport or
+ * call back into the Android runtime while Adapter code is executing.
  */
-sealed interface FeatureObservationDecision {
-    data class Accept(
-        val state: DeviceFeatureState,
-        val cancelDeferredTelemetryKeys: Set<String> = emptySet(),
-    ) : FeatureObservationDecision
+interface AdapterEventScope {
+    fun requestState(featureId: String, delayMs: Long)
 
-    data class Defer(
-        val followUp: DeferredTelemetryQuery,
-    ) : FeatureObservationDecision
+    fun cancelStateRequest(featureId: String)
 }
 
 /** A model-declared private-protocol transport candidate. */
@@ -559,8 +568,7 @@ data class AdapterIoResult(
     val handshake: HandshakeResult? = null,
     val stateChanged: Boolean = false,
     val unknownFrames: List<ProtocolEvent.UnknownFrame> = emptyList(),
-    val deferredTelemetry: List<DeferredTelemetryQuery> = emptyList(),
-    val cancelDeferredTelemetryKeys: Set<String> = emptySet(),
+    val effects: List<AdapterEffect> = emptyList(),
 )
 
 data class AdapterControlResult(

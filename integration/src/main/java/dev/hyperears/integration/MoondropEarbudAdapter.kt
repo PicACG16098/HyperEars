@@ -32,7 +32,8 @@ open class MoondropEarbudAdapter(
 class MoondropRobinAdapter : MoondropEarbudAdapter() {
     private var batteryBootstrapAttempt = 0
     private var privateBatteryCommitted = false
-    private var modeConfirmation: ModeConfirmation? = null
+    private var expectedNoiseMode: NoiseMode? = null
+    private var noiseModeAttempt = 0
 
     override val id: String = ID
     override val displayName: String = "MOONDROP Robin"
@@ -61,18 +62,20 @@ class MoondropRobinAdapter : MoondropEarbudAdapter() {
 
     override fun createProtocolSession(): ProtocolSession = MoondropRobinProtocolSession()
 
-    override fun reconcileFeatureObservation(
+    override fun onFeatureReported(
         state: DeviceFeatureState,
-    ): FeatureObservationDecision = when (state) {
-        is BatteryFeatureState -> reconcileBatteryObservation(state)
-        is NoiseModeFeatureState -> reconcileNoiseModeObservation(state)
-        else -> FeatureObservationDecision.Accept(state)
+        scope: AdapterEventScope,
+    ): FeatureReportDecision = when (state) {
+        is BatteryFeatureState -> handleBatteryReport(state, scope)
+        is NoiseModeFeatureState -> handleNoiseModeReport(state, scope)
+        else -> FeatureReportDecision.ACCEPT
     }
 
-    private fun reconcileBatteryObservation(
+    private fun handleBatteryReport(
         state: BatteryFeatureState,
-    ): FeatureObservationDecision {
-        if (privateBatteryCommitted) return FeatureObservationDecision.Accept(state)
+        scope: AdapterEventScope,
+    ): FeatureReportDecision {
+        if (privateBatteryCommitted) return FeatureReportDecision.ACCEPT
 
         val battery = state.battery
         val left = battery.left.percent
@@ -80,69 +83,58 @@ class MoondropRobinAdapter : MoondropEarbudAdapter() {
         val provisional = left == null || right == null || left == 0 || right == 0
         if (!provisional || batteryBootstrapAttempt >= BATTERY_BOOTSTRAP_DELAYS_MS.size) {
             privateBatteryCommitted = true
-            return FeatureObservationDecision.Accept(
-                state = state,
-                cancelDeferredTelemetryKeys = setOf(BATTERY_BOOTSTRAP_QUERY_KEY),
-            )
+            scope.cancelStateRequest(BatteryFeatureState.FEATURE_ID)
+            return FeatureReportDecision.ACCEPT
         }
 
         val delayMs = BATTERY_BOOTSTRAP_DELAYS_MS[batteryBootstrapAttempt++]
-        return FeatureObservationDecision.Defer(
-            DeferredTelemetryQuery(
-                key = BATTERY_BOOTSTRAP_QUERY_KEY,
-                delayMs = delayMs,
-                query = TelemetryQuery.RefreshFeature(BatteryFeatureState.FEATURE_ID),
-            ),
-        )
+        scope.requestState(BatteryFeatureState.FEATURE_ID, delayMs)
+        return FeatureReportDecision.HOLD
     }
 
-    private fun reconcileNoiseModeObservation(
+    private fun handleNoiseModeReport(
         state: NoiseModeFeatureState,
-    ): FeatureObservationDecision {
-        val confirmation = modeConfirmation
-            ?: return FeatureObservationDecision.Accept(state)
-        if (state.mode == confirmation.expectedMode ||
-            confirmation.retryCount >= MODE_CONFIRMATION_DELAYS_MS.size
+        scope: AdapterEventScope,
+    ): FeatureReportDecision {
+        val expected = expectedNoiseMode ?: return FeatureReportDecision.ACCEPT
+        if (
+            state.mode == expected ||
+            noiseModeAttempt >= MODE_CONFIRMATION_DELAYS_MS.size
         ) {
-            modeConfirmation = null
-            return FeatureObservationDecision.Accept(
-                state = state,
-                cancelDeferredTelemetryKeys = setOf(MODE_CONFIRMATION_QUERY_KEY),
-            )
+            expectedNoiseMode = null
+            noiseModeAttempt = 0
+            scope.cancelStateRequest(NoiseModeFeatureState.FEATURE_ID)
+            return FeatureReportDecision.ACCEPT
         }
 
-        val delayMs = MODE_CONFIRMATION_DELAYS_MS[confirmation.retryCount]
-        modeConfirmation = confirmation.copy(retryCount = confirmation.retryCount + 1)
-        return FeatureObservationDecision.Defer(
-            DeferredTelemetryQuery(
-                key = MODE_CONFIRMATION_QUERY_KEY,
-                delayMs = delayMs,
-                query = TelemetryQuery.RefreshFeature(NoiseModeFeatureState.FEATURE_ID),
-            ),
-        )
+        val delayMs = MODE_CONFIRMATION_DELAYS_MS[noiseModeAttempt++]
+        scope.requestState(NoiseModeFeatureState.FEATURE_ID, delayMs)
+        return FeatureReportDecision.HOLD
     }
 
-    override fun onControlAccepted(
+    override fun onControlWritten(
         request: ControlRequest,
-        result: AdapterControlResult,
+        scope: AdapterEventScope,
     ) {
-        if (result.accepted && request is StandardControlRequest.SetNoiseMode) {
-            modeConfirmation = ModeConfirmation(expectedMode = request.mode)
-        }
+        if (request !is StandardControlRequest.SetNoiseMode) return
+        expectedNoiseMode = request.mode
+        noiseModeAttempt = 0
+        scope.cancelStateRequest(NoiseModeFeatureState.FEATURE_ID)
+        scope.requestState(NoiseModeFeatureState.FEATURE_ID, INITIAL_MODE_QUERY_DELAY_MS)
     }
 
-    override fun onProtocolSessionReset() {
+    override fun onProtocolReset() {
         batteryBootstrapAttempt = 0
         privateBatteryCommitted = false
-        modeConfirmation = null
+        expectedNoiseMode = null
+        noiseModeAttempt = 0
     }
 
     override fun controlPolicy(request: ControlRequest): ControlExecutionPolicy =
         super.controlPolicy(request).let { policy ->
             if (request is StandardControlRequest.SetNoiseMode) {
                 policy.copy(
-                    confirmation = ControlConfirmationPolicy.PUBLISH_AFTER_WRITE_THEN_REFRESH,
-                    readbackDelayMs = MODE_READBACK_DELAY_MS,
+                    confirmation = ControlConfirmationPolicy.PUBLISH_AFTER_WRITE,
                 )
             } else {
                 policy
@@ -156,9 +148,7 @@ class MoondropRobinAdapter : MoondropEarbudAdapter() {
     companion object {
         const val ID = "moondrop-robin"
         const val STANDARD_SPP_UUID = "00001101-0000-1000-8000-00805f9b34fb"
-        internal const val MODE_READBACK_DELAY_MS = 600L
-        internal const val BATTERY_BOOTSTRAP_QUERY_KEY = "moondrop-robin:battery-bootstrap"
-        internal const val MODE_CONFIRMATION_QUERY_KEY = "moondrop-robin:mode-confirmation"
+        internal const val INITIAL_MODE_QUERY_DELAY_MS = 600L
         internal val BATTERY_BOOTSTRAP_DELAYS_MS = longArrayOf(500L, 800L, 1_200L, 1_600L)
         internal val MODE_CONFIRMATION_DELAYS_MS = longArrayOf(500L, 700L, 900L, 1_200L)
 
@@ -169,11 +159,6 @@ class MoondropRobinAdapter : MoondropEarbudAdapter() {
             "水月雨知更鸟",
         )
     }
-
-    private data class ModeConfirmation(
-        val expectedMode: NoiseMode,
-        val retryCount: Int = 0,
-    )
 }
 
 internal class MoondropRobinProtocolSession : ProtocolSession {
@@ -202,11 +187,6 @@ internal class MoondropRobinProtocolSession : ProtocolSession {
             NoiseModeFeatureState.FEATURE_ID -> listOf(MoondropRobinWireCodec.queryNoiseMode)
             else -> emptyList()
         }
-    }
-
-    override fun readback(request: ControlRequest): List<ByteArray> = when (request) {
-        is StandardControlRequest.SetNoiseMode -> listOf(MoondropRobinWireCodec.queryNoiseMode)
-        else -> emptyList()
     }
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> = buildList {

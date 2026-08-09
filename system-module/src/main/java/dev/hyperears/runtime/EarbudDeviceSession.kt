@@ -15,12 +15,12 @@ import dev.hyperears.integration.ControlOwnership
 import dev.hyperears.integration.BatterySource
 import dev.hyperears.integration.BatteryFeatureState
 import dev.hyperears.integration.AdapterActivation
+import dev.hyperears.integration.AdapterEffect
 import dev.hyperears.integration.AdapterIoResult
 import dev.hyperears.integration.AdapterRuntimeState
 import dev.hyperears.integration.AdapterSnapshot
 import dev.hyperears.integration.DeviceLifecycle
 import dev.hyperears.integration.DeviceFeatureSnapshot
-import dev.hyperears.integration.DeferredTelemetryQuery
 import dev.hyperears.integration.EarbudAdapter
 import dev.hyperears.integration.HandshakeResult
 import dev.hyperears.integration.InitialProtocolFailureResolution
@@ -86,8 +86,7 @@ internal class EarbudDeviceSession(
     private val transactionMutex = Mutex()
     private val unknownFrameLogTimes = mutableMapOf<Int, Long>()
     private val controlPacingLock = Any()
-    private val deferredTelemetryLock = Any()
-    private val deferredTelemetryJobs = mutableMapOf<String, Job>()
+    private val stateRequests = StateRequestDispatcher(scope)
     private var lastControlAt = Long.MIN_VALUE
 
     @Volatile
@@ -302,6 +301,11 @@ internal class EarbudDeviceSession(
                         gapMs = COMMAND_GAP_MS,
                         description = request.description(),
                     )
+                    applyAdapterEffects(
+                        activeChannel = activeChannel,
+                        expectedAdapter = adapter,
+                        effects = adapter.controlWritten(request),
+                    )
                     if (result.stateChanged) publishSnapshot()
                     val readback = result.readback
                     if (readback.isNotEmpty()) {
@@ -330,7 +334,7 @@ internal class EarbudDeviceSession(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        cancelAllDeferredTelemetry("device session closed")
+        stateRequests.cancelAll("device session closed")
         val activeChannel = synchronized(transportLock) {
             channel.also {
                 channel = null
@@ -549,11 +553,8 @@ internal class EarbudDeviceSession(
         activeChannel: EarbudChannel,
         bytes: ByteArray,
     ): AdapterIoResult = transactionMutex.withLock {
-        val result = adapter.receive(bytes)
-        cancelDeferredTelemetry(
-            keys = result.cancelDeferredTelemetryKeys,
-            reason = "adapter accepted telemetry",
-        )
+        val receivingAdapter = adapter
+        val result = receivingAdapter.receive(bytes)
         if (result.commands.isNotEmpty()) {
             sendCommands(
                 activeChannel = activeChannel,
@@ -561,9 +562,6 @@ internal class EarbudDeviceSession(
                 gapMs = 0L,
                 description = "adapter response",
             )
-        }
-        result.deferredTelemetry.forEach { followUp ->
-            scheduleDeferredTelemetry(activeChannel, adapter, followUp)
         }
         result.unknownFrames.forEach(::logUnknownFrame)
         var publishRequired = result.stateChanged
@@ -629,6 +627,13 @@ internal class EarbudDeviceSession(
 
             HandshakeResult.AwaitingEvidence, null -> Unit
         }
+        if (adapter === receivingAdapter) {
+            applyAdapterEffects(
+                activeChannel = activeChannel,
+                expectedAdapter = receivingAdapter,
+                effects = result.effects,
+            )
+        }
         if (publishRequired) publishSnapshot()
         result
     }
@@ -638,7 +643,7 @@ internal class EarbudDeviceSession(
         activeChannel: EarbudChannel,
     ) {
         if (channel !== activeChannel) throw CancellationException("stale adapter replacement")
-        cancelAllDeferredTelemetry("adapter replaced")
+        stateRequests.cancelAll("adapter replaced")
         adapter = replacement.adapter
         ControlAppCatalog.activeOwner(adapter.controlApps, activeControlAppPackages)
             ?.takeIf { externalControlEnabled }
@@ -744,90 +749,73 @@ internal class EarbudDeviceSession(
         }
     }
 
-    /**
-     * Schedules one Adapter-declared telemetry read without transferring timer or transport
-     * ownership into the integration layer. A stable key guarantees at most one pending task of a
-     * given purpose for this physical device session.
-     */
-    private fun scheduleDeferredTelemetry(
+    /** Executes ordered Adapter effects while retaining all timer and transport ownership. */
+    private fun applyAdapterEffects(
         activeChannel: EarbudChannel,
         expectedAdapter: EarbudAdapter,
-        followUp: DeferredTelemetryQuery,
+        effects: List<AdapterEffect>,
     ) {
-        val task = scope.launch(start = CoroutineStart.LAZY) {
-            delay(followUp.delayMs)
-            transactionMutex.withLock {
-                currentCoroutineContext().ensureActive()
-                if (
-                    closed.get() ||
-                    externalControlApp != null ||
-                    channel !== activeChannel ||
-                    adapter !== expectedAdapter
-                ) {
-                    return@withLock
-                }
-                val commands = expectedAdapter.queryTelemetry(followUp.query)
-                if (commands.isEmpty()) {
+        effects.forEach { effect ->
+            when (effect) {
+                is AdapterEffect.RequestState -> {
+                    stateRequests.request(
+                        featureId = effect.featureId,
+                        delayMs = effect.delayMs,
+                        task = {
+                            transactionMutex.withLock {
+                                currentCoroutineContext().ensureActive()
+                                if (
+                                    closed.get() ||
+                                    externalControlApp != null ||
+                                    channel !== activeChannel ||
+                                    adapter !== expectedAdapter
+                                ) {
+                                    return@withLock
+                                }
+                                val commands = expectedAdapter.queryState(effect.featureId)
+                                if (commands.isEmpty()) {
+                                    ModuleLog.debug(
+                                        COMPONENT,
+                                        "state request produced no command feature=${effect.featureId}",
+                                    )
+                                    return@withLock
+                                }
+                                sendCommands(
+                                    activeChannel = activeChannel,
+                                    commands = commands,
+                                    gapMs = COMMAND_GAP_MS,
+                                    description = "state request ${effect.featureId}",
+                                )
+                            }
+                        },
+                        onFailure = { error ->
+                            ModuleLog.warn(
+                                COMPONENT,
+                                "state request failed feature=${effect.featureId}",
+                                error,
+                            )
+                            activeChannel.close()
+                        },
+                    )
                     ModuleLog.debug(
                         COMPONENT,
-                        "deferred telemetry produced no command key=${followUp.key}",
+                        "state request scheduled feature=${effect.featureId} " +
+                            "delay=${effect.delayMs}ms",
                     )
-                    return@withLock
                 }
-                sendCommands(
-                    activeChannel = activeChannel,
-                    commands = commands,
-                    gapMs = COMMAND_GAP_MS,
-                    description = "deferred telemetry ${followUp.key}",
-                )
-            }
-        }
-        task.invokeOnCompletion { error ->
-            synchronized(deferredTelemetryLock) {
-                if (deferredTelemetryJobs[followUp.key] === task) {
-                    deferredTelemetryJobs.remove(followUp.key)
+
+                is AdapterEffect.CancelStateRequest -> {
+                    stateRequests.cancel(
+                        featureId = effect.featureId,
+                        reason = "adapter accepted state report",
+                    )
                 }
             }
-            if (error != null && error !is CancellationException) {
-                ModuleLog.warn(
-                    COMPONENT,
-                    "deferred telemetry failed key=${followUp.key}",
-                    error,
-                )
-                activeChannel.close()
-            }
         }
-        val previous = synchronized(deferredTelemetryLock) {
-            deferredTelemetryJobs.put(followUp.key, task)
-        }
-        previous?.cancel(CancellationException("deferred telemetry rescheduled"))
-        ModuleLog.debug(
-            COMPONENT,
-            "deferred telemetry scheduled key=${followUp.key} delay=${followUp.delayMs}ms",
-        )
-        task.start()
-    }
-
-    private fun cancelDeferredTelemetry(
-        keys: Set<String>,
-        reason: String,
-    ) {
-        if (keys.isEmpty()) return
-        val jobs = synchronized(deferredTelemetryLock) {
-            keys.mapNotNull { key -> deferredTelemetryJobs.remove(key) }
-        }
-        jobs.forEach { job -> job.cancel(CancellationException(reason)) }
-    }
-
-    private fun cancelAllDeferredTelemetry(reason: String) {
-        val jobs = synchronized(deferredTelemetryLock) {
-            deferredTelemetryJobs.values.toList().also { deferredTelemetryJobs.clear() }
-        }
-        jobs.forEach { job -> job.cancel(CancellationException(reason)) }
     }
 
     private fun clearTransport() {
-        cancelAllDeferredTelemetry("vendor channel cleared")
+        stateRequests.cancelAll("vendor channel cleared")
         val oldChannel = synchronized(transportLock) {
             channel.also {
                 channel = null
