@@ -176,6 +176,13 @@ MiLink/CardAdapter
     -> vendor bytes
 ```
 
+`Refresh` 是公共的一次性状态同步请求。MiLink 耳机详情卡片进入可见状态，以及 HyperEars 主页
+成为当前页面时，由各自的公共生命周期协调器发送一次 `StandardControlRequest.Refresh`；具体
+CardAdapter 不负责刷新，也不会建立轮询。Bluetooth 设备会话将 1.5 秒内来自多个界面或 MiLink
+进程的重复刷新合并为一次，并使用独立门禁，避免影响紧随其后的用户控制。具体
+ProtocolSession 只查询已经验证、可读取的状态；标准蓝牙 Adapter 将其处理为安全空操作，继续
+使用 Android 系统电量。
+
 `ControlRequestTransport` 使用 Kotlin Serialization 自动生成请求层级的序列化代码，采用
 稳定的 `@SerialName`、严格 schema 和 4 KiB 载荷上限。CardAdapter、Adapter 和
 ProtocolSession 不手写 Intent extra、JSON、Bundle 或信封字段。未知版本、未知请求、未知

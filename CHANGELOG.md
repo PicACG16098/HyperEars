@@ -6,6 +6,30 @@
 
 后续变更将在此记录。
 
+## [2.2.1] - 2026-08-10
+
+本版完善状态刷新时机，并修复详细日志和适配器开关在应用重启后可能恢复默认值的问题。
+
+### 状态刷新
+
+- 打开 MiLink 耳机详情卡片或进入 HyperEars 主页时，现在会为每个活动设备执行一次完整状态
+  刷新。卡片仍先使用现有快照完成首帧，模式和电量等真实协议回报随后通过统一状态链更新。
+- 同一设备会话在 1.5 秒内收到的重复刷新会合并为一次协议事务；关闭卡片不会触发查询，也不
+  增加常驻轮询。刷新门禁与用户控制节流相互独立，不会阻止紧随其后的模式切换。
+
+### 设置可靠性
+
+- 修复没有禁用任何适配器时，空的适配器集合无法由 LSPosed 守护进程反序列化，进而导致整次
+  设置写入失败的问题。详细日志、模块暂停、厂商设置和运行时退避等设置现在能够在应用或作用域
+  进程重启后保持。
+- 跨进程集合统一转换为 Java 平台集合，避免 LSPosed 守护进程依赖模块内的 Kotlin 集合实现。
+
+### 验证
+
+- 增加刷新合并、系统时钟重置和 RemotePreferences 集合类型测试。
+- 已在 vivo TWS Air3 Pro 上验证主页打开、卡片打开、卡片关闭与重新打开的刷新时序；每次可见
+  事件只建立一次刷新事务，模式控制仍只发送一次设置帧，并在耳机真实回报后更新卡片。
+
 ## [2.2.0] - 2026-08-09
 
 本版在 `2.0.0` 确立的 Adapter、ProtocolSession 与 Android 会话边界上，重构设备状态确认与
@@ -403,7 +427,11 @@
 - Release 构建改用独立环境变量签名，不再使用 debug 证书。
 - 增加 CI、标签发布、APK 签名验证和 SHA-256 产物。
 
-[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/silverpoetry/HyperEars/compare/v2.2.0...v2.2.1
+[2.2.0]: https://github.com/silverpoetry/HyperEars/compare/v2.1.2...v2.2.0
+[2.1.2]: https://github.com/silverpoetry/HyperEars/compare/v2.1.1...v2.1.2
+[2.1.1]: https://github.com/silverpoetry/HyperEars/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/silverpoetry/HyperEars/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/silverpoetry/HyperEars/compare/v1.3.1...v2.0.0
 [1.3.1]: https://github.com/silverpoetry/HyperEars/releases/tag/v1.3.1

@@ -15,6 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.hyperears.bridge.ModuleContract
 import dev.hyperears.diagnostics.AppDiagnosticLog
 import dev.hyperears.diagnostics.DiagnosticLogExporter
+import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.StandardControlRequest
 import dev.hyperears.root.RootAction
 import dev.hyperears.root.RootActionState
@@ -43,7 +44,10 @@ class MainActivity : ComponentActivity() {
     private val rootAvailable = MutableStateFlow<Boolean?>(null)
     private val rootActionState = MutableStateFlow<RootActionState>(RootActionState.Idle)
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val dashboardRefreshedSessionTokens = mutableSetOf<String>()
     private var remotePreferences: SharedPreferences? = null
+    private var activityStarted = false
+    private var dashboardVisible = false
 
     private val createDiagnosticDocument = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain"),
@@ -99,6 +103,7 @@ class MainActivity : ComponentActivity() {
                                 sessionToken = token,
                             )
                             lastUpdatedAtMillis.value = System.currentTimeMillis()
+                            refreshDashboardSessionIfNeeded(state, token)
                         }
                     }
                     runtimeResponsive.value = true
@@ -162,6 +167,7 @@ class MainActivity : ComponentActivity() {
                         requestRuntimeState()
                         activeSessions.values.forEach(::sendRefreshControl)
                     },
+                    onDashboardVisibilityChanged = ::onDashboardVisibilityChanged,
                     settings = currentSettings,
                     rootAvailable = hasRoot,
                     rootActionState = rootAction,
@@ -178,10 +184,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        activityStarted = true
         (application as HyperEarsApplication).addPreferencesListener(modulePreferencesListener)
         runtimeResponsive.value = false
         miLinkProcesses.value = emptySet()
         requestRuntimeState()
+        if (dashboardVisible) beginDashboardRefresh()
     }
 
     override fun onDestroy() {
@@ -203,12 +211,48 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sendRefreshControl(session: DeviceSessionSnapshot) {
-        val address = session.state.address ?: return
-        if (!session.state.connected) return
+        sendRefreshControl(session.state, session.sessionToken)
+    }
+
+    private fun sendRefreshControl(
+        state: EarbudState,
+        sessionToken: String,
+    ) {
+        val address = state.address ?: return
+        if (!state.connected) return
         sendBroadcast(
-            ModuleContract.control(StandardControlRequest.Refresh, address, session.sessionToken)
+            ModuleContract.control(StandardControlRequest.Refresh, address, sessionToken)
                 .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
         )
+    }
+
+    private fun onDashboardVisibilityChanged(visible: Boolean) {
+        if (dashboardVisible == visible) return
+        dashboardVisible = visible
+        if (visible && activityStarted) {
+            requestRuntimeState()
+            beginDashboardRefresh()
+        } else if (!visible) {
+            dashboardRefreshedSessionTokens.clear()
+        }
+    }
+
+    private fun beginDashboardRefresh() {
+        dashboardRefreshedSessionTokens.clear()
+        sessionCollection.value.sessions.values.forEach(::refreshDashboardSessionIfNeeded)
+    }
+
+    private fun refreshDashboardSessionIfNeeded(session: DeviceSessionSnapshot) {
+        refreshDashboardSessionIfNeeded(session.state, session.sessionToken)
+    }
+
+    private fun refreshDashboardSessionIfNeeded(
+        state: EarbudState,
+        sessionToken: String,
+    ) {
+        if (!activityStarted || !dashboardVisible || !state.connected) return
+        if (!dashboardRefreshedSessionTokens.add(sessionToken)) return
+        sendRefreshControl(state, sessionToken)
     }
 
     private fun updateSettings(updated: ModuleSettings) {
@@ -228,6 +272,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        activityStarted = false
+        dashboardRefreshedSessionTokens.clear()
         (application as HyperEarsApplication).removePreferencesListener(modulePreferencesListener)
         super.onStop()
     }

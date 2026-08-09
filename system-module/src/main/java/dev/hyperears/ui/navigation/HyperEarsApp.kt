@@ -12,6 +12,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,6 +57,7 @@ private const val TOP_LEVEL_PAGE_PRELOAD_COUNT = 1
 fun HyperEarsApp(
     uiState: DashboardUiState,
     onRefresh: () -> Unit,
+    onDashboardVisibilityChanged: (Boolean) -> Unit,
     settings: ModuleSettings,
     rootAvailable: Boolean?,
     rootActionState: RootActionState,
@@ -99,6 +102,13 @@ fun HyperEarsApp(
         null -> Unit
     }
     val selectedPage = pagerState.settledPage
+    val dashboardVisible = selectedPage == 0
+    LaunchedEffect(dashboardVisible) {
+        onDashboardVisibilityChanged(dashboardVisible)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onDashboardVisibilityChanged(false) }
+    }
     Scaffold(
         // Child pages own the status-bar inset through their own top app bars. The shell only
         // contributes the bottom navigation inset, so the top inset is not applied twice.

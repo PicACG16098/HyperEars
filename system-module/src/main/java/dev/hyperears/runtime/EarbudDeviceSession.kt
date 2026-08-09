@@ -86,6 +86,7 @@ internal class EarbudDeviceSession(
     private val transactionMutex = Mutex()
     private val unknownFrameLogTimes = mutableMapOf<Int, Long>()
     private val controlPacingLock = Any()
+    private val refreshRequestGate = RefreshRequestGate(REFRESH_COALESCE_MS)
     private val stateRequests = StateRequestDispatcher(scope)
     private var lastControlAt = Long.MIN_VALUE
 
@@ -277,6 +278,13 @@ internal class EarbudDeviceSession(
 
     fun execute(request: ControlRequest): Boolean {
         if (closed.get()) return false
+        if (request === StandardControlRequest.Refresh && !refreshRequestGate.tryAcquire()) {
+            ModuleLog.debug(
+                COMPONENT,
+                "coalesced duplicate state refresh address=${maskBluetoothAddress(address)}",
+            )
+            return true
+        }
         if (externalControlApp != null) {
             if (request === StandardControlRequest.Refresh) publishSnapshot()
             return request === StandardControlRequest.Refresh
@@ -932,6 +940,7 @@ internal class EarbudDeviceSession(
         const val COMMAND_GAP_MS = 120L
         const val STABLE_CONNECTION_MS = 30_000L
         const val UNKNOWN_FRAME_LOG_INTERVAL_MS = 5 * 60_000L
+        const val REFRESH_COALESCE_MS = 1_500L
         const val READ_BUFFER_SIZE = 1_024
     }
 }
