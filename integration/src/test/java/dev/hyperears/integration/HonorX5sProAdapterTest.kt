@@ -165,6 +165,21 @@ class HonorX5sProAdapterTest {
     }
 
     @Test
+    fun caseLevelDoesNotFollowCasedEarbud() {
+        // 8/9 sequence: the cased-slot byte drifts with the right earbud (69->66) while the
+        // case field stays stable (100->96). The reported case must stay with the case field.
+        adapter.receive(hex("5A 00 10 00 01 27 01 01 45 02 03 64 45 64 03 03 64 64 00 62 53"))
+        var battery = adapter.runtimeState().features.get<BatteryFeatureState>()?.battery
+        assertEquals(100, battery?.case?.percent)
+        assertEquals(69, battery?.right?.percent)
+
+        adapter.receive(hex("5A 00 10 00 01 27 01 01 43 02 03 64 43 60 03 03 64 64 00 34 23"))
+        battery = adapter.runtimeState().features.get<BatteryFeatureState>()?.battery
+        assertEquals(96, battery?.case?.percent)
+        assertEquals(67, battery?.right?.percent)
+    }
+
+    @Test
     fun caseSlotObservedValueIsPreserved() {
         // Single earbud charging in the case (00:15): the case slot observed value (94) is kept
         // as-is; without an independent judge it must not be replaced by any cached value.

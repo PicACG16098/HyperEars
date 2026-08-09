@@ -126,6 +126,24 @@ class HonorX5sSppCodecTest {
     }
 
     @Test
+    fun caseLevelComesFromSecondCaseField() {
+        // 8/9 capture: byte 8 mirrors the cased right earbud (69%) while the case level (96%)
+        // lives in byte 13. The case must not follow the cased earbud.
+        val report = HonorX5sSppCodec.parseBatteryFrame(
+            hex("5A 00 10 00 01 27 01 01 45 02 03 64 45 64 03 03 64 64 00 62 53"),
+        )!!
+        assertEquals(100, report.leftPercent)
+        assertEquals(69, report.rightPercent)
+        assertEquals(100, report.casePercent)
+
+        val later = HonorX5sSppCodec.parseBatteryFrame(
+            hex("5A 00 10 00 01 08 01 01 44 02 03 64 44 60 03 03 64 64 00 02 78"),
+        )!!
+        assertEquals(68, later.rightPercent)
+        assertEquals(96, later.casePercent)
+    }
+
+    @Test
     fun zeroPercentComponentsDecodeAsNotConnected() {
         val report = HonorX5sSppCodec.parseBatteryFrame(
             hex("5A 00 10 00 01 27 01 01 47 02 03 00 64 47 03 03 64 64 00 EF 9F"),

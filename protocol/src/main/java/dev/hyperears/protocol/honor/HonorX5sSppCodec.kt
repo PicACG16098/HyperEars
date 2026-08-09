@@ -131,7 +131,11 @@ object HonorX5sSppCodec {
         if (command != 0x27 && command != 0x08) return null
         if (bytes[6] != 0x01.toByte() || bytes[7] != 0x01.toByte()) return null
         if (bytes[9] != 0x02.toByte() || bytes[10] != 0x03.toByte()) return null
-        val case = bytes[8].unsigned().percentOrNull()
+        // The case level lives in the second case field (byte 13). Byte 8 carries the cased
+        // earbud's level (or mirrors the case while no earbud is cased); it is observation
+        // only and never used as the case level (8/9 capture: byte 8 = right earbud 69% while
+        // the case was 96%).
+        val case = bytes[CASE_LEVEL_OFFSET].unsigned().percentOrNull()
         val left = bytes[11].unsigned().percentOrNull()
         val right = bytes[12].unsigned().percentOrNull()
         if (left == null && right == null && case == null) return null
@@ -245,6 +249,7 @@ object HonorX5sSppCodec {
     private const val STATE_FRAME_Y_OFFSET = 9
     private const val ANC_MARKER = 0x01
     private const val BATTERY_FRAME_SIZE = 21
+    private const val CASE_LEVEL_OFFSET = 13
     private const val CHARGING_FLAG_OFFSET = 18
 
     private val STATE_FRAME_PREFIX = hex("5A 00 07 00 2B 2A 01 02")
