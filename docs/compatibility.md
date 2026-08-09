@@ -121,13 +121,18 @@ StarRing Ultra 使用 GATT `7777/8888` 特征，厂商 RFCOMM 为回退通道。
 | ROSESELSA EARFREE i5 | 具体型号 | 公开实现 | 规范化名称精确匹配；私有传输连接成功 | 私有组件 | 降噪、关闭、通透、抗风噪 |
 | ROSESELSA EARFREE / EARFEEL 产品线 | 产品线 | 家族外推 | 产品线名称或 GATT 服务选择候选；合法状态响应确认能力 | 系统整机 → 私有组件 | 降噪、关闭、通透、抗风噪 |
 | Furina Endless Solo of Solitude | 具体型号 | 实机验证 | 规范化名称精确匹配；BudsFeel RFCOMM 合法响应确认协议 | 私有组件 | 降噪、关闭、通透、抗风噪 |
+| ROSE Ceramics Ultra（琉璃 Ultra） | 具体型号 | 实机验证 | 规范化名称精确匹配；BudsFeel RFCOMM 合法响应确认协议 | 私有组件 | 降噪、关闭、通透、抗风噪 |
 | ROSE BudsFeel MK2 | 具体型号 | 公开实现 | 规范化名称精确匹配；私有传输连接成功 | 私有组件 | 降噪、关闭、通透、抗风噪 |
 | ROSE BudsFeel 产品线 | 产品线 | 家族外推 | 产品线名称或 RFCOMM 服务选择候选；合法状态响应确认能力 | 系统整机 → 私有组件 | 降噪、关闭、通透、抗风噪 |
 | 其他 ROSESELSA / ROSE 耳机 | 标准回退 | 标准回退 | 品牌名称与 Android 标准耳机身份匹配 | 系统整机 | 无 |
 
 EARFREE / EARFEEL 使用 GATT 服务 `011bf5da`、`7777/8888` 特征；BudsFeel 使用 RFCOMM
 UUID `0cf12d31-…`。Furina Endless Solo of Solitude 复用 BudsFeel 帧格式，实机确认可独立
-上报左耳、右耳和充电盒电量。产品线名称与对应私有服务 UUID 是相互独立的候选条件；因此使用
+上报左耳、右耳和充电盒电量。ROSE Ceramics Ultra（琉璃 Ultra）由 RoseLink 官方 App
+经同一 `0cf12d31` RFCOMM 通道控制，实机确认复用 BudsFeel 帧格式；其状态响应在首个
+块之后追加无长度头的扩展 TLV 流（噪声 `09`、电量 `0C` 记录位于扩展流内），
+解码器按扩展帧路径解析。
+产品线名称与对应私有服务 UUID 是相互独立的候选条件；因此使用
 联名名称但保留该私有服务的设备仍会进入家族只读试探。产品线候选在收到合法私有电量前保留
 Android 系统整机电量；首次协议试探经过有界重试仍未确认时，自动降级为 ROSESELSA 标准
 耳机能力，不保留私有控制项或休眠中的私有通道。
