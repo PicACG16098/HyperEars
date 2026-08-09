@@ -335,6 +335,60 @@ data class L2capEndpointSpec(
     }
 }
 
+/** Platform-independent identity of a possible BLE GATT peer. */
+data class GattPeerIdentity(
+    val deviceName: String?,
+    val deviceAddress: String?,
+    val serviceUuids: Set<String> = emptySet(),
+    val manufacturerData: Map<Int, ByteArray> = emptyMap(),
+)
+
+/** Adapter-owned association rule between one audio device and a companion BLE endpoint. */
+fun interface GattPeerMatcher {
+    fun matches(sessionDevice: GattPeerIdentity, candidate: GattPeerIdentity): Boolean
+}
+
+/** Declarative BLE scan filter used only while resolving a companion control endpoint. */
+data class GattScanFilterSpec(
+    val manufacturerId: Int? = null,
+    val serviceUuid: String? = null,
+) {
+    init {
+        require(manufacturerId == null || manufacturerId in 0..0xFFFF)
+        require(serviceUuid == null || serviceUuid.isNotBlank())
+        require(manufacturerId != null || serviceUuid != null) {
+            "A companion GATT scan requires at least one stable filter"
+        }
+    }
+}
+
+/** Selects the physical Bluetooth device on which a GATT service is opened. */
+sealed interface GattPeerSelection {
+    /** Opens GATT directly on the A2DP/HFP device that owns the HyperEars session. */
+    data object SessionDevice : GattPeerSelection
+
+    /**
+     * Resolves a separately advertised vendor-control endpoint.
+     *
+     * The Android runtime owns the bounded scan. The Adapter-owned matcher receives only stable,
+     * platform-independent observations and therefore keeps vendor address layouts out of the
+     * transport implementation.
+     */
+    data class CompanionDevice(
+        val filter: GattScanFilterSpec,
+        val matcher: GattPeerMatcher,
+        val scanTimeoutMs: Long = DEFAULT_SCAN_TIMEOUT_MS,
+    ) : GattPeerSelection {
+        init {
+            require(scanTimeoutMs in 1_000L..30_000L)
+        }
+    }
+
+    companion object {
+        const val DEFAULT_SCAN_TIMEOUT_MS = 8_000L
+    }
+}
+
 /**
  * BLE GATT transport whose characteristics carry the protocol's unmodified business frames.
  *
@@ -348,6 +402,7 @@ data class GattTransportSpec(
     val notifyCharacteristicUuid: String,
     val writeInstanceId: Int? = null,
     val notifyInstanceId: Int? = null,
+    val peerSelection: GattPeerSelection = GattPeerSelection.SessionDevice,
     override val id: String,
 ) : EarbudTransportSpec {
     init {

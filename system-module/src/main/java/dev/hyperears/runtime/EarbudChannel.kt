@@ -12,9 +12,17 @@ import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothSocket
 import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.BluetoothManager
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.ParcelUuid
+import androidx.core.util.size
 import dev.hyperears.integration.EarbudTransportSpec
+import dev.hyperears.integration.GattPeerIdentity
+import dev.hyperears.integration.GattPeerSelection
+import dev.hyperears.integration.GattScanFilterSpec
 import dev.hyperears.integration.GattTransportSpec
 import dev.hyperears.integration.L2capEndpointSpec
 import dev.hyperears.integration.RfcommEndpointSpec
@@ -27,6 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -125,7 +134,7 @@ internal object AndroidEarbudChannelFactory : EarbudChannelFactory {
 
         is GattTransportSpec -> AndroidGattChannel(
             context = context,
-            device = device,
+            sessionDevice = device,
             spec = transport,
         )
     }
@@ -278,7 +287,7 @@ private class AndroidBluetoothSocketChannel(
 @SuppressLint("MissingPermission")
 private class AndroidGattChannel(
     context: Context,
-    private val device: BluetoothDevice,
+    private val sessionDevice: BluetoothDevice,
     private val spec: GattTransportSpec,
 ) : EarbudChannel {
     override val endpointId: String = spec.id
@@ -298,6 +307,9 @@ private class AndroidGattChannel(
 
     @Volatile
     private var pendingWrite: CompletableDeferred<Unit>? = null
+
+    @Volatile
+    private var peerResolution: CompletableDeferred<BluetoothDevice>? = null
 
     @Volatile
     private var connectedDetails: String? = null
@@ -436,7 +448,9 @@ private class AndroidGattChannel(
 
     override suspend fun connect() {
         check(!closed.get()) { "GATT channel is closed" }
-        val active = device.connectGatt(
+        val target = resolvePeer()
+        check(!closed.get()) { "GATT channel is closed" }
+        val active = target.connectGatt(
             appContext,
             false,
             callback,
@@ -444,6 +458,77 @@ private class AndroidGattChannel(
         ) ?: error("could not create GATT client")
         gatt = active
         connectCompletion.await()
+    }
+
+    private suspend fun resolvePeer(): BluetoothDevice = when (val selection = spec.peerSelection) {
+        GattPeerSelection.SessionDevice -> sessionDevice
+        is GattPeerSelection.CompanionDevice -> resolveCompanionPeer(selection)
+    }
+
+    private suspend fun resolveCompanionPeer(
+        selection: GattPeerSelection.CompanionDevice,
+    ): BluetoothDevice {
+        val manager = appContext.getSystemService(BluetoothManager::class.java)
+            ?: throw IOException("Bluetooth manager is unavailable")
+        val adapter = manager.adapter
+            ?: throw IOException("Bluetooth adapter is unavailable")
+        val sessionIdentity = sessionDevice.toGattPeerIdentity()
+        runCatching { adapter.bondedDevices.orEmpty() }
+            .getOrDefault(emptySet())
+            .firstOrNull { candidate ->
+                !candidate.sameAddressAs(sessionDevice) &&
+                    selection.matcher.matches(
+                        sessionIdentity,
+                        candidate.toGattPeerIdentity(),
+                    )
+            }
+            ?.let { return it }
+
+        val scanner = adapter.bluetoothLeScanner
+            ?: throw IOException("BLE scanner is unavailable")
+        val completion = CompletableDeferred<BluetoothDevice>()
+        peerResolution = completion
+        val callback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                accept(result)
+            }
+
+            override fun onBatchScanResults(results: MutableList<ScanResult>) {
+                results.forEach(::accept)
+            }
+
+            override fun onScanFailed(errorCode: Int) {
+                completion.completeExceptionally(
+                    IOException("BLE companion scan failed with error=$errorCode"),
+                )
+            }
+
+            private fun accept(result: ScanResult) {
+                if (completion.isCompleted || result.device.sameAddressAs(sessionDevice)) return
+                val candidate = result.toGattPeerIdentity()
+                if (selection.matcher.matches(sessionIdentity, candidate)) {
+                    completion.complete(result.device)
+                }
+            }
+        }
+        val scanFilter = selection.filter.toAndroidScanFilter()
+        val scanSettings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+        try {
+            scanner.startScan(listOf(scanFilter), scanSettings, callback)
+            return try {
+                withTimeout(selection.scanTimeoutMs) { completion.await() }
+            } catch (error: TimeoutCancellationException) {
+                throw IOException(
+                    "BLE companion endpoint was not found within ${selection.scanTimeoutMs}ms",
+                    error,
+                )
+            }
+        } finally {
+            runCatching { scanner.stopScan(callback) }
+            if (peerResolution === completion) peerResolution = null
+        }
     }
 
     override suspend fun read(buffer: ByteArray): Int {
@@ -492,6 +577,8 @@ private class AndroidGattChannel(
 
     private fun terminate(error: IOException) {
         if (!closed.compareAndSet(false, true)) return
+        peerResolution?.completeExceptionally(error)
+        peerResolution = null
         connectCompletion.completeExceptionally(error)
         pendingWrite?.completeExceptionally(error)
         pendingWrite = null
@@ -528,6 +615,45 @@ private class AndroidGattChannel(
 
     private fun BluetoothGattCharacteristic.describe(): String =
         "${uuid}#${instanceId}/properties=0x${properties.toString(16)}"
+
+    private fun GattScanFilterSpec.toAndroidScanFilter(): ScanFilter {
+        val builder = ScanFilter.Builder()
+        manufacturerId?.let { builder.setManufacturerData(it, byteArrayOf()) }
+        serviceUuid?.let { builder.setServiceUuid(ParcelUuid.fromString(it)) }
+        return builder.build()
+    }
+
+    private fun BluetoothDevice.toGattPeerIdentity(): GattPeerIdentity = GattPeerIdentity(
+        deviceName = runCatching { name ?: alias }.getOrNull(),
+        deviceAddress = runCatching { address }.getOrNull(),
+        serviceUuids = runCatching {
+            uuids.orEmpty().mapTo(linkedSetOf()) { it.uuid.toString() }
+        }.getOrDefault(emptySet()),
+    )
+
+    private fun ScanResult.toGattPeerIdentity(): GattPeerIdentity {
+        val record = scanRecord
+        val cached = device.toGattPeerIdentity()
+        val advertisedServices = record?.serviceUuids.orEmpty()
+            .mapTo(linkedSetOf()) { it.uuid.toString() }
+        val manufacturerData = buildMap {
+            val values = record?.manufacturerSpecificData ?: return@buildMap
+            repeat(values.size) { index ->
+                put(values.keyAt(index), values.valueAt(index).copyOf())
+            }
+        }
+        return cached.copy(
+            deviceName = record?.deviceName ?: cached.deviceName,
+            serviceUuids = cached.serviceUuids + advertisedServices,
+            manufacturerData = manufacturerData,
+        )
+    }
+
+    private fun BluetoothDevice.sameAddressAs(other: BluetoothDevice): Boolean {
+        val first = runCatching { address }.getOrNull() ?: return false
+        val second = runCatching { other.address }.getOrNull() ?: return false
+        return first.equals(second, ignoreCase = true)
+    }
 
     private companion object {
         const val WRITE_TIMEOUT_MS = 4_000L

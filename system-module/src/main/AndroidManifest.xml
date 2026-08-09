@@ -15,6 +15,7 @@
         <package android:name="cn.lightyeartech.android" />
         <package android:name="com.yuandao.nicehck" />
         <package android:name="com.sony.songpal.mdr" />
+        <package android:name="com.qcymall.googleearphonesetup" />
     </queries>
 
     <application

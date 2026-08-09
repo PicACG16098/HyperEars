@@ -29,6 +29,7 @@ Sony | Headphones Connect。
 | ROSESELSA / 弱水时砂 | ROSELINK | `cn.ikaile.ruoshui.client` | 1 |
 | StarRing / 籁特易耳 | LightYear | `cn.lightyeartech.android` | 1 |
 | NiceHCK / YuanDao | 原道 | `com.yuandao.nicehck` | 1 |
+| QCY | QCY | `com.qcymall.googleearphonesetup` | 1 |
 | Sony | Sony \| Sound Connect | `com.sony.songpal.mdr` | 1 |
 
 “Adapter 声明顺序”只在同一家族声明了多个控制 App 时使用：

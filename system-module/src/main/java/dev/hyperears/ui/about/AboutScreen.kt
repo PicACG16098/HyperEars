@@ -272,6 +272,34 @@ private val supportBrands = listOf(
         ),
     ),
     SupportBrand(
+        name = "荣耀",
+        entries = listOf(
+            SupportEntry(
+                name = "荣耀亲选耳机 X5s Pro",
+                evidence = EvidenceLevel.VERIFIED,
+                battery = BatteryCapability.COMPONENT,
+                noiseControl = "降噪 / 关闭 / 通透",
+            ),
+        ),
+    ),
+    SupportBrand(
+        name = "QCY",
+        entries = listOf(
+            SupportEntry(
+                name = "Crossky C50S / QYCC50S",
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                battery = BatteryCapability.COMPONENT,
+                noiseControl = "降噪 / 关闭 / 通透",
+            ),
+            SupportEntry(
+                name = "其他名称符合 QCY / Crossky 规则的耳机",
+                evidence = EvidenceLevel.FAMILY_PROBE,
+                battery = BatteryCapability.COMPONENT,
+                noiseControl = "降噪 / 关闭 / 通透",
+            ),
+        ),
+    ),
+    SupportBrand(
         name = "Sony",
         entries = listOf(
             SupportEntry(
@@ -309,17 +337,6 @@ private val supportBrands = listOf(
                 evidence = EvidenceLevel.STANDARD_FALLBACK,
                 battery = BatteryCapability.SYSTEM,
                 noiseControl = "无",
-            ),
-        ),
-    ),
-    SupportBrand(
-        name = "荣耀",
-        entries = listOf(
-            SupportEntry(
-                name = "荣耀亲选耳机 X5s Pro",
-                evidence = EvidenceLevel.VERIFIED,
-                battery = BatteryCapability.COMPONENT,
-                noiseControl = "降噪、关闭、通透",
             ),
         ),
     ),

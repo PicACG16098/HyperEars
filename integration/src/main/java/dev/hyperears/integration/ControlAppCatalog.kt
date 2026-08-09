@@ -62,6 +62,11 @@ object ControlAppCatalog {
         displayName = "Sony | Sound Connect",
     )
 
+    val qcy = ControlAppSpec(
+        packageName = "com.qcymall.googleearphonesetup",
+        displayName = "QCY",
+    )
+
     val all: List<ControlAppSpec> = listOf(
         vivoEarphones,
         heyMelody,
@@ -74,6 +79,7 @@ object ControlAppCatalog {
         lightYear,
         yuanDao,
         sonySoundConnect,
+        qcy,
     )
 
     private val byPackage = all.associateBy(ControlAppSpec::packageName)

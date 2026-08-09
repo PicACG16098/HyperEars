@@ -148,6 +148,19 @@ v8.4.39 的互操作行为分析，并由真实设备通信验证。花再 Evo P
 Gadgetbridge 的 AGPL 程序代码，也不分发 SonyHeadphonesClient、厂商应用、图片或品牌
 资源。SonyHeadphonesClient 的 MIT 许可文本由其固定提交中的 `LICENSE` 提供。
 
+## QCYpods protocol research
+
+- SouthautumnYa/QCYpods:
+  <https://github.com/SouthautumnYa/QCYpods/tree/7bfbd951ad3fb803be84864a2a8493c78695bd61>
+- Reviewed revision: `7bfbd951ad3fb803be84864a2a8493c78695bd61`
+- Declared license: GNU GPL-3.0（仓库 README 声明；该固定提交未包含独立的许可证文件）
+
+用于核对 QCY `A001/1001/1002` GATT 端点、`0xFF` 命令流、组件电量 `0x2F`、噪声模式
+`0x0C`、厂商数据 `0x521C` 及伴生控制端点关联方式。HyperEars 只实现 MiLink 所需的电量
+与原生三态噪声控制，并在自身 Adapter、ProtocolSession 和 WireCodec 边界内重新组织实现；
+不分发 QCYpods 的应用、界面、图片、品牌资源或构建产物。上游许可证状态按固定提交如实
+记录，具体条款以其仓库声明为准。
+
 ## Android and LSPosed APIs
 
 - Android Open Source Project: <https://source.android.com/>
