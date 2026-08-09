@@ -136,6 +136,59 @@ class RoseWireCodecsTest {
     }
 
     @Test
+    fun budsFeelKeepsPartialExtendedFrameEndingInTerminatorByte() {
+        val extension = byteArrayOf(
+            0x03, 0x45, 0xAA.toByte(), 0x01,
+            0x02, 0x09, 0x04,
+        )
+        val frame = extendedResponseFrame(
+            sequence = 0x31,
+            block = CERAMICS_EXTENDED_FRAME.copyOfRange(3, 24),
+            extension = extension,
+        )
+        val split = frame.indexOf(0xAA.toByte()) + 1
+        val decoder = RoseBudsFeelMk2WireCodec.Decoder()
+
+        assertEquals(
+            emptyList<RoseBudsFeelMk2WireCodec.State>(),
+            decoder.offer(frame.copyOfRange(0, split)),
+        )
+        assertEquals(
+            listOf(
+                RoseBudsFeelMk2WireCodec.State.Noise(RoseBudsFeelMk2WireCodec.NoiseMode.WIND),
+            ),
+            decoder.offer(frame.copyOfRange(split, frame.size)),
+        )
+    }
+
+    @Test
+    fun budsFeelKeepsPartialExtendedFrameContainingResponseMarker() {
+        val extension = byteArrayOf(
+            0x03, 0x45, 0xDD.toByte(), 0x01,
+            0x02, 0x09, 0x01,
+        )
+        val frame = extendedResponseFrame(
+            sequence = 0x32,
+            block = CERAMICS_EXTENDED_FRAME.copyOfRange(3, 24),
+            extension = extension,
+        )
+        val marker = (1 until frame.size).first { frame[it] == 0xDD.toByte() }
+        val split = marker + 1
+        val decoder = RoseBudsFeelMk2WireCodec.Decoder()
+
+        assertEquals(
+            emptyList<RoseBudsFeelMk2WireCodec.State>(),
+            decoder.offer(frame.copyOfRange(0, split)),
+        )
+        assertEquals(
+            listOf(
+                RoseBudsFeelMk2WireCodec.State.Noise(RoseBudsFeelMk2WireCodec.NoiseMode.ANC),
+            ),
+            decoder.offer(frame.copyOfRange(split, frame.size)),
+        )
+    }
+
+    @Test
     fun budsFeelDecodesTwoExtendedFramesInOneOffer() {
         val second = extendedResponseFrame(
             sequence = 0x04,
