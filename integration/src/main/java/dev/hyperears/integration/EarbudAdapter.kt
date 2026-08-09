@@ -181,8 +181,6 @@ abstract class EarbudAdapter(
 
                         is FeatureObservationDecision.Defer ->
                             deferredTelemetry += decision.followUp
-
-                        FeatureObservationDecision.Ignore -> Unit
                     }
                 }
 
@@ -232,7 +230,9 @@ abstract class EarbudAdapter(
             handshake = handshake,
             stateChanged = changed,
             unknownFrames = unknown,
-            deferredTelemetry = deferredTelemetry,
+            deferredTelemetry = deferredTelemetry.filterNot { followUp ->
+                followUp.key in cancelledTelemetry
+            },
             cancelDeferredTelemetryKeys = cancelledTelemetry,
         )
     }
@@ -323,13 +323,25 @@ abstract class EarbudAdapter(
             ControlConfirmationPolicy.PUBLISH_AFTER_WRITE_THEN_REFRESH,
             -> protocolSession.readback(request)
         }
-        return AdapterControlResult(
+        val result = AdapterControlResult(
             accepted = true,
             commands = commands,
             readback = readback,
             stateChanged = changed,
         )
+        onControlAccepted(request, result)
+        return result
     }
+
+    /**
+     * Observes one locally accepted and encoded control without changing the common execution
+     * contract. Model adapters use this only to initialize verified, response-driven confirmation
+     * state; transport success and all physical I/O remain owned by the Android device session.
+     */
+    protected open fun onControlAccepted(
+        request: ControlRequest,
+        result: AdapterControlResult,
+    ) = Unit
 
     /** Encodes an Adapter-owned internal telemetry query on the current protocol session. */
     fun queryTelemetry(request: TelemetryQuery): List<ByteArray> =
@@ -399,7 +411,11 @@ abstract class EarbudAdapter(
 
     fun resetProtocolSession() {
         protocolSession.reset()
+        onProtocolSessionReset()
     }
+
+    /** Clears model-owned transient protocol state whenever the physical conversation is reset. */
+    protected open fun onProtocolSessionReset() = Unit
 
     protected fun normalizeDeviceName(value: String): String =
         value.lowercase().filter(Char::isLetterOrDigit)

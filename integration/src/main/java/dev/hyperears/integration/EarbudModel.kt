@@ -343,8 +343,6 @@ sealed interface FeatureObservationDecision {
     data class Defer(
         val followUp: DeferredTelemetryQuery,
     ) : FeatureObservationDecision
-
-    data object Ignore : FeatureObservationDecision
 }
 
 /** A model-declared private-protocol transport candidate. */

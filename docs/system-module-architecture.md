@@ -130,11 +130,12 @@ Adapter 通过 `featureStateContract` 声明可保留的状态类型；在家族
 保守回退时，会话把旧快照转移给新 Adapter，并过滤新 Adapter 不理解的特性状态。
 
 `FeatureStateChanged` 表示结构合法的设备观测，并不绕过 Adapter 聚合边界。默认 Adapter 立即
-接受观测；已验证存在连接初期暂态报告的具体型号可以通过 `FeatureObservationDecision` 暂缓
-提交，并声明一个按稳定 key 去重的 `DeferredTelemetryQuery`。Android 会话负责延时、取消和
-串行写入，Adapter 负责接受条件和次数上限，ProtocolSession 只通过 `TelemetryQuery` 生成当前
-协议查询字节。获得可接受状态、通道断开、Adapter 替换、厂商 App 接管或会话结束时，待执行
-查询会被取消；该机制不允许 ProtocolSession 持有协程、Socket 或 UI。
+接受观测；已验证存在连接初期暂态报告或控制写入后延迟生效的具体型号，可以通过
+`FeatureObservationDecision` 暂缓提交，并声明一个按稳定 key 去重的
+`DeferredTelemetryQuery`。Android 会话负责延时、取消和串行写入，Adapter 负责接受条件和
+次数上限，ProtocolSession 只通过 `TelemetryQuery` 生成当前协议查询字节。获得可接受状态、
+达到型号声明的次数边界、通道断开、Adapter 替换、厂商 App 接管或会话结束时，待执行查询会被
+取消；该机制不允许 ProtocolSession 持有协程、Socket 或 UI。
 
 `CapabilitiesIdentified`、`ProductIdentified`、握手结果和 `DeviceLifecycle` 不属于动态特性
 状态：前两者是协议证据，决定能否向用户开放能力；后两者描述会话生命周期。有效能力和状态
@@ -178,6 +179,11 @@ Adapter 可为一个请求返回 `ControlExecutionPolicy`：`DEVICE_REPORT` 仅�
 权威回读，`PUBLISH_AFTER_WRITE` 在完整写事务成功后发布声明的特性状态且不增加回读，
 `PUBLISH_AFTER_WRITE_THEN_REFRESH` 则先发布再执行回读。命令冷却同样属于该策略，且只在
 Bluetooth 会话已持有活动通道时计入；MiLink UI 不维护型号专属的节流状态。
+
+若具体型号已验证写入后的早期回读仍可能是旧状态，它可以在当前 Adapter 内记录本次控制目标，
+并通过同一观测调和入口暂缓旧状态、声明下一次只读查询。达到目标时确认自然结束；达到有界次数
+仍不一致时接受最后真实回报并通过统一快照矫正平台状态。该过程保持唯一 `executeControl()`，
+不会重新执行用户控制或把型号重试逻辑放入 Android 会话和 ProtocolSession。
 
 新增厂商或型号专属控制时，在 `integration` 中声明带厂商命名空间 `@SerialName` 的
 `@Serializable` 请求子类型，家族 Adapter 通过 `controlRequestContract.extending { ... }`
