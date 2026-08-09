@@ -65,6 +65,7 @@ EarbudAdapter
        ├─ Edifier
        ├─ ROSESELSA
        ├─ NiceHCK
+       ├─ MOONDROP
        └─ Sony
 ```
 

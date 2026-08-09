@@ -54,6 +54,7 @@ private enum class EvidenceLevel(val label: String) {
 
 private enum class BatteryCapability(val label: String) {
     COMPONENT("组件电量"),
+    LEFT_RIGHT("左右耳电量"),
     DEVICE("整机电量"),
     AGGREGATE("聚合电量"),
     DEVICE_OR_COMPONENT("整机或组件"),
@@ -247,6 +248,23 @@ private val supportBrands = listOf(
             ),
             SupportEntry(
                 name = "其他 NiceHCK / YuanDao 耳机",
+                evidence = EvidenceLevel.STANDARD_FALLBACK,
+                battery = BatteryCapability.SYSTEM,
+                noiseControl = "无",
+            ),
+        ),
+    ),
+    SupportBrand(
+        name = "MOONDROP / 水月雨",
+        entries = listOf(
+            SupportEntry(
+                name = "Robin / 知更鸟",
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                battery = BatteryCapability.LEFT_RIGHT,
+                noiseControl = "降噪 / 关闭 / 通透",
+            ),
+            SupportEntry(
+                name = "其他 MOONDROP / 水月雨耳机",
                 evidence = EvidenceLevel.STANDARD_FALLBACK,
                 battery = BatteryCapability.SYSTEM,
                 noiseControl = "无",

@@ -99,8 +99,11 @@ NiceHCK_Controller 及可互操作协议事实独立完成。
   <https://github.com/Star-ZER0/Pods-Protocol-Reverse-Engineering>
 - Upstream license: CC BY-SA 4.0
 
-用于交叉验证 vivo、OPPO 等厂商协议字段。相关文档在引用处保留来源链接；HyperEars
-自身抓包和实机结果会明确标注为本项目验证。
+用于交叉验证 vivo、OPPO 等厂商协议字段，并提供 MOONDROP Robin / 水月雨知更鸟的
+SPP 握手、电量查询与三态噪声控制协议事实。Robin 参考固定提交：
+<https://github.com/Star-ZER0/Pods-Protocol-Reverse-Engineering/blob/2d97d85b2cde9ee1446e9e7f67c222ac9b9f2bb9/handmade/MOONDROP-Protocol.txt>。
+相关文档在引用处保留来源链接；HyperEars 根据互操作协议事实独立实现 WireCodec 与
+ProtocolSession，不复制上游程序、厂商资源或应用代码。上游文档采用 CC BY-SA 4.0。
 
 ## ScrewVivoTWS
 
