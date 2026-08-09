@@ -391,6 +391,7 @@ object EarbudAdapterRegistry {
         add(::NiceHckEarbudAdapter)
         add(::MoondropRobinAdapter)
         add(::MoondropEarbudAdapter)
+        add(::HonorX5sProAdapter)
         // Apple devices are handled by the platform; keep AAP code available for explicit use,
         // but do not add Apple adapters to HyperEars' default matching chain.
         addAll(SonyAdapterRegistry.factories)

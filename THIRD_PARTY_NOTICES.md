@@ -155,4 +155,11 @@ Gadgetbridge 的 AGPL 程序代码，也不分发 SonyHeadphonesClient、厂商�
 
 各依赖的二进制和许可证信息由 Gradle 依赖元数据及其上游项目提供。
 
+## Honor X5s Pro community contribution
+
+荣耀亲选耳机 X5s Pro（BTV-ME10）的 SPP 帧样本、字段映射与实机验证由 Te_River 在
+[PR #23](https://github.com/silverpoetry/HyperEars/pull/23) 提供。HyperEars 在项目现有的
+Adapter、ProtocolSession 与 WireCodec 边界内合并和维护该贡献；不随项目分发厂商应用、
+抓包文件、固件或品牌资源。该贡献合入后的源代码遵循本项目的 GNU GPL-3.0-only 许可。
+
 所有商标、产品名称和厂商应用名称仅用于描述兼容性，归其各自权利人所有。
