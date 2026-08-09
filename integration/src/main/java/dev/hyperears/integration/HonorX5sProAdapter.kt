@@ -48,8 +48,6 @@ class HonorX5sProAdapter : StandardEarbudAdapter() {
 
     override fun createProtocolSession(): ProtocolSession = HonorX5sProProtocolSession()
 
-    override fun batterySourceAfterProtocolEvidence(): BatterySource = BatterySource.PRIVATE_PROTOCOL
-
     override fun controlPolicy(request: ControlRequest): ControlExecutionPolicy = when (request) {
         is HonorControlRequest.SetAncDepth ->
             ControlExecutionPolicy(confirmation = ControlConfirmationPolicy.DEVICE_REPORT)

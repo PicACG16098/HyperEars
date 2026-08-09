@@ -23,9 +23,14 @@ import java.io.IOException
 import java.lang.reflect.InvocationTargetException
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -55,6 +60,52 @@ internal fun interface EarbudChannelFactory {
         transport: EarbudTransportSpec,
     ): EarbudChannel
 }
+
+internal class EarbudChannelDeadlineException(
+    endpointId: String,
+    operation: String,
+    timeoutMs: Long,
+    cause: Throwable? = null,
+) : IOException("$operation timed out after ${timeoutMs}ms on $endpointId", cause)
+
+/**
+ * Enforces a real deadline for blocking Bluetooth I/O.
+ *
+ * Coroutine cancellation alone does not reliably release every Android BluetoothSocket read.
+ * The deadline therefore owns the channel and closes it when it wins the completion race.
+ */
+internal suspend fun <T> EarbudChannel.withIoDeadline(
+    timeoutMs: Long,
+    operation: String,
+    block: suspend EarbudChannel.() -> T,
+): T = coroutineScope {
+    require(timeoutMs > 0L)
+    val outcome = AtomicInteger(IO_ACTIVE)
+    val deadline = launch(Dispatchers.IO) {
+        delay(timeoutMs)
+        if (outcome.compareAndSet(IO_ACTIVE, IO_TIMED_OUT)) {
+            close()
+        }
+    }
+    try {
+        val result = block()
+        if (!outcome.compareAndSet(IO_ACTIVE, IO_COMPLETED)) {
+            throw EarbudChannelDeadlineException(endpointId, operation, timeoutMs)
+        }
+        result
+    } catch (error: Throwable) {
+        if (outcome.compareAndSet(IO_ACTIVE, IO_COMPLETED)) throw error
+        if (error is CancellationException) throw error
+        if (error is EarbudChannelDeadlineException) throw error
+        throw EarbudChannelDeadlineException(endpointId, operation, timeoutMs, error)
+    } finally {
+        deadline.cancel()
+    }
+}
+
+private const val IO_ACTIVE = 0
+private const val IO_COMPLETED = 1
+private const val IO_TIMED_OUT = 2
 
 internal object AndroidEarbudChannelFactory : EarbudChannelFactory {
     override fun create(

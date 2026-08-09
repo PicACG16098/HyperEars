@@ -38,7 +38,8 @@ class SonyEarbudAdapterTest {
 
         val batteryModel = resolve("WF-C999")
         assertEquals("sony-tws-protocol-family", batteryModel.id)
-        assertFalse(batteryModel.capabilities.battery)
+        assertTrue(batteryModel.capabilities.battery)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, batteryModel.batterySource)
         assertFalse(batteryModel.capabilities.noiseControl)
     }
 
@@ -157,11 +158,13 @@ class SonyEarbudAdapterTest {
 
         val handshake = adapter.receive(command(0, "01 00 40 10"))
         assertEquals(HandshakeResult.Ready, handshake.handshake)
-        assertFalse(adapter.snapshot().capabilities.battery)
+        assertTrue(adapter.snapshot().capabilities.battery)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
         assertFalse(adapter.snapshot().capabilities.noiseControl)
 
         adapter.receive(command(0, "11 00 5a 00"))
         assertTrue(adapter.snapshot().capabilities.battery)
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
         assertFalse(adapter.snapshot().capabilities.noiseControl)
 
         adapter.receive(command(0, "67 02 01 02 02 01 00 00"))

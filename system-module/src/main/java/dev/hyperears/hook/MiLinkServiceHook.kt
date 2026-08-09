@@ -1304,7 +1304,7 @@ internal class MiLinkServiceHook : HookContext() {
         const val MILINK_RAW_ANC_NO_TRANSPARENCY = 3
         const val MILINK_RAW_ANC_ALL_MODES = 7
         const val NO_ANC_CAPABILITY = 0
-        const val NO_ANC_STATE = 0
+        const val NO_ANC_STATE = MiLinkStateCodec.ANC_STATE_UNAVAILABLE
         const val NATIVE_HEADSET_SUPPORTED = 1
         const val UNKNOWN_BATTERY_LEVEL = -1
         const val HEADSET_OPERATION_UNSUPPORTED = 0

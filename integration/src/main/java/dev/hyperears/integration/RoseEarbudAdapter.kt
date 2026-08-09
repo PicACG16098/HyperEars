@@ -39,7 +39,8 @@ open class RoseEarfreeProtocolFamilyAdapter(
 ) : RoseEarbudAdapter(transferredSession, initialRuntimeState) {
     override val id: String = ID
     override val displayName: String = "ROSE EARFREE protocol family"
-    override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
+    override val miLinkCardPresentationId: MiLinkCardPresentationId?
+        get() = PRESENTATION_ID.takeIf { effectiveCapabilities().noiseControl }
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE
@@ -72,9 +73,6 @@ open class RoseEarfreeProtocolFamilyAdapter(
     }
 
     override fun createProtocolSession(): ProtocolSession = RoseEarfreeProtocolSession()
-
-    override fun batterySourceAfterProtocolEvidence(): BatterySource =
-        BatterySource.PRIVATE_PROTOCOL
 
     override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
         InitialProtocolFailureResolution.FallbackTo(
@@ -124,7 +122,6 @@ class RoseEarfreeI5Adapter : RoseEarfreeProtocolFamilyAdapter() {
     override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
     override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
     override val transportReadiness: TransportReadiness = TransportReadiness.CONNECTED
-    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
     override val capabilities: EarbudCapabilities = EarbudCapabilities(
         battery = true,
         noiseControl = true,
@@ -159,7 +156,8 @@ open class RoseBudsFeelProtocolFamilyAdapter(
 ) : RoseEarbudAdapter(transferredSession, initialRuntimeState) {
     override val id: String = ID
     override val displayName: String = "ROSE BudsFeel protocol family"
-    override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
+    override val miLinkCardPresentationId: MiLinkCardPresentationId?
+        get() = PRESENTATION_ID.takeIf { effectiveCapabilities().noiseControl }
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE
@@ -189,9 +187,6 @@ open class RoseBudsFeelProtocolFamilyAdapter(
 
     override fun createProtocolSession(): ProtocolSession = RoseBudsFeelProtocolSession()
 
-    override fun batterySourceAfterProtocolEvidence(): BatterySource =
-        BatterySource.PRIVATE_PROTOCOL
-
     override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
         InitialProtocolFailureResolution.FallbackTo(
             RoseEarbudAdapter(initialRuntimeState = runtimeState()),
@@ -211,7 +206,6 @@ class RoseBudsFeelMk2Adapter : RoseBudsFeelProtocolFamilyAdapter() {
     override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
     override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
     override val transportReadiness: TransportReadiness = TransportReadiness.CONNECTED
-    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
     override val capabilities: EarbudCapabilities = EarbudCapabilities(
         battery = true,
         noiseControl = true,

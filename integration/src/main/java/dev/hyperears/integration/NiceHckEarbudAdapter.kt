@@ -27,7 +27,6 @@ class NiceHckYuanDaoOrigAdapter : NiceHckEarbudAdapter() {
     override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness = TransportReadiness.PROTOCOL_HANDSHAKE
-    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
     override val capabilities: EarbudCapabilities = EarbudCapabilities(
         battery = true,
         noiseControl = true,

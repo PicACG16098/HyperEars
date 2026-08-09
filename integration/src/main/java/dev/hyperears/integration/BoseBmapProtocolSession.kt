@@ -104,7 +104,7 @@ internal class BoseBmapProtocolSession(
                     discoveredConfig = configuration
                     add(
                         ProtocolEvent.CapabilitiesIdentified(
-                            battery = true,
+                            battery = false,
                             noiseModes = configuration.noiseControl?.supportedModes.orEmpty(),
                         ),
                     )

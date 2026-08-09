@@ -69,9 +69,8 @@ open class SonyProtocolFamilyAdapter internal constructor(
     final override val privateProtocolRequired: Boolean = true
     final override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE
-    final override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
     final override val capabilities: EarbudCapabilities = EarbudCapabilities(
-        battery = configuration.capabilitiesPreverified,
+        battery = true,
         noiseControl = configuration.capabilitiesPreverified &&
             configuration.ambientDialect.supportsControl,
         windNoiseControl = configuration.capabilitiesPreverified &&

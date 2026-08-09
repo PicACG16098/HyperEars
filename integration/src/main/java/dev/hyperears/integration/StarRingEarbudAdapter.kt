@@ -51,7 +51,6 @@ class StarRingUltraAdapter : StarRingEarbudAdapter() {
             id = "starring-official-gatt",
         ),
     ) + super.transports
-    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
     override val capabilities: EarbudCapabilities = super.capabilities.copy(
         noiseControl = true,
         windNoiseControl = true,

@@ -118,6 +118,10 @@ abstract class EarbudAdapter(
             when (event) {
                 is ProtocolEvent.FeatureStateChanged -> {
                     if (!featureStateContract.accepts(this, event.state)) return@forEach
+                    if (event.state is BatteryFeatureState) {
+                        batterySourceAfterProtocolEvidence()
+                            ?.let { confirmedBatterySource = it }
+                    }
                     val nextFeatures = runtimeState.features.update(event.state)
                     if (nextFeatures != runtimeState.features) {
                         runtimeState = runtimeState.copy(features = nextFeatures)
@@ -159,6 +163,9 @@ abstract class EarbudAdapter(
             addAll(protocolSession.drainImmediateCommands())
             events.forEach { event -> addAll(protocolSession.followUpCommands(event)) }
         }
+        (handshake as? HandshakeResult.Replace)
+            ?.adapter
+            ?.adoptProtocolState(this)
         changed = changed || snapshot() != previousSnapshot
         return AdapterIoResult(
             commands = commands,
@@ -189,8 +196,11 @@ abstract class EarbudAdapter(
         return null
     }
 
-    /** Allows a family Adapter to promote system battery to private telemetry after valid evidence. */
-    protected open fun batterySourceAfterProtocolEvidence(): BatterySource? = null
+    /** Promotes the standard fallback only after this private session proves battery telemetry. */
+    protected open fun batterySourceAfterProtocolEvidence(): BatterySource? =
+        BatterySource.PRIVATE_PROTOCOL.takeIf {
+            privateProtocolRequired && batterySource == BatterySource.SYSTEM_AGGREGATE
+        }
 
     fun effectiveCapabilities(): EarbudCapabilities = confirmedCapabilities ?: capabilities
 
@@ -276,6 +286,20 @@ abstract class EarbudAdapter(
         if (next == runtimeState) return false
         runtimeState = next
         return true
+    }
+
+    /** Transfers protocol evidence during an in-place Adapter refinement. */
+    private fun adoptProtocolState(source: EarbudAdapter): Boolean {
+        var changed = adoptRuntimeState(source.runtimeState())
+        val promotedBatterySource = batterySourceAfterProtocolEvidence()
+        if (source.effectiveBatterySource() == BatterySource.PRIVATE_PROTOCOL &&
+            promotedBatterySource != null &&
+            effectiveBatterySource() != promotedBatterySource
+        ) {
+            confirmedBatterySource = promotedBatterySource
+            changed = true
+        }
+        return changed
     }
 
     fun runtimeState(): AdapterRuntimeState = runtimeState

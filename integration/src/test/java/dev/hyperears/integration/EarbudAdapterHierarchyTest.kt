@@ -38,6 +38,21 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
+    fun everyPrivateAdapterStartsWithTheSystemBatteryFallback() {
+        EarbudAdapterRegistry.adapters
+            .filter(EarbudAdapter::privateProtocolRequired)
+            .forEach { adapter ->
+                val snapshot = adapter.snapshot()
+                assertTrue("${adapter.id} must expose aggregate battery", snapshot.capabilities.battery)
+                assertEquals(
+                    "${adapter.id} must keep system battery before private evidence",
+                    BatterySource.SYSTEM_AGGREGATE,
+                    snapshot.batterySource,
+                )
+            }
+    }
+
+    @Test
     fun appleIdentitiesAreReservedBeforeTheStandardFallback() {
         assertNull(
             EarbudAdapterRegistry.resolve(
@@ -56,21 +71,25 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun unconfirmedFamilyDoesNotPublishPrivateNoiseControls() {
+    fun unconfirmedFamilyKeepsSystemBatteryWithoutPublishingPrivateNoiseControls() {
         val vivo = VivoEarbudAdapter()
         val oppo = OppoEarbudAdapter()
         val bose = BoseEarbudAdapter()
         val edifier = EdifierEarbudAdapter()
 
-        assertFalse(vivo.snapshot().capabilities.battery)
+        assertTrue(vivo.snapshot().capabilities.battery)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, vivo.snapshot().batterySource)
         assertFalse(vivo.snapshot().capabilities.noiseControl)
         assertTrue(vivo.snapshot().supportedNoiseModes.isEmpty())
-        assertFalse(oppo.snapshot().capabilities.battery)
+        assertTrue(oppo.snapshot().capabilities.battery)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, oppo.snapshot().batterySource)
         assertFalse(oppo.snapshot().capabilities.noiseControl)
         assertTrue(oppo.snapshot().supportedNoiseModes.isEmpty())
-        assertFalse(bose.snapshot().capabilities.battery)
+        assertTrue(bose.snapshot().capabilities.battery)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, bose.snapshot().batterySource)
         assertFalse(bose.snapshot().capabilities.noiseControl)
-        assertFalse(edifier.snapshot().capabilities.battery)
+        assertTrue(edifier.snapshot().capabilities.battery)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, edifier.snapshot().batterySource)
         assertFalse(edifier.snapshot().capabilities.noiseControl)
     }
 
@@ -88,6 +107,7 @@ class EarbudAdapterHierarchyTest {
 
         assertEquals(HandshakeResult.Ready, result.handshake)
         assertTrue(result.stateChanged)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
         assertTrue(adapter.snapshot().capabilities.noiseControl)
         assertEquals(
             setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
@@ -106,6 +126,7 @@ class EarbudAdapterHierarchyTest {
         val result = adapter.receive(notificationSupport)
 
         assertEquals(HandshakeResult.Ready, result.handshake)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
         assertTrue(adapter.snapshot().capabilities.noiseControl)
         assertEquals(
             setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
@@ -124,6 +145,7 @@ class EarbudAdapterHierarchyTest {
         val result = adapter.receive(anc)
 
         assertEquals(HandshakeResult.Ready, result.handshake)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
         assertTrue(adapter.snapshot().capabilities.noiseControl)
         assertEquals(NoiseMode.ANC, adapter.runtimeState().noiseMode)
     }
@@ -146,7 +168,8 @@ class EarbudAdapterHierarchyTest {
         val result = adapter.receive(hex("BB EC D8 00 00 7F"))
 
         assertEquals(HandshakeResult.Ready, result.handshake)
-        assertFalse(adapter.snapshot().capabilities.battery)
+        assertTrue(adapter.snapshot().capabilities.battery)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
         assertFalse(adapter.snapshot().capabilities.noiseControl)
     }
 
@@ -220,6 +243,10 @@ class EarbudAdapterHierarchyTest {
         assertEquals(HandshakeResult.Ready, evidence.handshake)
         assertEquals(NoiseMode.OFF, adapter.runtimeState().noiseMode)
         assertEquals(
+            EdifierMiLinkPresentationIds.FOUR_MODE,
+            adapter.snapshot().presentationId,
+        )
+        assertEquals(
             setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY, NoiseMode.WIND),
             adapter.snapshot().supportedNoiseModes,
         )
@@ -248,6 +275,7 @@ class EarbudAdapterHierarchyTest {
         assertEquals(HeadsetFormFactor.HEADPHONES, adapter.formFactor)
         assertSame(protocolSession, adapter.protocolSession)
         assertEquals(80, adapter.runtimeState().battery.overall.percent)
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
         assertTrue(adapter.snapshot().capabilities.noiseControl)
     }
 
@@ -270,6 +298,10 @@ class EarbudAdapterHierarchyTest {
             setOf(NoiseMode.ANC, NoiseMode.TRANSPARENCY),
             replacement.adapter.snapshot().supportedNoiseModes,
         )
+        assertEquals(
+            BatterySource.SYSTEM_AGGREGATE,
+            replacement.adapter.snapshot().batterySource,
+        )
 
         val repeatedEvidence = replacement.adapter.receive(hex("1F 03 03 01 01"))
         assertFalse(repeatedEvidence.handshake is HandshakeResult.Replace)
@@ -286,8 +318,10 @@ class EarbudAdapterHierarchyTest {
         ))
 
         assertTrue(adapter is EdifierEarbudAdapter)
-        assertFalse(adapter.snapshot().capabilities.battery)
+        assertTrue(adapter.snapshot().capabilities.battery)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
         assertFalse(adapter.snapshot().capabilities.noiseControl)
+        assertNull(adapter.snapshot().presentationId)
     }
 
     @Test
@@ -307,6 +341,7 @@ class EarbudAdapterHierarchyTest {
 
         assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
         assertFalse(adapter.snapshot().capabilities.noiseControl)
+        assertEquals(null, adapter.snapshot().presentationId)
 
         val result = adapter.confirm(
             battery = true,
@@ -322,6 +357,10 @@ class EarbudAdapterHierarchyTest {
         assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
         assertTrue(adapter.snapshot().capabilities.noiseControl)
         assertTrue(adapter.snapshot().capabilities.windNoiseControl)
+        assertEquals(
+            RoseEarfreeProtocolFamilyAdapter.PRESENTATION_ID,
+            adapter.snapshot().presentationId,
+        )
     }
 
     @Test

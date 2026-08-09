@@ -56,9 +56,6 @@ class MoondropRobinAdapter : MoondropEarbudAdapter() {
 
     override fun createProtocolSession(): ProtocolSession = MoondropRobinProtocolSession()
 
-    override fun batterySourceAfterProtocolEvidence(): BatterySource =
-        BatterySource.PRIVATE_PROTOCOL
-
     /** A known exact model remains eligible for the normal bounded retry and dormant wake path. */
     override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
         InitialProtocolFailureResolution.KeepDormant

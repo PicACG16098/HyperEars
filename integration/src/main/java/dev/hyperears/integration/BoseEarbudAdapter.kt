@@ -23,8 +23,6 @@ open class BoseEarbudAdapter(
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE
-    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
-    override val capabilities: EarbudCapabilities = super.capabilities.copy(battery = false)
     override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.Channel(number = 8),
         RfcommEndpointSpec.ServiceUuid(

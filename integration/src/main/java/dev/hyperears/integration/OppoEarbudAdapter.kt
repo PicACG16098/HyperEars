@@ -21,8 +21,6 @@ open class OppoEarbudAdapter : StandardEarbudAdapter() {
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE
-    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
-    override val capabilities: EarbudCapabilities = super.capabilities.copy(battery = false)
     override val supportedNoiseModes: Set<NoiseMode> = emptySet()
     override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.ServiceUuid(
@@ -181,7 +179,7 @@ private class OppoProtocolSession(
                     handshakePublished = true
                     add(
                         ProtocolEvent.CapabilitiesIdentified(
-                            battery = true,
+                            battery = false,
                             noiseModes = OPPO_NOISE_MODES,
                         ),
                     )

@@ -511,13 +511,16 @@ internal class EarbudDeviceSession(
 
     private suspend fun awaitAcceptedHandshake(
         candidate: EarbudChannel,
-    ) = withTimeout(PROTOCOL_HANDSHAKE_TIMEOUT_MS) {
+    ) = candidate.withIoDeadline(
+        timeoutMs = PROTOCOL_HANDSHAKE_TIMEOUT_MS,
+        operation = "protocol handshake",
+    ) {
         val buffer = ByteArray(READ_BUFFER_SIZE)
         while (true) {
-            val count = candidate.read(buffer)
+            val count = read(buffer)
             if (count < 0) throw IOException("vendor channel ended before protocol handshake")
             offerAdapterBytes(candidate, buffer.copyOf(count))
-            if (lifecycle.protocolReady) return@withTimeout
+            if (lifecycle.protocolReady) return@withIoDeadline
         }
     }
 
@@ -618,8 +621,6 @@ internal class EarbudDeviceSession(
         activeChannel: EarbudChannel,
     ) {
         if (channel !== activeChannel) throw CancellationException("stale adapter replacement")
-        val previous = adapter
-        replacement.adapter.adoptRuntimeState(previous.runtimeState())
         adapter = replacement.adapter
         ControlAppCatalog.activeOwner(adapter.controlApps, activeControlAppPackages)
             ?.takeIf { externalControlEnabled }

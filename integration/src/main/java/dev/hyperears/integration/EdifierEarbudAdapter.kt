@@ -16,10 +16,10 @@ open class EdifierEarbudAdapter : StandardEarbudAdapter() {
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE
-    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
-    override val capabilities: EarbudCapabilities = super.capabilities.copy(battery = false)
-    override val miLinkCardPresentationId: MiLinkCardPresentationId =
-        EdifierMiLinkPresentationIds.FOUR_MODE
+    override val miLinkCardPresentationId: MiLinkCardPresentationId?
+        get() = EdifierMiLinkPresentationIds.FOUR_MODE.takeIf {
+            effectiveCapabilities().windNoiseControl
+        }
     protected open val wireConfig: EdifierWireConfig = EdifierWireConfig(
         batteryProjection = EdifierBatteryProjection.TWS_AGGREGATE,
     )

@@ -277,7 +277,10 @@ sealed interface ProtocolEvent {
     /** Authoritative vendor product identifier; mapping to an Adapter remains adapter-owned. */
     data class ProductIdentified(val productId: Int) : ProtocolEvent
 
-    /** Private-protocol abilities established by successful read-only responses. */
+    /**
+     * Private-protocol abilities established by successful read-only responses.
+     * `battery` is true only when this read also proves private battery telemetry.
+     */
     data class CapabilitiesIdentified(
         val battery: Boolean,
         val noiseModes: Set<NoiseMode> = emptySet(),

@@ -29,9 +29,7 @@ open class VivoEarbudAdapter : StandardEarbudAdapter() {
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE
-    override val batterySource: BatterySource = BatterySource.PRIVATE_PROTOCOL
     override val supportedNoiseModes: Set<NoiseMode> = emptySet()
-    override val capabilities: EarbudCapabilities = super.capabilities.copy(battery = false)
 
     override fun createProtocolSession(): ProtocolSession =
         VivoProtocolSession(config = protocolConfig)
@@ -129,7 +127,7 @@ private class VivoProtocolSession(
                     handshakePublished = true
                     listOf(
                         ProtocolEvent.CapabilitiesIdentified(
-                            battery = true,
+                            battery = false,
                             noiseModes = VivoEarbudAdapter.THREE_STATE_NOISE_MODES,
                         ),
                         ProtocolEvent.HandshakeAccepted,

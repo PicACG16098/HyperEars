@@ -221,7 +221,8 @@ MiLink 子进程在收到系统认领前可以消费相同的活动候选快照�
 - `RESTART_ON_CURRENT_CHANNEL`：保留通道，以新 Adapter 重新执行初始化；
 - `RECONNECT`：按新 Adapter 的传输声明重新连接。
 
-替换由 `EarbudDeviceSession` 在同一设备会话内原子完成。系统只保存一个 `adapter` 成员，
+当前 Adapter 在返回 `Replace` 前完成 ProtocolSession、运行状态和已确认协议事实的转移；
+`EarbudDeviceSession` 只在同一设备会话内原子安装结果。系统只保存一个 `adapter` 成员，
 不存在初始 Adapter、effectiveAdapter 或 Adapter/Profile 双状态。
 
 ## 5. 能力真实性
@@ -236,7 +237,9 @@ MiLink 子进程在收到系统认领前可以消费相同的活动候选快照�
 5. 发布新的完整 AdapterSnapshot；
 6. MiLink 才看到对应控制项。
 
-有效电量响应只确认电量；有效噪声状态/协议能力响应才确认噪声控制。失败或超时不会把
+所有标准耳机从 Android 系统整机电量开始；只有有效私有电量响应才把来源晋升为私有协议，
+握手或噪声能力响应不会提前停止系统电量更新。有效噪声状态/协议能力响应才确认噪声控制。
+失败或超时不会把
 静态猜测能力留在卡片上。家族 Adapter 还可通过 `onInitialProtocolUnavailable()` 返回保守
 替代 Adapter；会话层只执行统一决策，不包含厂商品牌判断。ROSESELSA 产品线候选使用该
 机制在首次私有协议始终未确认时退回品牌标准能力。
@@ -294,6 +297,9 @@ A2DP/HFP connected
 每台设备最多一个活动通道、一个 Reader、一个连接任务和一个串行写事务。控制写、协议
 即时响应和回读都经过同一互斥写入路径，防止重复帧和交叉事务。全局协调器只串行化昂贵
 的连接尝试，不限制多个已连接设备会话。
+
+协议握手截止由传输层执行；计时器到期时关闭当前候选通道，使阻塞的 RFCOMM、L2CAP 或
+GATT 读取退出，再进入既有的有限端点回退。成功握手会先取消截止任务，不会关闭活动通道。
 
 ### 7.1 厂商控制 App 退避
 

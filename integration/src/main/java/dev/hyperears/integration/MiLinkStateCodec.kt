@@ -1,6 +1,9 @@
 package dev.hyperears.integration
 
 object MiLinkStateCodec {
+    /** MiLink's native sentinel for hiding the ANC section when no state is available. */
+    const val ANC_STATE_UNAVAILABLE = -1
+
     /**
      * MiLink always transports six integers, but their presentation depends on HeadsetInfo.type.
      *
@@ -50,7 +53,8 @@ object MiLinkStateCodec {
     fun ancState(state: EarbudState): Int = when (state.noiseMode) {
         NoiseMode.ANC, NoiseMode.WIND -> 1
         NoiseMode.TRANSPARENCY -> 2
-        NoiseMode.OFF, null -> 0
+        NoiseMode.OFF -> 0
+        null -> ANC_STATE_UNAVAILABLE
     }
 
     private fun batteryPercent(reading: BatteryReading): Int = reading.percent ?: -1
