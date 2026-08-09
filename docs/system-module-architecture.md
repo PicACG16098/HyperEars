@@ -118,6 +118,8 @@ EarbudAdapter
 ```text
 ProtocolSession
   -> ProtocolEvent.FeatureStateChanged
+  -> EarbudAdapter.onFeatureReported
+  -> FeatureReportDecision
   -> EarbudAdapter.runtimeState.features
   -> EarbudState.features
   -> FeatureStateTransport
@@ -127,6 +129,19 @@ ProtocolSession
 `DeviceFeatureSnapshot` 按稳定 `featureId` 替换同类值，保证同一状态只保留最新值。
 Adapter 通过 `featureStateContract` 声明可保留的状态类型；在家族探测细化、具体型号升级或
 保守回退时，会话把旧快照转移给新 Adapter，并过滤新 Adapter 不理解的特性状态。
+
+`FeatureStateChanged` 表示结构合法的设备观测，并不绕过 Adapter 聚合边界。默认 Adapter 返回
+`FeatureReportDecision.ACCEPT`，观测立即进入统一状态；已验证存在连接初期暂态报告或控制写入后
+延迟生效的具体型号，可以返回 `HOLD`，并通过事件局部的 `AdapterEventScope` 记录一次
+`requestState(featureId, delayMs)`。获得可接受状态或达到型号自己的次数边界时，Adapter 返回
+`ACCEPT`，并记录 `cancelStateRequest(featureId)`。
+
+事件作用域只收集有序 `AdapterEffect`，不会在 Adapter 回调期间启动计时器、访问 Android 或
+反向调用会话。Android 侧的 `StateRequestDispatcher` 仅保证同一设备、同一 `featureId` 最多
+存在一个待执行请求，按声明时间串行调用 `ProtocolSession.query()` 生成查询字节；它不保存目标
+状态、尝试次数和型号判断。通道断开、Adapter 替换、厂商 App 接管或设备会话结束时统一取消
+所有请求。这样，Adapter 独立管理型号状态机，ProtocolSession 不持有协程、Socket 或 UI，运行时
+也不会随着更多型号适配而堆积策略字段。
 
 `CapabilitiesIdentified`、`ProductIdentified`、握手结果和 `DeviceLifecycle` 不属于动态特性
 状态：前两者是协议证据，决定能否向用户开放能力；后两者描述会话生命周期。有效能力和状态
@@ -161,6 +176,13 @@ MiLink/CardAdapter
     -> vendor bytes
 ```
 
+`Refresh` 是公共的一次性状态同步请求。MiLink 耳机详情卡片进入可见状态，以及 HyperEars 主页
+成为当前页面时，由各自的公共生命周期协调器发送一次 `StandardControlRequest.Refresh`；具体
+CardAdapter 不负责刷新，也不会建立轮询。Bluetooth 设备会话将 1.5 秒内来自多个界面或 MiLink
+进程的重复刷新合并为一次，并使用独立门禁，避免影响紧随其后的用户控制。具体
+ProtocolSession 只查询已经验证、可读取的状态；标准蓝牙 Adapter 将其处理为安全空操作，继续
+使用 Android 系统电量。
+
 `ControlRequestTransport` 使用 Kotlin Serialization 自动生成请求层级的序列化代码，采用
 稳定的 `@SerialName`、严格 schema 和 4 KiB 载荷上限。CardAdapter、Adapter 和
 ProtocolSession 不手写 Intent extra、JSON、Bundle 或信封字段。未知版本、未知请求、未知
@@ -170,6 +192,13 @@ Adapter 可为一个请求返回 `ControlExecutionPolicy`：`DEVICE_REPORT` 仅�
 权威回读，`PUBLISH_AFTER_WRITE` 在完整写事务成功后发布声明的特性状态且不增加回读，
 `PUBLISH_AFTER_WRITE_THEN_REFRESH` 则先发布再执行回读。命令冷却同样属于该策略，且只在
 Bluetooth 会话已持有活动通道时计入；MiLink UI 不维护型号专属的节流状态。
+
+若具体型号已验证写入后的早期回读仍可能是旧状态，它可以在 `onControlWritten()` 中记录本次
+控制目标，并通过 `AdapterEventScope` 声明第一次延迟查询。后续回报仍进入统一的
+`onFeatureReported()`：达到目标时接受并取消待执行请求；尚未达到时暂缓并声明下一次只读查询；
+达到有界次数仍不一致时接受最后真实回报，由统一快照矫正平台状态。该过程保持唯一
+`executeControl()`，不会重复执行用户控制，也不会把型号重试逻辑放入 Android 会话和
+ProtocolSession。
 
 新增厂商或型号专属控制时，在 `integration` 中声明带厂商命名空间 `@SerialName` 的
 `@Serializable` 请求子类型，家族 Adapter 通过 `controlRequestContract.extending { ... }`
@@ -245,8 +274,10 @@ MiLink 子进程在收到系统认领前可以消费相同的活动候选快照�
 5. 发布新的完整 AdapterSnapshot；
 6. MiLink 才看到对应控制项。
 
-所有标准耳机从 Android 系统整机电量开始；只有有效私有电量响应才把来源晋升为私有协议，
-握手或噪声能力响应不会提前停止系统电量更新。有效噪声状态/协议能力响应才确认噪声控制。
+所有标准耳机从 Android 系统整机电量开始。`CapabilitiesIdentified(battery=true)` 只确认协议
+具备电量遥测能力；只有经当前 Adapter 接受的私有电量状态才把来源晋升为私有协议。握手、
+噪声能力响应或仍在型号初始化确认中的电量观测都不会提前停止系统电量更新。有效噪声状态/
+协议能力响应才确认噪声控制。
 失败或超时不会把
 静态猜测能力留在卡片上。家族 Adapter 还可通过 `onInitialProtocolUnavailable()` 返回保守
 替代 Adapter；声明的目标已被用户关闭时，统一门禁只允许直接回退到启用中的

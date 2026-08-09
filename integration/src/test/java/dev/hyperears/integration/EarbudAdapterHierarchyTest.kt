@@ -404,7 +404,7 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun roseProtocolFamilyConfirmsCapabilitiesInsideTheSameStatefulAdapter() {
+    fun capabilityEvidenceAloneDoesNotReplaceTheCurrentBatterySource() {
         val adapter = TestRoseEarfreeProtocolFamilyAdapter()
 
         assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
@@ -422,7 +422,7 @@ class EarbudAdapterHierarchyTest {
         )
 
         assertEquals(null, result)
-        assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
         assertTrue(adapter.snapshot().capabilities.noiseControl)
         assertTrue(adapter.snapshot().capabilities.windNoiseControl)
         assertEquals(
@@ -450,6 +450,119 @@ class EarbudAdapterHierarchyTest {
 
         assertTrue(earfree is RoseEarfreeProtocolFamilyAdapter)
         assertTrue(budsFeel is RoseBudsFeelProtocolFamilyAdapter)
+    }
+
+    @Test
+    fun roseCeramicsNameSelectsLuliUltraBudsFeelAdapterWithoutCachedUuid() {
+        val adapter = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "ROSE Ceramics U",
+                    standardHeadset = true,
+                    serviceUuids = emptySet(),
+                ),
+            ),
+        )
+
+        assertTrue(adapter is RoseLuliUltraAdapter)
+        assertEquals(AdapterResolution.EXACT_MATCH, adapter.resolution)
+        assertTrue(adapter.privateProtocolRequired)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+        assertTrue(adapter.snapshot().supportedNoiseModes.isEmpty())
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
+        assertEquals(
+            RoseBudsFeelProtocolFamilyAdapter.DATA_CHANNEL_UUID,
+            (adapter.transports.single() as RfcommEndpointSpec.ServiceUuid).uuid,
+        )
+    }
+
+    @Test
+    fun roseCeramicsUltraVariantNameSelectsLuliUltraAdapter() {
+        val adapter = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "ROSE Ceramics Ultra",
+                    standardHeadset = true,
+                    serviceUuids = emptySet(),
+                ),
+            ),
+        )
+
+        assertTrue(adapter is RoseLuliUltraAdapter)
+    }
+
+    @Test
+    fun roseCeramicsNameDoesNotCaptureUnrelatedHeadsets() {
+        val adapter = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "Some Other Headset",
+                    standardHeadset = true,
+                ),
+            ),
+        )
+
+        assertTrue(adapter is StandardEarbudAdapter)
+    }
+
+    @Test
+    fun roseCeramicsWithoutUltraMarkerDoesNotSelectLuliAdapter() {
+        val plain = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "ROSE Ceramics",
+                    standardHeadset = true,
+                    serviceUuids = emptySet(),
+                ),
+            ),
+        )
+        val luli = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "ROSE Luli",
+                    standardHeadset = true,
+                    serviceUuids = emptySet(),
+                ),
+            ),
+        )
+
+        assertFalse(plain is RoseLuliUltraAdapter)
+        assertFalse(luli is RoseLuliUltraAdapter)
+        assertTrue(plain is StandardEarbudAdapter)
+        assertTrue(luli is StandardEarbudAdapter)
+    }
+
+    @Test
+    fun roseCeramicsNearNamesDoNotCaptureOtherRoseModels() {
+        val budsFeelMk2 = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "ROSE BudsFeel MK2",
+                    standardHeadset = true,
+                    serviceUuids = emptySet(),
+                ),
+            ),
+        )
+        val earfreeI5 = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "ROSE Earfree i5",
+                    standardHeadset = true,
+                    serviceUuids = emptySet(),
+                ),
+            ),
+        )
+
+        assertTrue(budsFeelMk2 is RoseBudsFeelMk2Adapter)
+        assertTrue(earfreeI5 is RoseEarfreeI5Adapter)
+    }
+
+    @Test
+    fun roseLuliRemainsDormantAfterBoundedFailure() {
+        assertEquals(
+            InitialProtocolFailureResolution.KeepDormant,
+            RoseLuliUltraAdapter().onInitialProtocolUnavailable(),
+        )
     }
 
     @Test

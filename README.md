@@ -62,7 +62,7 @@ GATT、RFCOMM 或 BR/EDR L2CAP 控制通道只为需要协议遥测的适配器�
 | StarRing / 籁特易耳 | Ultra 实机验证；其他标准回退 | Ultra 私有组件电量；其他系统整机电量 | Ultra 支持降噪、关闭、通透、抗风噪 |
 | Bose | 一个型号实机验证；其余公开实现、参考协议或家族外推 | 私有整机或组件电量 | 按 BMAP 产品和控制方言开放明确的模式子集 |
 | Edifier / 漫步者 | W860NB PRO、花再 Evo Pro 实机验证；其余家族外推 | 头戴整机或 TWS 聚合电量 | 降噪、关闭、通透、抗风噪 |
-| ROSESELSA / 弱水时砂 | Furina Endless Solo of Solitude 实机验证；两个型号公开实现；产品线家族外推；其余标准回退 | 协议确认后私有组件电量；回退设备使用系统整机电量 | 协议确认后支持降噪、关闭、通透、抗风噪 |
+| ROSESELSA / 弱水时砂 | Furina Endless Solo of Solitude、ROSE Ceramics Ultra 实机验证；两个型号公开实现；产品线家族外推；其余标准回退 | 协议确认后私有组件电量；回退设备使用系统整机电量 | 协议确认后支持降噪、关闭、通透、抗风噪 |
 | NiceHCK / YuanDao | OriG in 公开实现；其他标准回退 | 协议确认后私有组件电量；回退设备使用系统整机电量 | OriG in 支持降噪、关闭、通透、抗风噪 |
 | MOONDROP / 水月雨 | Robin 公开协议；其他标准回退 | Robin 协议确认后提供左右耳电量；回退设备使用系统整机电量 | Robin 协议确认后支持降噪、关闭、通透 |
 | 荣耀 | X5s Pro 实机验证；其他标准回退 | X5s Pro 协议确认后提供私有组件电量；回退设备使用系统整机电量 | X5s Pro 协议确认后支持降噪、关闭、通透 |
@@ -231,3 +231,7 @@ HyperEars 以 [GNU GPL-3.0-only](LICENSE) 发布。协议研究参考了
 抓包与验证结果。具体来源及许可说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 商标和产品名称仅用于兼容性描述，归各自权利人所有。
+
+QCY 协议资料入口与 `QYCC50S` 设备标识由
+[@998-998](https://github.com/998-998) 在
+[PR #21](https://github.com/silverpoetry/HyperEars/pull/21) 中提供。

@@ -296,6 +296,64 @@ sealed interface ProtocolEvent {
     ) : ProtocolEvent
 }
 
+/**
+ * One internal telemetry read requested by an Adapter.
+ *
+ * Telemetry reads are deliberately separate from user-facing [ControlRequest] values. An Adapter
+ * decides what must be observed, its [ProtocolSession] translates the query into vendor bytes, and
+ * the Android runtime only owns scheduling and transport I/O.
+ */
+sealed interface TelemetryQuery {
+    data object RefreshAll : TelemetryQuery
+
+    data class RefreshFeature(
+        val featureId: String,
+    ) : TelemetryQuery {
+        init {
+            require(featureId.isNotBlank()) { "Telemetry feature id cannot be blank" }
+        }
+    }
+}
+
+/** Whether one structurally valid protocol report may enter the public Adapter state. */
+enum class FeatureReportDecision {
+    ACCEPT,
+    HOLD,
+}
+
+/** Ordered, declarative effects recorded while an Adapter handles one framework event. */
+sealed interface AdapterEffect {
+    data class RequestState(
+        val featureId: String,
+        val delayMs: Long,
+    ) : AdapterEffect {
+        init {
+            require(featureId.isNotBlank()) { "Requested feature ID cannot be blank" }
+            require(delayMs >= 0L) { "State-request delay cannot be negative" }
+        }
+    }
+
+    data class CancelStateRequest(
+        val featureId: String,
+    ) : AdapterEffect {
+        init {
+            require(featureId.isNotBlank()) { "Cancelled feature ID cannot be blank" }
+        }
+    }
+}
+
+/**
+ * Event-local control surface exposed to an Adapter.
+ *
+ * Calls only record ordered [AdapterEffect] values. They never start a timer, touch a transport or
+ * call back into the Android runtime while Adapter code is executing.
+ */
+interface AdapterEventScope {
+    fun requestState(featureId: String, delayMs: Long)
+
+    fun cancelStateRequest(featureId: String)
+}
+
 /** A model-declared private-protocol transport candidate. */
 sealed interface EarbudTransportSpec {
     val id: String
@@ -510,6 +568,7 @@ data class AdapterIoResult(
     val handshake: HandshakeResult? = null,
     val stateChanged: Boolean = false,
     val unknownFrames: List<ProtocolEvent.UnknownFrame> = emptyList(),
+    val effects: List<AdapterEffect> = emptyList(),
 )
 
 data class AdapterControlResult(
@@ -549,6 +608,17 @@ value class MiLinkCardPresentationId(
 interface ProtocolSession {
     fun initialReadCommands(): List<ByteArray>
     fun encode(request: ControlRequest): List<ByteArray>
+
+    /**
+     * Encodes an internal state read without passing it through the user-control contract.
+     *
+     * The default supports a complete refresh for existing protocols. Feature-specific reads are
+     * opt-in so a runtime follow-up can never send an unrelated vendor command by accident.
+     */
+    fun query(request: TelemetryQuery): List<ByteArray> = when (request) {
+        TelemetryQuery.RefreshAll -> encode(StandardControlRequest.Refresh)
+        is TelemetryQuery.RefreshFeature -> emptyList()
+    }
 
     /**
      * Protocol-generated writes produced while decoding incoming bytes.

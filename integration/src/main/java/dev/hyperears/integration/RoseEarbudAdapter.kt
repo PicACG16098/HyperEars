@@ -116,6 +116,37 @@ class FurinaEndlessAdapter : RoseBudsFeelProtocolFamilyAdapter() {
     }
 }
 
+/**
+ * ROSE Ceramics (Luli) Ultra adapter for the BudsFeel RFCOMM protocol family.
+ *
+ * RoseLink drives CERAMICS headsets over the same 0cf12d31 RFCOMM channel with the BudsFeel
+ * frame grammar. The retail name is the primary match because HyperOS does not populate the
+ * cached SDP UUIDs for this model; the read-only BudsFeel handshake remains authoritative for
+ * private capabilities.
+ */
+class RoseLuliUltraAdapter : RoseBudsFeelProtocolFamilyAdapter() {
+    override val id: String = ID
+    override val displayName: String = "ROSE Ceramics Ultra (Luli Ultra)"
+    override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
+
+    override fun matches(identity: EarbudIdentity): Boolean {
+        if (identity.nativeSystemEarbud) return false
+        return normalizeDeviceName(identity.deviceName.orEmpty()) in MODEL_NAMES
+    }
+
+    override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
+        InitialProtocolFailureResolution.KeepDormant
+
+    companion object {
+        const val ID = "rose-luli-ultra-budsfeel"
+        private val MODEL_NAMES = setOf(
+            "roseceramicsu",
+            "roseceramicsultra",
+            "roseluliultra",
+        )
+    }
+}
+
 class RoseEarfreeI5Adapter : RoseEarfreeProtocolFamilyAdapter() {
 
     override val id: String = ID

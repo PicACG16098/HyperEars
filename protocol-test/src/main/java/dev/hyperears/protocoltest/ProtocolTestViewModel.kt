@@ -13,6 +13,7 @@ import androidx.lifecycle.viewModelScope
 import dev.hyperears.protocol.bose.BoseBmapWireCodec
 import dev.hyperears.protocol.bose.BoseProductCatalog
 import dev.hyperears.protocol.edifier.EdifierWireCodec
+import dev.hyperears.protocol.rose.RoseBudsFeelMk2WireCodec
 import dev.hyperears.protocol.starring.StarRingWireCodec
 import dev.hyperears.protocol.vivo.VivoTwsProtocol
 import dev.hyperears.protocol.vivo.VivoTwsProtocol.NoiseMode
@@ -119,6 +120,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
     private val starRingDecoder = StarRingWireCodec.Decoder()
     private val boseDecoder = BoseBmapWireCodec.Decoder()
     private val edifierDecoder = EdifierWireCodec.Decoder()
+    private val roseBudsFeelDecoder = RoseBudsFeelMk2WireCodec.Decoder()
     private val mutableState = MutableStateFlow(ProtocolUiState())
     val state: StateFlow<ProtocolUiState> = mutableState.asStateFlow()
     private val logId = AtomicLong()
@@ -377,6 +379,16 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                     delay(PROBE_GAP_MS)
                     send(EdifierWireCodec.queryFunction, "Edifier 查询设备功能")
                 }
+                ProtocolTarget.ROSE_BUDSFEEL -> {
+                    mutableState.value = mutableState.value.copy(
+                        handshakeStatus = "等待响应",
+                        noiseApiStatus = "等待响应",
+                        batteryApiStatus = "等待响应",
+                    )
+                    send(RoseBudsFeelMk2WireCodec.queryStatus(0), "BudsFeel 状态查询")
+                    delay(PROBE_GAP_MS)
+                    send(RoseBudsFeelMk2WireCodec.queryStatus(1), "BudsFeel 状态查询（重试）")
+                }
             }
             markTimeoutsLater()
         }
@@ -440,6 +452,9 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
 
                 ProtocolTarget.EDIFIER_BES ->
                     send(EdifierWireCodec.queryBattery, "Edifier 查询电量")
+
+                ProtocolTarget.ROSE_BUDSFEEL ->
+                    send(RoseBudsFeelMk2WireCodec.queryStatus(0), "BudsFeel 状态查询")
             }
             markTimeoutsLater()
         }
@@ -610,6 +625,7 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
             ProtocolTarget.STARRING_ULTRA -> handleStarRingIncoming(bytes)
             ProtocolTarget.BOSE_BMAP -> handleBoseIncoming(bytes)
             ProtocolTarget.EDIFIER_BES -> handleEdifierIncoming(bytes)
+            ProtocolTarget.ROSE_BUDSFEEL -> handleRoseBudsFeelIncoming(bytes)
         }
     }
 
@@ -771,6 +787,41 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                     handshakeStatus = "可用 · D8 功能响应 ${frame.payload.size} 字节",
                 )
                 addLog("FUNC", "设备功能响应: ${frame.payload.size} 字节", EdifierWireCodec.run { frame.payload.hex() })
+            }
+        }
+    }
+
+    private fun handleRoseBudsFeelIncoming(bytes: ByteArray) {
+        roseBudsFeelDecoder.offer(bytes).forEach { state ->
+            when (state) {
+                is RoseBudsFeelMk2WireCodec.State.Battery -> {
+                    mutableState.value = mutableState.value.copy(
+                        battery = BatteryObservation(
+                            leftPercent = state.leftPercent,
+                            rightPercent = state.rightPercent,
+                            casePercent = state.casePercent,
+                        ),
+                        batteryApiStatus = "可用 · BudsFeel 响应",
+                    )
+                    addLog(
+                        "BAT",
+                        "左耳=${state.leftPercent ?: "—"}% 右耳=${state.rightPercent ?: "—"}% " +
+                            "充电盒=${state.casePercent ?: "—"}%",
+                    )
+                }
+
+                is RoseBudsFeelMk2WireCodec.State.Noise -> {
+                    val modeLabel = when (state.mode) {
+                        RoseBudsFeelMk2WireCodec.NoiseMode.ANC -> "降噪"
+                        RoseBudsFeelMk2WireCodec.NoiseMode.OFF -> "关闭"
+                        RoseBudsFeelMk2WireCodec.NoiseMode.TRANSPARENCY -> "通透"
+                        RoseBudsFeelMk2WireCodec.NoiseMode.WIND -> "抗风噪"
+                    }
+                    mutableState.value = mutableState.value.copy(
+                        noiseApiStatus = "可用 · $modeLabel",
+                    )
+                    addLog("ANC", "噪声模式=$modeLabel (value=${state.mode.value})")
+                }
             }
         }
     }

@@ -30,6 +30,11 @@ open class MoondropEarbudAdapter(
  * until the strict protocol handshake and corresponding read responses are observed.
  */
 class MoondropRobinAdapter : MoondropEarbudAdapter() {
+    private var batteryBootstrapAttempt = 0
+    private var privateBatteryCommitted = false
+    private var expectedNoiseMode: NoiseMode? = null
+    private var noiseModeAttempt = 0
+
     override val id: String = ID
     override val displayName: String = "MOONDROP Robin"
     override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
@@ -57,12 +62,79 @@ class MoondropRobinAdapter : MoondropEarbudAdapter() {
 
     override fun createProtocolSession(): ProtocolSession = MoondropRobinProtocolSession()
 
+    override fun onFeatureReported(
+        state: DeviceFeatureState,
+        scope: AdapterEventScope,
+    ): FeatureReportDecision = when (state) {
+        is BatteryFeatureState -> handleBatteryReport(state, scope)
+        is NoiseModeFeatureState -> handleNoiseModeReport(state, scope)
+        else -> FeatureReportDecision.ACCEPT
+    }
+
+    private fun handleBatteryReport(
+        state: BatteryFeatureState,
+        scope: AdapterEventScope,
+    ): FeatureReportDecision {
+        if (privateBatteryCommitted) return FeatureReportDecision.ACCEPT
+
+        val battery = state.battery
+        val left = battery.left.percent
+        val right = battery.right.percent
+        val provisional = left == null || right == null || left == 0 || right == 0
+        if (!provisional || batteryBootstrapAttempt >= BATTERY_BOOTSTRAP_DELAYS_MS.size) {
+            privateBatteryCommitted = true
+            scope.cancelStateRequest(BatteryFeatureState.FEATURE_ID)
+            return FeatureReportDecision.ACCEPT
+        }
+
+        val delayMs = BATTERY_BOOTSTRAP_DELAYS_MS[batteryBootstrapAttempt++]
+        scope.requestState(BatteryFeatureState.FEATURE_ID, delayMs)
+        return FeatureReportDecision.HOLD
+    }
+
+    private fun handleNoiseModeReport(
+        state: NoiseModeFeatureState,
+        scope: AdapterEventScope,
+    ): FeatureReportDecision {
+        val expected = expectedNoiseMode ?: return FeatureReportDecision.ACCEPT
+        if (
+            state.mode == expected ||
+            noiseModeAttempt >= MODE_CONFIRMATION_DELAYS_MS.size
+        ) {
+            expectedNoiseMode = null
+            noiseModeAttempt = 0
+            scope.cancelStateRequest(NoiseModeFeatureState.FEATURE_ID)
+            return FeatureReportDecision.ACCEPT
+        }
+
+        val delayMs = MODE_CONFIRMATION_DELAYS_MS[noiseModeAttempt++]
+        scope.requestState(NoiseModeFeatureState.FEATURE_ID, delayMs)
+        return FeatureReportDecision.HOLD
+    }
+
+    override fun onControlWritten(
+        request: ControlRequest,
+        scope: AdapterEventScope,
+    ) {
+        if (request !is StandardControlRequest.SetNoiseMode) return
+        expectedNoiseMode = request.mode
+        noiseModeAttempt = 0
+        scope.cancelStateRequest(NoiseModeFeatureState.FEATURE_ID)
+        scope.requestState(NoiseModeFeatureState.FEATURE_ID, INITIAL_MODE_QUERY_DELAY_MS)
+    }
+
+    override fun onProtocolReset() {
+        batteryBootstrapAttempt = 0
+        privateBatteryCommitted = false
+        expectedNoiseMode = null
+        noiseModeAttempt = 0
+    }
+
     override fun controlPolicy(request: ControlRequest): ControlExecutionPolicy =
         super.controlPolicy(request).let { policy ->
             if (request is StandardControlRequest.SetNoiseMode) {
                 policy.copy(
-                    confirmation = ControlConfirmationPolicy.PUBLISH_AFTER_WRITE_THEN_REFRESH,
-                    readbackDelayMs = MODE_READBACK_DELAY_MS,
+                    confirmation = ControlConfirmationPolicy.PUBLISH_AFTER_WRITE,
                 )
             } else {
                 policy
@@ -76,7 +148,9 @@ class MoondropRobinAdapter : MoondropEarbudAdapter() {
     companion object {
         const val ID = "moondrop-robin"
         const val STANDARD_SPP_UUID = "00001101-0000-1000-8000-00805f9b34fb"
-        internal const val MODE_READBACK_DELAY_MS = 600L
+        internal const val INITIAL_MODE_QUERY_DELAY_MS = 600L
+        internal val BATTERY_BOOTSTRAP_DELAYS_MS = longArrayOf(500L, 800L, 1_200L, 1_600L)
+        internal val MODE_CONFIRMATION_DELAYS_MS = longArrayOf(500L, 700L, 900L, 1_200L)
 
         private val EXACT_NAMES = setOf(
             "robinsearphones",
@@ -106,9 +180,13 @@ internal class MoondropRobinProtocolSession : ProtocolSession {
         else -> emptyList()
     }
 
-    override fun readback(request: ControlRequest): List<ByteArray> = when (request) {
-        is StandardControlRequest.SetNoiseMode -> listOf(MoondropRobinWireCodec.queryNoiseMode)
-        else -> emptyList()
+    override fun query(request: TelemetryQuery): List<ByteArray> = when (request) {
+        TelemetryQuery.RefreshAll -> telemetryQueries()
+        is TelemetryQuery.RefreshFeature -> when (request.featureId) {
+            BatteryFeatureState.FEATURE_ID -> listOf(MoondropRobinWireCodec.queryBattery)
+            NoiseModeFeatureState.FEATURE_ID -> listOf(MoondropRobinWireCodec.queryNoiseMode)
+            else -> emptyList()
+        }
     }
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> = buildList {

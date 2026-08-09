@@ -3,6 +3,7 @@ package dev.hyperears.settings
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
+import java.util.HashSet
 
 /** User-controlled policy for vendor settings navigation and private-channel arbitration. */
 data class ModuleSettings(
@@ -48,7 +49,7 @@ object ModuleSettingsStore {
             .putBoolean(YIELD_TO_VENDOR_CONTROL_APP, settings.yieldToVendorControlApp)
             .putBoolean(MODULE_PAUSED, settings.modulePaused)
             .putBoolean(DIAGNOSTIC_LOGGING, settings.diagnosticLogging)
-            .putStringSet(DISABLED_ADAPTER_IDS, settings.disabledAdapterIds)
+            .putStringSet(DISABLED_ADAPTER_IDS, settings.disabledAdapterIds.toRemotePreferencesSet())
             .commit()
 
     fun readLocal(context: Context): ModuleSettings = read(localPreferences(context))
@@ -99,3 +100,10 @@ object ModuleSettingsStore {
         DISABLED_ADAPTER_IDS,
     )
 }
+
+/**
+ * RemotePreferences serializes values in the module process and deserializes them in the LSPosed
+ * daemon. Copy sets to a Java platform collection so an empty Kotlin singleton never crosses that
+ * process boundary and requires the daemon to load Kotlin runtime classes.
+ */
+internal fun Set<String>.toRemotePreferencesSet(): HashSet<String> = HashSet(this)

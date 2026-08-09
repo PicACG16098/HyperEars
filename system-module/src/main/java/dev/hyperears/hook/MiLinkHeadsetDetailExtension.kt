@@ -5,6 +5,7 @@ import android.view.View
 import dev.hyperears.integration.ControlRequest
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.MiLinkCardPresentationId
+import dev.hyperears.integration.StandardControlRequest
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.Locale
@@ -63,6 +64,7 @@ internal class MiLinkHeadsetDetailExtension(
             }
         }
         dispatchRender(target)
+        requestRefresh(target)
         root.post {
             if (root.isAttachedToWindow) render(target)
         }
@@ -73,6 +75,7 @@ internal class MiLinkHeadsetDetailExtension(
             object : View.OnAttachStateChangeListener {
                 override fun onViewAttachedToWindow(view: View) {
                     dispatchRender(target)
+                    requestRefresh(target)
                 }
 
                 override fun onViewDetachedFromWindow(view: View) {
@@ -119,6 +122,15 @@ internal class MiLinkHeadsetDetailExtension(
         } else {
             root.post { render(target) }
         }
+    }
+
+    /** Requests fresh device state once when the common native card becomes visible. */
+    private fun requestRefresh(target: Target) {
+        val root = target.root.get() ?: return
+        if (!root.isAttachedToWindow) return
+        val state = environment.stateProvider(target.address)
+        if (!state.sessionActive) return
+        environment.controlSender(target.address, StandardControlRequest.Refresh)
     }
 
     private fun render(target: Target) {

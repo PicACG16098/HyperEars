@@ -173,6 +173,33 @@ internal enum class ProtocolTarget(
             ),
         ),
     ),
+    ROSE_BUDSFEEL(
+        label = "ROSE BudsFeel",
+        endpoints = listOf(
+            RfcommEndpoint.ServiceUuid(
+                uuid = UUID.fromString("0cf12d31-fac3-4553-bd80-d6832e7b3931"),
+                id = "rose-budsfeel-0cf12d31",
+                label = "ROSE BudsFeel RFCOMM UUID",
+            ),
+            RfcommEndpoint.ServiceUuid(
+                uuid = STANDARD_SPP_UUID,
+                id = "standard-spp",
+                label = "标准 SPP UUID",
+            ),
+            RfcommEndpoint.Channel(
+                number = 1,
+                secure = true,
+                id = "rfcomm-1",
+                label = "RFCOMM 通道 1（回退）",
+            ),
+            RfcommEndpoint.Channel(
+                number = 5,
+                secure = true,
+                id = "rfcomm-5",
+                label = "RFCOMM 通道 5（回退）",
+            ),
+        ),
+    ),
     ;
 
     companion object {
@@ -195,6 +222,11 @@ internal enum class ProtocolTarget(
                     normalized.contains("w860nb") ||
                     normalized.contains("w820nb") ||
                     normalized.contains("w830nb") -> EDIFIER_BES
+
+                normalized.contains("rose") ||
+                    normalized.contains("budsfeel") ||
+                    normalized.contains("ceramics") ||
+                    normalized.contains("弱水") -> ROSE_BUDSFEEL
 
                 else -> null
             }
