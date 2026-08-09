@@ -142,9 +142,7 @@ class RoseLuliUltraAdapter : RoseBudsFeelProtocolFamilyAdapter() {
         private val MODEL_NAMES = setOf(
             "roseceramicsu",
             "roseceramicsultra",
-            "roseceramics",
             "roseluliultra",
-            "roseluli",
         )
     }
 }

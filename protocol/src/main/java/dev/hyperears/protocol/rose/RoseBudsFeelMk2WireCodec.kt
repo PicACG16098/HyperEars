@@ -87,12 +87,28 @@ object RoseBudsFeelMk2WireCodec {
 
         // Extended frame: the payload block is followed by a lengthless [len type value…]
         // TLV stream (used by ROSE Ceramics Ultra); checksum covers the whole body and the
-        // terminator is the final byte.
-        if (size >= terminatorIndex + 2 && this[size - 1] == TERMINATOR) {
-            val expected = copyOfRange(0, size - 2).checksum()
-            if (this[size - 2] == expected) return size - 1
+        // terminator is the final byte. RFCOMM is a byte stream: a read() boundary is not a
+        // frame boundary, so scan from the earliest possible extension end and validate each
+        // candidate checksum instead of assuming the buffer ends exactly at the terminator.
+        // 0xAA may legitimately appear inside TLV data, so the preceding byte must be a
+        // checksum that covers the whole candidate frame body.
+        val earliestExtensionEnd = terminatorIndex
+        val lastCandidateChecksum = size - 2
+        for (candidate in earliestExtensionEnd..lastCandidateChecksum) {
+            if (this[candidate + 1] != TERMINATOR) continue
+            val expected = copyOfRange(0, candidate).checksum()
+            if (this[candidate] == expected) return candidate + 1
         }
-        return INVALID_FRAME
+
+        // No valid boundary yet: decide between "wait for more bytes" and "resynchronize".
+        if (size > MAX_FRAME_SIZE) return INVALID_FRAME
+        // A complete-but-corrupt frame still ends with the terminator; if the buffer ends
+        // with 0xAA but no candidate validated, the stream is corrupt rather than split.
+        if (this[size - 1] == TERMINATOR) return INVALID_FRAME
+        // The declared payload length disagrees with another frame header already buffered:
+        // the current header is a mis-parse, so drop it and resynchronize at the next DD.
+        if (copyOfRange(1, size).indexOf(RESPONSE_MARKER) >= 0) return INVALID_FRAME
+        return INCOMPLETE_FRAME
     }
 
     private fun parseFrame(frame: ByteArray): List<State> {
@@ -179,6 +195,7 @@ object RoseBudsFeelMk2WireCodec {
     private const val FRAME_HEADER_SIZE = 3
     private const val FRAME_TRAILER_SIZE = 2
     private const val PAYLOAD_LENGTH_INDEX = 2
+    private const val MAX_FRAME_SIZE = 1024
     private const val DIRECT_NOISE_PAYLOAD_LENGTH = 2
     private const val DIRECT_BATTERY_PAYLOAD_LENGTH = 4
     private const val INCOMPLETE_FRAME = -1

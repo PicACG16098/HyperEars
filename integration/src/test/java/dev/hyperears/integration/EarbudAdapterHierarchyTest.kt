@@ -506,6 +506,33 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
+    fun roseCeramicsWithoutUltraMarkerDoesNotSelectLuliAdapter() {
+        val plain = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "ROSE Ceramics",
+                    standardHeadset = true,
+                    serviceUuids = emptySet(),
+                ),
+            ),
+        )
+        val luli = requireNotNull(
+            EarbudAdapterRegistry.resolve(
+                EarbudIdentity(
+                    deviceName = "ROSE Luli",
+                    standardHeadset = true,
+                    serviceUuids = emptySet(),
+                ),
+            ),
+        )
+
+        assertFalse(plain is RoseLuliUltraAdapter)
+        assertFalse(luli is RoseLuliUltraAdapter)
+        assertTrue(plain is StandardEarbudAdapter)
+        assertTrue(luli is StandardEarbudAdapter)
+    }
+
+    @Test
     fun roseCeramicsNearNamesDoNotCaptureOtherRoseModels() {
         val budsFeelMk2 = requireNotNull(
             EarbudAdapterRegistry.resolve(
