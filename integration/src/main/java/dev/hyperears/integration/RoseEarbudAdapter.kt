@@ -10,6 +10,7 @@ open class RoseEarbudAdapter(
 ) : StandardEarbudAdapter(transferredSession, initialRuntimeState) {
     override val id: String = ID
     override val displayName: String = "ROSESELSA headset"
+    override val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
     override val controlApps: List<ControlAppSpec> = listOf(ControlAppCatalog.roseLink)
 
     override fun matches(identity: EarbudIdentity): Boolean {

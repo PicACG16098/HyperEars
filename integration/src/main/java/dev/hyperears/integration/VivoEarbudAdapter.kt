@@ -13,6 +13,7 @@ import dev.hyperears.protocol.vivo.VivoTwsProtocol
 open class VivoEarbudAdapter : StandardEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "vivo / iQOO TWS"
+    override val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
     override val controlApps: List<ControlAppSpec> = listOf(ControlAppCatalog.vivoEarphones)
     override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.ServiceUuid(

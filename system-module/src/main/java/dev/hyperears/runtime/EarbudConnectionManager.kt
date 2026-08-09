@@ -10,6 +10,7 @@ import dev.hyperears.integration.ControlRequest
 import dev.hyperears.integration.StandardControlRequest
 import dev.hyperears.integration.DeviceLifecycle
 import dev.hyperears.integration.EarbudAdapter
+import dev.hyperears.integration.EarbudAdapterRegistry
 import dev.hyperears.integration.EarbudIdentity
 import dev.hyperears.integration.EarbudState
 import dev.hyperears.integration.PrivateTransportState
@@ -37,8 +38,15 @@ internal class EarbudConnectionManager(
 
     private data class SessionRecord(
         val session: EarbudDeviceSession,
+        val identity: EarbudIdentity,
         val token: String,
         var state: EarbudState,
+    )
+
+    /** Physical connection facts retained while an integration adapter is disabled. */
+    private data class ObservedDevice(
+        val device: BluetoothDevice,
+        val identity: EarbudIdentity,
     )
 
     private sealed interface Registration {
@@ -51,9 +59,17 @@ internal class EarbudConnectionManager(
         val finalSnapshot: Snapshot,
     )
 
+    private data class AdapterReconfiguration(
+        val device: BluetoothDevice,
+        val identity: EarbudIdentity,
+        val replacement: EarbudAdapter?,
+        val removal: Removal?,
+    )
+
     private val appContext = context.applicationContext ?: context
     private val lifecycleLock = Any()
     private val sessions = linkedMapOf<String, SessionRecord>()
+    private val observedDevices = linkedMapOf<String, ObservedDevice>()
     private val knownDevices = linkedMapOf<String, Snapshot>()
     private val lastRevisions = mutableMapOf<String, Long>()
     private val systemOwnedAddresses = mutableSetOf<String>()
@@ -62,6 +78,7 @@ internal class EarbudConnectionManager(
     private var activeControlAppPackages: Set<String> = emptySet()
     private var externalControlEnabled = true
     private var modulePaused = false
+    private var disabledAdapterIds: Set<String> = emptySet()
 
     @Volatile
     private var closed = false
@@ -76,7 +93,6 @@ internal class EarbudConnectionManager(
         identity: EarbudIdentity,
         earbudAdapter: EarbudAdapter,
     ): Boolean {
-        if (closed || modulePaused) return false
         val name = identity.deviceName
         val address = runCatching { device.address }.getOrNull() ?: return false
         val key = normalizeAddress(address)
@@ -90,6 +106,9 @@ internal class EarbudConnectionManager(
                 )
                 return false
             }
+            observedDevices[key] = ObservedDevice(device, identity)
+            if (earbudAdapter.id in disabledAdapterIds) return false
+            earbudAdapter.configureDisabledAdapterIds(disabledAdapterIds)
             sessions[key]?.let(Registration::Existing) ?: run {
                 val initialState = knownDevices[key]
                     ?.state
@@ -122,6 +141,7 @@ internal class EarbudConnectionManager(
                 )
                 val record = SessionRecord(
                     session = session,
+                    identity = identity,
                     token = UUID.randomUUID().toString(),
                     state = state,
                 )
@@ -154,6 +174,19 @@ internal class EarbudConnectionManager(
         }
     }
 
+    /** Records a connected device when its currently eligible adapter set is empty. */
+    @SuppressLint("MissingPermission")
+    fun observeDevice(device: BluetoothDevice, identity: EarbudIdentity): Boolean {
+        val address = runCatching { device.address }.getOrNull() ?: return false
+        val key = normalizeAddress(address)
+        val adapter = synchronized(lifecycleLock) {
+            if (closed || modulePaused || key in systemOwnedAddresses) return false
+            observedDevices[key] = ObservedDevice(device, identity)
+            EarbudAdapterRegistry.forIntegration(identity, disabledAdapterIds)
+        } ?: return false
+        return registerDevice(device, identity, adapter)
+    }
+
     fun unregisterDevice(device: BluetoothDevice?): Boolean {
         val address = if (device == null) {
             null
@@ -161,6 +194,11 @@ internal class EarbudConnectionManager(
             runCatching { device.address }.getOrNull() ?: return false
         }
         val removals = synchronized(lifecycleLock) {
+            if (address == null) {
+                observedDevices.clear()
+            } else {
+                observedDevices.remove(normalizeAddress(address))
+            }
             removeLocked(address)
         }
         finishRemovals(removals)
@@ -178,6 +216,7 @@ internal class EarbudConnectionManager(
         val result = synchronized(lifecycleLock) {
             if (closed) return false
             val newlyClaimed = systemOwnedAddresses.add(key)
+            observedDevices.remove(key)
             newlyClaimed to removeLocked(address)
         }
         finishRemovals(result.second)
@@ -228,6 +267,47 @@ internal class EarbudConnectionManager(
         }
     }
 
+    /** Re-resolves active devices against the same ordered Registry after a policy change. */
+    fun updateDisabledAdapters(adapterIds: Set<String>) {
+        val normalized = adapterIds.toSet()
+        val changes = synchronized(lifecycleLock) {
+            if (closed || disabledAdapterIds == normalized) return
+            disabledAdapterIds = normalized
+            if (modulePaused) return
+
+            val decisions = observedDevices.values.mapNotNull { observed ->
+                val key = normalizeAddress(observed.device.address)
+                val record = sessions[key]
+                record?.session?.updateDisabledAdapterIds(normalized)
+                val replacement = EarbudAdapterRegistry.forIntegration(
+                    identity = observed.identity,
+                    disabledAdapterIds = normalized,
+                )
+                if (replacement?.id == record?.session?.adapter?.id) {
+                    null
+                } else {
+                    val removal = record?.let {
+                        removeLocked(it.session.address).singleOrNull()
+                    }
+                    AdapterReconfiguration(
+                        device = observed.device,
+                        identity = observed.identity,
+                        replacement = replacement,
+                        removal = removal,
+                    )
+                }
+            }
+            decisions
+        }
+
+        finishRemovals(changes.mapNotNull(AdapterReconfiguration::removal))
+        changes.forEach { change ->
+            change.replacement?.let { replacement ->
+                registerDevice(change.device, change.identity, replacement)
+            }
+        }
+    }
+
     /** Stops all HyperEars device sessions while leaving Android's native Bluetooth profiles intact. */
     fun setModulePaused(paused: Boolean) {
         val removals = synchronized(lifecycleLock) {
@@ -267,6 +347,7 @@ internal class EarbudConnectionManager(
         val removals = synchronized(lifecycleLock) {
             if (closed) return
             closed = true
+            observedDevices.clear()
             removeLocked(address = null)
         }
         finishRemovals(removals)

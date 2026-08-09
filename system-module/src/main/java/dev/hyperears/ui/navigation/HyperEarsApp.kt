@@ -5,16 +5,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import dev.hyperears.R
+import dev.hyperears.integration.EarbudAdapterRegistry
 import dev.hyperears.root.RootAction
 import dev.hyperears.root.RootActionState
 import dev.hyperears.settings.ModuleSettings
@@ -22,6 +28,9 @@ import dev.hyperears.ui.about.AboutScreen
 import dev.hyperears.ui.dashboard.DashboardScreen
 import dev.hyperears.ui.dashboard.DashboardUiState
 import dev.hyperears.ui.settings.SettingsScreen
+import dev.hyperears.ui.settings.AdapterSettingsScreen
+import dev.hyperears.ui.settings.DebugSettingsScreen
+import dev.hyperears.ui.settings.SettingsDestination
 import kotlinx.coroutines.launch
 
 private data class AppPage(
@@ -55,6 +64,40 @@ fun HyperEarsApp(
 ) {
     val pagerState = rememberPagerState(pageCount = { appPages.size })
     val coroutineScope = rememberCoroutineScope()
+    var settingsDestination by rememberSaveable {
+        mutableStateOf<SettingsDestination?>(null)
+    }
+    BackHandler(enabled = settingsDestination != null) {
+        settingsDestination = when (settingsDestination) {
+            SettingsDestination.ADAPTERS -> SettingsDestination.DEBUG
+            SettingsDestination.DEBUG, null -> null
+        }
+    }
+    when (settingsDestination) {
+        SettingsDestination.ADAPTERS -> {
+            AdapterSettingsScreen(
+                groups = EarbudAdapterRegistry.groups,
+                settings = settings,
+                onSettingsChanged = onSettingsChanged,
+                onNavigateBack = { settingsDestination = SettingsDestination.DEBUG },
+            )
+            return
+        }
+
+        SettingsDestination.DEBUG -> {
+            DebugSettingsScreen(
+                settings = settings,
+                rootAvailable = rootAvailable,
+                onSettingsChanged = onSettingsChanged,
+                onExportLogs = onExportLogs,
+                onOpenAdapters = { settingsDestination = SettingsDestination.ADAPTERS },
+                onNavigateBack = { settingsDestination = null },
+            )
+            return
+        }
+
+        null -> Unit
+    }
     val selectedPage = pagerState.settledPage
     Scaffold(
         // Child pages own the status-bar inset through their own top app bars. The shell only
@@ -104,7 +147,7 @@ fun HyperEarsApp(
                     rootActionState = rootActionState,
                     onSettingsChanged = onSettingsChanged,
                     onRunRootAction = onRunRootAction,
-                    onExportLogs = onExportLogs,
+                    onOpenDebug = { settingsDestination = SettingsDestination.DEBUG },
                 )
 
                 2 -> AboutScreen()

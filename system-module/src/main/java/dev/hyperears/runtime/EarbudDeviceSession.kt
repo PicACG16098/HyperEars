@@ -206,6 +206,12 @@ internal class EarbudDeviceSession(
         reconcileExternalControlOwner()
     }
 
+    /** Updates policy used by family Adapters for protocol-identified replacements. */
+    fun updateDisabledAdapterIds(adapterIds: Set<String>) {
+        if (closed.get()) return
+        adapter.configureDisabledAdapterIds(adapterIds)
+    }
+
     private fun reconcileExternalControlOwner() {
         val nextOwner = if (externalControlEnabled) {
             ControlAppCatalog.activeOwner(adapter.controlApps, activeControlAppPackages)
@@ -640,7 +646,7 @@ internal class EarbudDeviceSession(
     private fun applyInitialProtocolFallback(): Boolean {
         if (privateProtocolEverConfirmed) return false
         val previous = adapter
-        val fallback = when (val resolution = previous.onInitialProtocolUnavailable()) {
+        val fallback = when (val resolution = previous.resolveInitialProtocolFailure()) {
             InitialProtocolFailureResolution.KeepDormant -> return false
             is InitialProtocolFailureResolution.FallbackTo -> resolution.adapter
         }

@@ -12,6 +12,7 @@ import dev.hyperears.protocol.edifier.EdifierWireCodec
 open class EdifierEarbudAdapter : StandardEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "Edifier headset"
+    override val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
     override val controlApps: List<ControlAppSpec> = listOf(ControlAppCatalog.edifierConnect)
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness =

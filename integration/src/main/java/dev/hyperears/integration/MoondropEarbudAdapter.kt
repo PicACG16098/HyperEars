@@ -9,6 +9,7 @@ open class MoondropEarbudAdapter(
 ) : StandardEarbudAdapter(transferredSession, initialRuntimeState) {
     override val id: String = ID
     override val displayName: String = "MOONDROP headset"
+    override val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
 
     override fun matches(identity: EarbudIdentity): Boolean {
         if (!identity.standardHeadset || identity.nativeSystemEarbud) return false

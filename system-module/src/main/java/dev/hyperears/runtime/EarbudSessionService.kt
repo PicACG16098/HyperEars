@@ -46,6 +46,11 @@ internal object EarbudSessionService {
         adapter: EarbudAdapter,
     ): Boolean = runtime?.connectionManager?.registerDevice(device, identity, adapter) == true
 
+    fun observeDevice(
+        device: BluetoothDevice,
+        identity: EarbudIdentity,
+    ): Boolean = runtime?.connectionManager?.observeDevice(device, identity) == true
+
     fun unregisterDevice(device: BluetoothDevice?): Boolean =
         runtime?.connectionManager?.unregisterDevice(device) == true
 
@@ -218,6 +223,7 @@ internal object EarbudSessionService {
         private fun applySettings(settings: ModuleSettings) {
             connectionManager.setModulePaused(settings.modulePaused)
             connectionManager.updateExternalControlEnabled(settings.yieldToVendorControlApp)
+            connectionManager.updateDisabledAdapters(settings.disabledAdapterIds)
         }
     }
 

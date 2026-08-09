@@ -1,6 +1,7 @@
 package dev.hyperears.settings
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModuleSettingsTest {
@@ -10,5 +11,6 @@ class ModuleSettingsTest {
 
         assertFalse(defaults.preferVendorControlApp)
         assertFalse(defaults.yieldToVendorControlApp)
+        assertTrue(defaults.disabledAdapterIds.isEmpty())
     }
 }

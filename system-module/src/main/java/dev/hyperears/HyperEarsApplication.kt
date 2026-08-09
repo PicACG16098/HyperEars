@@ -2,10 +2,15 @@ package dev.hyperears
 
 import android.app.Application
 import android.content.SharedPreferences
+import dev.hyperears.integration.EarbudAdapterRegistry
 import dev.hyperears.settings.ModuleSettingsStore
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import java.util.concurrent.CopyOnWriteArraySet
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /** Owns the companion application's connection to the official libxposed configuration service. */
 class HyperEarsApplication : Application(), XposedServiceHelper.OnServiceListener {
@@ -14,6 +19,7 @@ class HyperEarsApplication : Application(), XposedServiceHelper.OnServiceListene
     }
 
     private val listeners = CopyOnWriteArraySet<PreferencesListener>()
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     @Volatile
     private var service: XposedService? = null
@@ -24,6 +30,9 @@ class HyperEarsApplication : Application(), XposedServiceHelper.OnServiceListene
     override fun onCreate() {
         super.onCreate()
         XposedServiceHelper.registerListener(this)
+        applicationScope.launch {
+            EarbudAdapterRegistry.preloadCatalog()
+        }
     }
 
     fun addPreferencesListener(listener: PreferencesListener) {

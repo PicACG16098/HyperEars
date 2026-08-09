@@ -298,6 +298,12 @@ class MainActivity : ComponentActivity() {
                     if (previous.diagnosticLogging != updated.diagnosticLogging) {
                         add("diagnosticLogging=${updated.diagnosticLogging}")
                     }
+                    if (previous.disabledAdapterIds != updated.disabledAdapterIds) {
+                        add(
+                            "disabledAdapters=" +
+                                updated.disabledAdapterIds.sorted().joinToString(","),
+                        )
+                    }
                 }.joinToString(separator = " · "),
             )
         }

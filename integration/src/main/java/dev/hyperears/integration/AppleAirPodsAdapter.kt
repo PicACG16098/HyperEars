@@ -6,6 +6,7 @@ import dev.hyperears.protocol.apple.AppleAapWireCodec
 open class AppleAirPodsAdapter : StandardEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "Apple AirPods"
+    override val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
     override val privateProtocolRequired: Boolean = true
     override val capabilities: EarbudCapabilities = EarbudCapabilities(
         battery = true,

@@ -10,6 +10,7 @@ import dev.hyperears.integration.PlatformReservedHeadsetPolicy
 import dev.hyperears.bridge.ModuleRuntimeGate
 import dev.hyperears.runtime.EarbudSessionService
 import dev.hyperears.runtime.toEarbudIdentity
+import dev.hyperears.settings.ModuleSettingsRuntime
 
 internal class BluetoothProcessHook : HookContext() {
     override fun install() {
@@ -87,7 +88,19 @@ internal class BluetoothProcessHook : HookContext() {
             )
             return
         }
-        val earbudAdapter = EarbudAdapterRegistry.forIntegration(identity) ?: return
+        val earbudAdapter = EarbudAdapterRegistry.forIntegration(
+            identity = identity,
+            disabledAdapterIds = ModuleSettingsRuntime.current.disabledAdapterIds,
+        )
+        if (earbudAdapter == null) {
+            EarbudSessionService.observeDevice(device, identity)
+            ModuleLog.debug(
+                "Bluetooth",
+                "A2DP state=$state no eligible adapter; observed address=" +
+                    maskBluetoothAddress(address),
+            )
+            return
+        }
         ModuleLog.debug(
             "Bluetooth",
             "A2DP state=$state adapter=${earbudAdapter.id} " +

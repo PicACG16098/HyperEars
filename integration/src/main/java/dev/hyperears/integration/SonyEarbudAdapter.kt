@@ -7,6 +7,7 @@ import java.util.ArrayDeque
 open class SonyEarbudAdapter : StandardEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "Sony headset"
+    override val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
     override val controlApps: List<ControlAppSpec> = listOf(ControlAppCatalog.sonySoundConnect)
 
     override fun matches(identity: EarbudIdentity): Boolean =

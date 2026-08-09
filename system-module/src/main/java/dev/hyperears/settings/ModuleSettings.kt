@@ -10,6 +10,7 @@ data class ModuleSettings(
     val yieldToVendorControlApp: Boolean = false,
     val modulePaused: Boolean = false,
     val diagnosticLogging: Boolean = false,
+    val disabledAdapterIds: Set<String> = emptySet(),
 )
 
 /**
@@ -26,6 +27,7 @@ object ModuleSettingsStore {
     private const val YIELD_TO_VENDOR_CONTROL_APP = "yield_to_vendor_control_app"
     private const val MODULE_PAUSED = "module_paused"
     private const val DIAGNOSTIC_LOGGING = "diagnostic_logging"
+    private const val DISABLED_ADAPTER_IDS = "disabled_adapter_ids"
     private const val REMOTE_MIGRATION_COMPLETE = "remote_migration_complete"
     private const val REMOTE_WRITE_PENDING = "remote_write_pending"
 
@@ -34,6 +36,10 @@ object ModuleSettingsStore {
         yieldToVendorControlApp = preferences.getBoolean(YIELD_TO_VENDOR_CONTROL_APP, false),
         modulePaused = preferences.getBoolean(MODULE_PAUSED, false),
         diagnosticLogging = preferences.getBoolean(DIAGNOSTIC_LOGGING, false),
+        disabledAdapterIds = preferences
+            .getStringSet(DISABLED_ADAPTER_IDS, emptySet())
+            .orEmpty()
+            .toSet(),
     )
 
     fun write(preferences: SharedPreferences, settings: ModuleSettings): Boolean =
@@ -42,6 +48,7 @@ object ModuleSettingsStore {
             .putBoolean(YIELD_TO_VENDOR_CONTROL_APP, settings.yieldToVendorControlApp)
             .putBoolean(MODULE_PAUSED, settings.modulePaused)
             .putBoolean(DIAGNOSTIC_LOGGING, settings.diagnosticLogging)
+            .putStringSet(DISABLED_ADAPTER_IDS, settings.disabledAdapterIds)
             .commit()
 
     fun readLocal(context: Context): ModuleSettings = read(localPreferences(context))
@@ -89,5 +96,6 @@ object ModuleSettingsStore {
         YIELD_TO_VENDOR_CONTROL_APP,
         MODULE_PAUSED,
         DIAGNOSTIC_LOGGING,
+        DISABLED_ADAPTER_IDS,
     )
 }

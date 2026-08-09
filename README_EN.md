@@ -41,7 +41,9 @@ StarRing, ROSESELSA, NiceHCK, MOONDROP and Sony devices.
 ### Settings and diagnostics
 
 - Provides settings for vendor-controller navigation, runtime yielding and pausing the integration.
-- Provides log export and root-only shortcuts for restarting MiLink, restarting Bluetooth and stopping supported vendor controllers.
+- Provides a Debug > Adapters page that groups every model, family fallback and standard fallback Adapter by brand, with a group switch that disables or restores all Adapters in that brand.
+- Provides a Debug page for detailed logging and diagnostic export.
+- Provides root-only shortcuts for restarting MiLink, restarting Bluetooth and stopping supported vendor controllers.
 - No module diagnostics are produced while detailed logging is disabled. When enabled, injected-process logs are written through the LSPosed daemon; settings changes and shortcut results are kept in the app's bounded local log and merged during export.
 
 ## Runtime boundary

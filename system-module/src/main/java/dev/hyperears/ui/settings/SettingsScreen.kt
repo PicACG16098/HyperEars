@@ -1,12 +1,18 @@
 package dev.hyperears.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -15,27 +21,42 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.hyperears.integration.EarbudAdapterDescriptor
+import dev.hyperears.integration.EarbudAdapterGroup
+import dev.hyperears.integration.EarbudAdapterKind
 import dev.hyperears.root.RootAction
 import dev.hyperears.root.RootActionState
 import dev.hyperears.settings.ModuleSettings
 import dev.hyperears.ui.components.HyperEarsPage
 import dev.hyperears.ui.components.rememberSwitchHaptics
+
+enum class SettingsDestination {
+    ADAPTERS,
+    DEBUG,
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,7 +66,7 @@ fun SettingsScreen(
     rootActionState: RootActionState,
     onSettingsChanged: (ModuleSettings) -> Unit,
     onRunRootAction: (RootAction) -> Unit,
-    onExportLogs: () -> Unit,
+    onOpenDebug: () -> Unit,
 ) {
     HyperEarsPage(title = "设置") { pagePadding, scrollBehavior ->
         var pendingRootAction by remember { mutableStateOf<RootAction?>(null) }
@@ -94,13 +115,10 @@ fun SettingsScreen(
                         },
                     )
                     PreferenceDivider()
-                    TogglePreference(
-                        title = "详细日志",
-                        detail = "记录注入进程与应用操作；LSPosed 需关闭“禁用详细日志”并开启“输出日志到守护进程”。",
-                        checked = settings.diagnosticLogging,
-                        onCheckedChange = {
-                            onSettingsChanged(settings.copy(diagnosticLogging = it))
-                        },
+                    NavigationPreference(
+                        title = "调试",
+                        detail = "适配器、详细日志与日志导出。",
+                        onClick = onOpenDebug,
                     )
                 }
             }
@@ -119,15 +137,6 @@ fun SettingsScreen(
                         )
                     }
                     SettingsGroupCard {
-                        ActionPreference(
-                            title = "导出日志",
-                            detail = "导出 LSPosed 模块日志与应用操作日志。",
-                            actionLabel = "导出",
-                            available = rootAvailable == true,
-                            running = false,
-                            onClick = onExportLogs,
-                        )
-                        PreferenceDivider()
                         RootAction.entries.forEachIndexed { index, action ->
                             ActionPreference(
                                 title = action.title,
@@ -170,6 +179,357 @@ fun SettingsScreen(
             )
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DebugSettingsScreen(
+    settings: ModuleSettings,
+    rootAvailable: Boolean?,
+    onSettingsChanged: (ModuleSettings) -> Unit,
+    onExportLogs: () -> Unit,
+    onOpenAdapters: () -> Unit,
+    onNavigateBack: () -> Unit,
+) {
+    HyperEarsPage(title = "调试", onNavigateBack = onNavigateBack) { pagePadding, scrollBehavior ->
+        val listState = rememberLazyListState()
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(pagePadding)
+                .navigationBarsPadding()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 12.dp,
+                bottom = 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item(key = "debug-preferences") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (rootAvailable != true) {
+                        Text(
+                            text = if (rootAvailable == false) {
+                                "导出 LSPosed 日志需要 Root 权限"
+                            } else {
+                                "正在检查 Root 权限"
+                            },
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    SettingsGroupCard {
+                        NavigationPreference(
+                            title = "适配器",
+                            detail = "按品牌管理具体型号与家族回退。",
+                            onClick = onOpenAdapters,
+                        )
+                        PreferenceDivider()
+                        TogglePreference(
+                            title = "详细日志",
+                            detail = "记录模块生命周期、协议与退避状态；需在 LSPosed 中允许详细日志并输出到守护进程。",
+                            checked = settings.diagnosticLogging,
+                            onCheckedChange = {
+                                onSettingsChanged(settings.copy(diagnosticLogging = it))
+                            },
+                        )
+                        PreferenceDivider()
+                        ActionPreference(
+                            title = "导出日志",
+                            detail = "导出 LSPosed 模块日志与应用操作日志。",
+                            actionLabel = "导出",
+                            available = rootAvailable == true,
+                            running = false,
+                            onClick = onExportLogs,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AdapterSettingsScreen(
+    groups: List<EarbudAdapterGroup>,
+    settings: ModuleSettings,
+    onSettingsChanged: (ModuleSettings) -> Unit,
+    onNavigateBack: () -> Unit,
+) {
+    HyperEarsPage(title = "适配器", onNavigateBack = onNavigateBack) { pagePadding, scrollBehavior ->
+        val listState = rememberLazyListState()
+        var expandedGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+        val rows = remember(groups, expandedGroupId) {
+            buildAdapterRows(groups, expandedGroupId)
+        }
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(pagePadding)
+                .navigationBarsPadding()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 12.dp,
+                bottom = 16.dp,
+            ),
+        ) {
+            items(
+                items = rows,
+                key = AdapterListRow::key,
+                contentType = AdapterListRow::contentType,
+            ) { row ->
+                when (row) {
+                    is AdapterListRow.GroupHeader -> {
+                        val group = row.group
+                        val enabledCount = group.adapters.count { adapter ->
+                            adapter.id !in settings.disabledAdapterIds
+                        }
+                        AdapterListSurface(
+                            position = if (row.expanded) {
+                                AdapterListPosition.TOP
+                            } else {
+                                AdapterListPosition.SINGLE
+                            },
+                        ) {
+                            AdapterGroupHeader(
+                                title = group.displayName,
+                                enabledCount = enabledCount,
+                                totalCount = group.adapters.size,
+                                expanded = row.expanded,
+                                enabled = enabledCount > 0,
+                                onEnabledChange = { enabled ->
+                                    val disabled = if (enabled) {
+                                        settings.disabledAdapterIds - row.adapterIds
+                                    } else {
+                                        settings.disabledAdapterIds + row.adapterIds
+                                    }
+                                    onSettingsChanged(
+                                        settings.copy(disabledAdapterIds = disabled),
+                                    )
+                                },
+                                onClick = {
+                                    expandedGroupId = group.id.takeUnless { row.expanded }
+                                },
+                            )
+                        }
+                    }
+
+                    is AdapterListRow.SectionHeader -> {
+                        AdapterListSurface(position = AdapterListPosition.MIDDLE) {
+                            PreferenceDivider()
+                            Text(
+                                text = row.kind.sectionTitle,
+                                modifier = Modifier.padding(
+                                    start = 16.dp,
+                                    end = 16.dp,
+                                    top = 12.dp,
+                                    bottom = 4.dp,
+                                ),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+
+                    is AdapterListRow.AdapterToggle -> {
+                        AdapterListSurface(
+                            position = if (row.endsGroup) {
+                                AdapterListPosition.BOTTOM
+                            } else {
+                                AdapterListPosition.MIDDLE
+                            },
+                        ) {
+                            if (row.showTopDivider) PreferenceDivider()
+                            TogglePreference(
+                                title = row.adapter.displayName,
+                                detail = row.adapter.id,
+                                checked = row.adapter.id !in settings.disabledAdapterIds,
+                                onCheckedChange = { enabled ->
+                                    val disabled = if (enabled) {
+                                        settings.disabledAdapterIds - row.adapter.id
+                                    } else {
+                                        settings.disabledAdapterIds + row.adapter.id
+                                    }
+                                    onSettingsChanged(
+                                        settings.copy(disabledAdapterIds = disabled),
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private sealed interface AdapterListRow {
+    val key: String
+    val contentType: String
+
+    data class GroupHeader(
+        val group: EarbudAdapterGroup,
+        val expanded: Boolean,
+        val adapterIds: Set<String>,
+    ) : AdapterListRow {
+        override val key: String = "group:${group.id}"
+        override val contentType: String = "group"
+    }
+
+    data class SectionHeader(
+        val groupId: String,
+        val kind: EarbudAdapterKind,
+    ) : AdapterListRow {
+        override val key: String = "section:$groupId:${kind.name}"
+        override val contentType: String = "section"
+    }
+
+    data class AdapterToggle(
+        val adapter: EarbudAdapterDescriptor,
+        val showTopDivider: Boolean,
+        val endsGroup: Boolean,
+    ) : AdapterListRow {
+        override val key: String = "adapter:${adapter.id}"
+        override val contentType: String = "adapter"
+    }
+}
+
+private fun buildAdapterRows(
+    groups: List<EarbudAdapterGroup>,
+    expandedGroupId: String?,
+): List<AdapterListRow> = buildList {
+    groups.forEach { group ->
+        val expanded = group.id == expandedGroupId
+        add(
+            AdapterListRow.GroupHeader(
+                group = group,
+                expanded = expanded,
+                adapterIds = group.adapters.mapTo(linkedSetOf(), EarbudAdapterDescriptor::id),
+            ),
+        )
+        if (!expanded) return@forEach
+
+        val sections = EarbudAdapterKind.entries.mapNotNull { kind ->
+            group.adapters.filter { it.kind == kind }
+                .takeIf(List<EarbudAdapterDescriptor>::isNotEmpty)
+                ?.let { kind to it }
+        }
+        sections.forEachIndexed { sectionIndex, (kind, adapters) ->
+            add(AdapterListRow.SectionHeader(group.id, kind))
+            adapters.forEachIndexed { adapterIndex, adapter ->
+                add(
+                    AdapterListRow.AdapterToggle(
+                        adapter = adapter,
+                        showTopDivider = adapterIndex > 0,
+                        endsGroup = sectionIndex == sections.lastIndex &&
+                            adapterIndex == adapters.lastIndex,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+private enum class AdapterListPosition {
+    SINGLE,
+    TOP,
+    MIDDLE,
+    BOTTOM,
+}
+
+@Composable
+private fun AdapterListSurface(
+    position: AdapterListPosition,
+    content: @Composable () -> Unit,
+) {
+    val shape = when (position) {
+        AdapterListPosition.SINGLE -> RoundedCornerShape(24.dp)
+        AdapterListPosition.TOP -> RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+        )
+
+        AdapterListPosition.MIDDLE -> RoundedCornerShape(0.dp)
+        AdapterListPosition.BOTTOM -> RoundedCornerShape(
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp,
+        )
+    }
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = if (position.endsGroup) 12.dp else 0.dp),
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        content = content,
+    )
+}
+
+private val AdapterListPosition.endsGroup: Boolean
+    get() = this == AdapterListPosition.SINGLE || this == AdapterListPosition.BOTTOM
+
+private val EarbudAdapterKind.sectionTitle: String
+    get() = when (this) {
+        EarbudAdapterKind.MODEL -> "具体型号"
+        EarbudAdapterKind.FAMILY -> "家族回退"
+        EarbudAdapterKind.STANDARD -> "标准回退"
+    }
+
+@Composable
+private fun AdapterGroupHeader(
+    title: String,
+    enabledCount: Int,
+    totalCount: Int,
+    expanded: Boolean,
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    onClick: () -> Unit,
+) {
+    val haptics = rememberSwitchHaptics()
+    ListItem(
+        headlineContent = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+        supportingContent = {
+            Text(
+                text = "$enabledCount / $totalCount 已启用",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = { updated ->
+                        haptics.perform(updated)
+                        onEnabledChange(updated)
+                    },
+                )
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = if (expanded) "收起" else "展开",
+                    modifier = Modifier.rotate(if (expanded) 90f else 0f),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.clickable(onClick = onClick),
+    )
 }
 
 @Composable
@@ -230,6 +590,39 @@ private fun TogglePreference(
         colors = ListItemDefaults.colors(
             containerColor = Color.Transparent,
         ),
+    )
+}
+
+@Composable
+private fun NavigationPreference(
+    title: String,
+    detail: String,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+            )
+        },
+        supportingContent = {
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        trailingContent = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.clickable(onClick = onClick),
     )
 }
 

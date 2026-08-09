@@ -52,6 +52,14 @@ system-module -> integration -> protocol
 
 Registry 存放工厂而不是 Adapter 单例。同一地址的新会话、不同地址的并行会话都会获得
 独立 Adapter 和独立 ProtocolSession，不共享解码缓冲、序列号、ACK 队列或运行状态。
+Registry 同时提供按品牌组织的只读 Adapter 目录。目录由同一组注册工厂生成，包含参与首次
+匹配的型号/家族 Adapter，以及只能由协议身份升级得到的具体型号 Adapter；设置 UI 不读取
+型号类或匹配条件。Bluetooth 进程解析设备时按稳定 Adapter ID 跳过已禁用项，并继续按原有
+顺序寻找后续 Adapter，因此关闭具体型号后可以落到家族，关闭家族后可以落到标准 Adapter。
+设置目录同时提供品牌总开关；它只批量更新该品牌下的稳定 Adapter ID，不引入第二套品牌判型。
+会话管理器保留当前物理连接的原始 `EarbudIdentity`，设置变化时使用同一 Registry 重新解析；
+只有 Adapter 结果发生变化才关闭旧会话并建立替代会话。家族握手阶段产生的协议确认替换也
+继承同一禁用集合，不能重新启用已被用户关闭的具体型号。
 
 Adapter 继承链只表达可复用行为：
 
@@ -241,8 +249,10 @@ MiLink 子进程在收到系统认领前可以消费相同的活动候选快照�
 握手或噪声能力响应不会提前停止系统电量更新。有效噪声状态/协议能力响应才确认噪声控制。
 失败或超时不会把
 静态猜测能力留在卡片上。家族 Adapter 还可通过 `onInitialProtocolUnavailable()` 返回保守
-替代 Adapter；会话层只执行统一决策，不包含厂商品牌判断。ROSESELSA 产品线候选使用该
-机制在首次私有协议始终未确认时退回品牌标准能力。
+替代 Adapter；声明的目标已被用户关闭时，统一门禁只允许直接回退到启用中的
+`StandardEarbudAdapter`，标准回退也关闭时则保持休眠，不激活其他替代项。会话层只执行统一
+决策，不包含厂商品牌判断。ROSESELSA 产品线候选使用该机制在首次私有协议始终未确认时退回
+品牌标准能力。
 
 Bose 是型号细化示例：BMAP 产品 ID 产生 `ProductIdentified(productId)`，Bose Adapter
 把产品 ID 映射为具体 Adapter，并将已有 ProtocolSession 和运行状态转移过去。未知产品

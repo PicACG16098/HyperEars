@@ -38,6 +38,57 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
+    fun registryExposesOneStableGroupForEveryAdapter() {
+        val adapters = EarbudAdapterRegistry.adapters
+        val groups = EarbudAdapterRegistry.groups
+        val descriptors = groups.flatMap(EarbudAdapterGroup::adapters)
+
+        assertEquals(groups.size, groups.map { it.id }.distinct().size)
+        assertEquals(adapters.map(EarbudAdapter::id).toSet(), descriptors.map { it.id }.toSet())
+        groups.filterNot { it.id == "standard" }.forEach { group ->
+            assertTrue(
+                "${group.id} must not expose vendor fallbacks as standard adapters",
+                group.adapters.none { it.kind == EarbudAdapterKind.STANDARD },
+            )
+        }
+        assertEquals(
+            listOf(StandardEarbudAdapter.ID),
+            groups.single { it.id == "standard" }.adapters.map { it.id },
+        )
+    }
+
+    @Test
+    fun disabledExactAdapterFallsThroughToItsFamilyAdapter() {
+        val adapter = EarbudAdapterRegistry.resolve(
+            identity = identity("vivo TWS Air3 Pro", standard = true),
+            disabledAdapterIds = setOf(VivoTwsAir3ProAdapter.ID),
+        )
+
+        assertEquals(VivoEarbudAdapter.ID, adapter?.id)
+    }
+
+    @Test
+    fun disablingExactAndFamilyAdaptersFallsThroughToStandard() {
+        val adapter = EarbudAdapterRegistry.resolve(
+            identity = identity("vivo TWS Air3 Pro", standard = true),
+            disabledAdapterIds = setOf(VivoTwsAir3ProAdapter.ID, VivoEarbudAdapter.ID),
+        )
+
+        assertEquals(StandardEarbudAdapter.ID, adapter?.id)
+    }
+
+    @Test
+    fun disablingTheStandardAdapterCanExcludeTheGenericFallback() {
+
+        assertNull(
+            EarbudAdapterRegistry.resolve(
+                identity = identity("Unknown headset", standard = true),
+                disabledAdapterIds = setOf(StandardEarbudAdapter.ID),
+            ),
+        )
+    }
+
+    @Test
     fun everyPrivateAdapterStartsWithTheSystemBatteryFallback() {
         EarbudAdapterRegistry.adapters
             .filter(EarbudAdapter::privateProtocolRequired)
@@ -280,6 +331,23 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
+    fun disabledBoseModelKeepsFamilyProbeInsteadOfApplyingTheConcreteReplacement() {
+        val family = BoseHeadphonesAdapter().apply {
+            configureDisabledAdapterIds(setOf(BoseQuietComfortHeadphonesAdapter.ID))
+        }
+
+        val identity = family.receive(
+            hex("00 03 03 03 40 75 02 02 02 03 04 50 FF FF 00"),
+        )
+        assertEquals(HandshakeResult.Ready, identity.handshake)
+        assertEquals(BoseHeadphonesAdapter.ID, family.id)
+
+        val evidence = family.receive(hex("1F 03 03 01 01"))
+        val replacement = evidence.handshake as HandshakeResult.Replace
+        assertTrue(replacement.adapter.id.startsWith("bose-discovered-headphones-"))
+    }
+
+    @Test
     fun unknownBoseIdentityKeepsFamilyUntilAReadOnlyDialectProbeSucceeds() {
         val family = BoseEarbudAdapter()
         val protocolSession = family.protocolSession
@@ -470,6 +538,34 @@ class EarbudAdapterHierarchyTest {
         assertFalse(fallback.snapshot().capabilities.noiseControl)
         assertEquals(BatterySource.SYSTEM_AGGREGATE, fallback.snapshot().batterySource)
         assertEquals(68, fallback.runtimeState().battery.overall.percent)
+    }
+
+    @Test
+    fun disabledDeclaredProtocolFallbackResolvesDirectlyToStandardAdapter() {
+        val family = RoseEarfreeProtocolFamilyAdapter().apply {
+            configureDisabledAdapterIds(setOf(RoseEarbudAdapter.ID))
+        }
+
+        val resolution = family.resolveInitialProtocolFailure()
+
+        assertTrue(resolution is InitialProtocolFailureResolution.FallbackTo)
+        val fallback = (resolution as InitialProtocolFailureResolution.FallbackTo).adapter
+        assertEquals(StandardEarbudAdapter.ID, fallback.id)
+        assertEquals(AdapterResolution.STANDARD, fallback.resolution)
+    }
+
+    @Test
+    fun disabledDeclaredAndStandardFallbacksKeepFailedAdapterDormant() {
+        val family = RoseEarfreeProtocolFamilyAdapter().apply {
+            configureDisabledAdapterIds(
+                setOf(RoseEarbudAdapter.ID, StandardEarbudAdapter.ID),
+            )
+        }
+
+        assertEquals(
+            InitialProtocolFailureResolution.KeepDormant,
+            family.resolveInitialProtocolFailure(),
+        )
     }
 
     @Test

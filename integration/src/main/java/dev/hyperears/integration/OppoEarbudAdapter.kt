@@ -13,6 +13,7 @@ import dev.hyperears.protocol.oppo.OppoWireCodec
 open class OppoEarbudAdapter : StandardEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "OPPO Enco headset"
+    override val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
     override val controlApps: List<ControlAppSpec> = listOf(
         ControlAppCatalog.heyMelody,
         ControlAppCatalog.oplusWirelessEarphones,
