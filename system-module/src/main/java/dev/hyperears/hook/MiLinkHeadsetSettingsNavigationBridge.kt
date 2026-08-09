@@ -10,7 +10,10 @@ import java.util.concurrent.CompletableFuture
  *
  * MiLink 17.2.4 exposes a stable controller name. The known 17.2.0 build keeps the same
  * operation behind an obfuscated controller, so that one entry is isolated here and enabled
- * only for its verified package version and method signature. Unknown builds are left untouched.
+ * only for its verified package version and method signature. MiLink 17.2.2 (170020200)
+ * uses `com.miui.circulate.api.protocol.headset.c0.j0` (single `CirculateServiceInfo`
+ * parameter, `CompletableFuture` return) under the same "HeadsetServiceController"
+ * log tag. Unknown builds are left untouched.
  */
 internal class MiLinkHeadsetSettingsNavigationBridge(
     private val contextProvider: () -> Context?,
@@ -39,6 +42,12 @@ internal class MiLinkHeadsetSettingsNavigationBridge(
                 methodName = LEGACY_METHOD,
                 serviceInfoClass = serviceInfoClass,
             )?.let { NavigationMethod(LEGACY_BRIDGE, it) }
+
+            packageVersion == VERSION_17_2_2_CODE -> findControllerMethod(
+                className = OBFUSCATED_17_2_2_CONTROLLER_CLASS,
+                methodName = OBFUSCATED_17_2_2_METHOD,
+                serviceInfoClass = serviceInfoClass,
+            )?.let { NavigationMethod(OBFUSCATED_17_2_2_BRIDGE, it) }
 
             else -> null
         }
@@ -106,7 +115,12 @@ internal class MiLinkHeadsetSettingsNavigationBridge(
         const val LEGACY_METHOD = "e0"
         const val LEGACY_BRIDGE = "legacy-b0.e0"
         const val STABLE_BRIDGE = "stable-controller"
+        const val OBFUSCATED_17_2_2_CONTROLLER_CLASS =
+            "com.miui.circulate.api.protocol.headset.c0"
+        const val OBFUSCATED_17_2_2_METHOD = "j0"
+        const val OBFUSCATED_17_2_2_BRIDGE = "17.2.2-c0.j0"
         const val LEGACY_VERSION_CODE = 170020001L
+        const val VERSION_17_2_2_CODE = 170020200L
         const val HEADSET_OPERATION_SUCCESS = 100
     }
 }
