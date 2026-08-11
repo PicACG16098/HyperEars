@@ -253,6 +253,20 @@ class HonorX5sProAdapterTest {
     }
 
     @Test
+    fun initialCommandsIncludeStateQuery() {
+        // The state query (`2B 2A 01 00`) must be sent at connect so a single-eardrum
+        // connection gets a state report immediately instead of waiting for the pushed report.
+        val commands = adapter.beginHandshake().commands
+        assertTrue(
+            commands.any { cmd ->
+                val hexText = cmd.joinToString("") { it.toUByte().toString(16).padStart(2, '0') }
+                hexText.startsWith("5a0005002b2a0100")
+            },
+        )
+        assertTrue(commands.contains(HonorX5sSppCodec.queryBattery))
+    }
+
+    @Test
     fun refreshEncodesBatteryQuery() {
         val result = adapter.executeControl(StandardControlRequest.Refresh)
         assertTrue(result.accepted)

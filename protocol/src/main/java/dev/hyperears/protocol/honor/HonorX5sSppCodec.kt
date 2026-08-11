@@ -51,6 +51,21 @@ object HonorX5sSppCodec {
     val queryBattery: ByteArray = hex("5A 00 09 00 01 08 01 00 02 00 03 00 FB B9")
 
     /**
+     * Captured vendor connect-init sequence (16:25 log, stable across captures). The vendor app
+     * sends these once after SPP establishes; the state query (`2B 2A 01 00`) is what makes the
+     * earphone reply with a state report immediately. Without it a single-eardrum connection
+     * may wait ~14s for the pushed report, leaving noise-mode capabilities unconfirmed.
+     */
+    val initSequence: List<ByteArray> = listOf(
+        hex("5A 00 23 00 01 07 01 00 02 00 03 00 04 00 05 00 06 00 07 00 08 00 09 00 0A 00 0B 00 0C 00 0F 00 11 00 19 00 22 00 A0 81"),
+        hex("5A 00 05 00 2B 68 01 00 31 B3"),
+        hex("5A 00 15 00 01 3A 01 10 02 0E 03 04 00 00 00 03 04 04 00 00 00 05 05 00 99 38"),
+        hex("5A 00 05 00 2B 2A 01 00 42 7E"),
+        hex("5A 00 06 00 01 02 01 01 2B 94 AB"),
+        hex("5A 00 0D 00 01 05 01 04 6A 75 96 62 02 02 08 00 1F 09"),
+    )
+
+    /**
      * Streaming frame splitter for the `5A 00` protocol.
      *
      * RFCOMM delivers a continuous byte stream: one read may carry a partial frame, several
