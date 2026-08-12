@@ -209,49 +209,51 @@ private fun MoreSettingsTargetPreference(
                     fontWeight = FontWeight.Medium,
                 )
             },
-            supportingContent = {
-                Text(
-                    text = selected.actionLabel,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
             trailingContent = {
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "选择打开方式",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Box {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = selected.actionLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "选择打开方式",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                    ) {
+                        MoreSettingsTarget.entries.forEach { target ->
+                            DropdownMenuItem(
+                                text = { Text(target.actionLabel) },
+                                onClick = {
+                                    expanded = false
+                                    if (target != selected) onSelected(target)
+                                },
+                                trailingIcon = if (target == selected) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "当前选项",
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                            )
+                        }
+                    }
+                }
             },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { expanded = true },
         )
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            MoreSettingsTarget.entries.forEach { target ->
-                DropdownMenuItem(
-                    text = { Text(target.actionLabel) },
-                    onClick = {
-                        expanded = false
-                        if (target != selected) onSelected(target)
-                    },
-                    trailingIcon = if (target == selected) {
-                        {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "当前选项",
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                )
-            }
-        }
     }
 }
 
