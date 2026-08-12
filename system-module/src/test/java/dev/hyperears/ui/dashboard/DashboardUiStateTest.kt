@@ -131,6 +131,10 @@ class DashboardUiStateTest {
             listOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
             control.supportedModes,
         )
+        assertEquals(
+            DeviceMetricKind.NOISE_MODE,
+            card.metrics.single { it.label == "模式" }.kind,
+        )
         assertEquals("token", card.sessionToken)
     }
 

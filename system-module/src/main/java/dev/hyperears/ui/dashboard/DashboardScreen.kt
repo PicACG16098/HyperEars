@@ -1,6 +1,7 @@
 package dev.hyperears.ui.dashboard
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,16 +20,23 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -312,13 +320,6 @@ private fun DeviceSessionCard(
 
             AdapterFacts(session)
 
-            session.noiseControl?.let { control ->
-                NoiseModeControl(
-                    control = control,
-                    onSetNoiseMode = onSetNoiseMode,
-                )
-            }
-
             Text(
                 text = "会话状态",
                 style = MaterialTheme.typography.labelLarge,
@@ -335,43 +336,11 @@ private fun DeviceSessionCard(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            MetricStrip(session.metrics)
-        }
-    }
-}
-
-@Composable
-private fun NoiseModeControl(
-    control: NoiseControlUiModel,
-    onSetNoiseMode: (NoiseMode) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "降噪模式",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            control.supportedModes.forEachIndexed { index, mode ->
-                SegmentedButton(
-                    selected = control.selectedMode == mode,
-                    onClick = {
-                        if (control.selectedMode != mode) onSetNoiseMode(mode)
-                    },
-                    enabled = control.enabled,
-                    shape = SegmentedButtonDefaults.itemShape(
-                        index = index,
-                        count = control.supportedModes.size,
-                    ),
-                    label = {
-                        Text(
-                            text = mode.displayName(),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                )
-            }
+            MetricStrip(
+                metrics = session.metrics,
+                noiseControl = session.noiseControl,
+                onSetNoiseMode = onSetNoiseMode,
+            )
         }
     }
 }
@@ -418,13 +387,94 @@ private fun SessionStatusList(
 }
 
 @Composable
-private fun MetricStrip(metrics: List<DeviceMetric>) {
+private fun MetricStrip(
+    metrics: List<DeviceMetric>,
+    noiseControl: NoiseControlUiModel?,
+    onSetNoiseMode: (NoiseMode) -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         metrics.forEach { metric ->
-            CompactMetric(metric.label, metric.value, Modifier.weight(1f))
+            if (metric.kind == DeviceMetricKind.NOISE_MODE && noiseControl != null) {
+                NoiseModeMetric(
+                    metric = metric,
+                    control = noiseControl,
+                    onSetNoiseMode = onSetNoiseMode,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                CompactMetric(metric.label, metric.value, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoiseModeMetric(
+    metric: DeviceMetric,
+    control: NoiseControlUiModel,
+    onSetNoiseMode: (NoiseMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val selectable = control.enabled && control.supportedModes.size > 1
+
+    Box(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = selectable) { expanded = true },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = metric.value,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+                if (selectable) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "切换模式",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                text = metric.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded && selectable,
+            onDismissRequest = { expanded = false },
+        ) {
+            control.supportedModes.forEach { mode ->
+                DropdownMenuItem(
+                    text = { Text(mode.displayName()) },
+                    onClick = {
+                        expanded = false
+                        if (mode != control.selectedMode) onSetNoiseMode(mode)
+                    },
+                    trailingIcon = if (mode == control.selectedMode) {
+                        {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "当前模式",
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
         }
     }
 }

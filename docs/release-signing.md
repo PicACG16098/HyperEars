@@ -30,5 +30,9 @@ apksigner verify --verbose --print-certs .\HyperEars-vX.Y.Z.apk
 Release 构建后用 Android `apksigner` 验证，再发布 APK 和 SHA-256。没有签名环境变量
 的普通本地/CI 构建只能得到未签名 APK，不能伪装成官方 Release。
 
+维护者也可以手动运行 `Signed build` 工作流。该流程使用相同证书完成测试、Lint、Release
+编译、签名验证和 SHA-256 生成，但只把带提交短哈希的 APK 上传到有保存期限的 Actions
+Artifact；它不创建版本标签，也不发布 GitHub Release。
+
 早期本地测试包使用开发证书，与上述公开证书不兼容；迁移方法见
 [安装指南](installation.md#5-从开发测试包迁移)。

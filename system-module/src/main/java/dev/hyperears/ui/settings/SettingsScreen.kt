@@ -2,6 +2,7 @@ package dev.hyperears.ui.settings
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -19,19 +20,22 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,7 +78,6 @@ fun SettingsScreen(
 ) {
     HyperEarsPage(title = "设置") { pagePadding, scrollBehavior ->
         var pendingRootAction by remember { mutableStateOf<RootAction?>(null) }
-        var selectingMoreSettingsTarget by rememberSaveable { mutableStateOf(false) }
         val listState = rememberLazyListState()
 
         LazyColumn(
@@ -102,10 +105,11 @@ fun SettingsScreen(
                         },
                     )
                     PreferenceDivider()
-                    NavigationPreference(
-                        title = "更多设置",
-                        detail = settings.moreSettingsTarget.preferenceSummary,
-                        onClick = { selectingMoreSettingsTarget = true },
+                    MoreSettingsTargetPreference(
+                        selected = settings.moreSettingsTarget,
+                        onSelected = { target ->
+                            onSettingsChanged(settings.copy(moreSettingsTarget = target))
+                        },
                     )
                     PreferenceDivider()
                     TogglePreference(
@@ -187,69 +191,76 @@ fun SettingsScreen(
                 },
             )
         }
-
-        if (selectingMoreSettingsTarget) {
-            MoreSettingsTargetDialog(
-                selected = settings.moreSettingsTarget,
-                onSelected = { target ->
-                    selectingMoreSettingsTarget = false
-                    onSettingsChanged(settings.copy(moreSettingsTarget = target))
-                },
-                onDismiss = { selectingMoreSettingsTarget = false },
-            )
-        }
     }
 }
 
 @Composable
-private fun MoreSettingsTargetDialog(
+private fun MoreSettingsTargetPreference(
     selected: MoreSettingsTarget,
     onSelected: (MoreSettingsTarget) -> Unit,
-    onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("更多设置") },
-        text = {
-            Column {
-                MoreSettingsTarget.entries.forEach { target ->
-                    ListItem(
-                        headlineContent = { Text(target.displayName) },
-                        supportingContent = { Text(target.description) },
-                        leadingContent = {
-                            RadioButton(
-                                selected = target == selected,
-                                onClick = null,
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            headlineContent = {
+                Text(
+                    text = "点击卡片“更多设置”",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                )
+            },
+            supportingContent = {
+                Text(
+                    text = selected.actionLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            trailingContent = {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "选择打开方式",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true },
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            MoreSettingsTarget.entries.forEach { target ->
+                DropdownMenuItem(
+                    text = { Text(target.actionLabel) },
+                    onClick = {
+                        expanded = false
+                        if (target != selected) onSelected(target)
+                    },
+                    trailingIcon = if (target == selected) {
+                        {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "当前选项",
                             )
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        modifier = Modifier.clickable { onSelected(target) },
-                    )
-                }
+                        }
+                    } else {
+                        null
+                    },
+                )
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
-        },
-    )
+        }
+    }
 }
 
-private val MoreSettingsTarget.displayName: String
+private val MoreSettingsTarget.actionLabel: String
     get() = when (this) {
-        MoreSettingsTarget.SYSTEM_SETTINGS -> "系统设置"
-        MoreSettingsTarget.VENDOR_APP -> "厂商 App"
-        MoreSettingsTarget.HYPEREARS -> "HyperEars"
+        MoreSettingsTarget.SYSTEM_SETTINGS -> "打开系统设置"
+        MoreSettingsTarget.VENDOR_APP -> "打开厂商 App"
+        MoreSettingsTarget.HYPEREARS -> "打开 HyperEars"
     }
-
-private val MoreSettingsTarget.description: String
-    get() = when (this) {
-        MoreSettingsTarget.SYSTEM_SETTINGS -> "打开真实蓝牙设备详情。"
-        MoreSettingsTarget.VENDOR_APP -> "打开对应厂商控制 App；不可用时打开系统设置。"
-        MoreSettingsTarget.HYPEREARS -> "打开 HyperEars 主页。"
-    }
-
-private val MoreSettingsTarget.preferenceSummary: String
-    get() = "$displayName · $description"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

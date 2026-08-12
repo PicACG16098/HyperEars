@@ -52,7 +52,13 @@ enum class DeviceLinkStatus {
 data class DeviceMetric(
     val label: String,
     val value: String,
+    val kind: DeviceMetricKind = DeviceMetricKind.READ_ONLY,
 )
+
+enum class DeviceMetricKind {
+    READ_ONLY,
+    NOISE_MODE,
+}
 
 /**
  * The UI consumes only the immutable runtime adapter snapshot.
@@ -182,6 +188,7 @@ object DeviceSessionUiProjector {
                 } else {
                     session.state.noiseMode.displayNameOrUnknown()
                 },
+                kind = DeviceMetricKind.NOISE_MODE,
             ),
         )
     }
