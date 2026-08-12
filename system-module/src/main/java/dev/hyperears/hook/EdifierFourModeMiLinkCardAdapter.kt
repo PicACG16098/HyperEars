@@ -1,6 +1,8 @@
 package dev.hyperears.hook
 
+import android.graphics.drawable.Drawable
 import android.view.View
+import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -11,18 +13,17 @@ import dev.hyperears.integration.StandardControlRequest
 import java.lang.ref.WeakReference
 
 /**
- * Presents a confirmed four-mode Edifier dialect in MiLink's ANC card.
+ * Presents every protocol-confirmed four-mode Edifier dialect through MiLink's native ANC row.
  *
- * The stock three-item row (ANC, transparency, off) is preserved. A fourth wind-noise item is
- * added using MiLink's own [HOST_ANC_ITEM_CLASS] so the host retains layout, typography, icon
- * sizing and selected-state animation. Vendor-specific ANC depths share MiLink's ANC item because
- * MiLink has no native slot for each depth.
+ * MiLink transports WIND through its ANC branch, so leaving the visible stock ANC item attached
+ * would select ANC and WIND at the same time. Following the native-slot pattern used by the other
+ * model presentations, this adapter replaces only that conflicting visible slot with an instance
+ * of MiLink's stable native item class and appends one native WIND item. Transparency and Off stay
+ * entirely native. One binding renders all four selections from [EarbudState]; it performs no
+ * polling or Bluetooth work.
  */
 internal object EdifierFourModeMiLinkCardAdapter : MiLinkCardAdapter {
     override val presentationId = EdifierMiLinkPresentationIds.FOUR_MODE
-
-    /** WIND is its own mode, not projected onto any native slot. */
-    override fun projectNativeNoiseMode(mode: NoiseMode?): NoiseMode? = mode
 
     override fun bind(
         root: View,
@@ -31,88 +32,74 @@ internal object EdifierFourModeMiLinkCardAdapter : MiLinkCardAdapter {
     ): MiLinkCardBinding? {
         val ancCard = root.findMiLinkView(ANC_CARD_ID) as? LinearLayout ?: return null
         val transparency = root.findMiLinkView(ANC_TRANSPARENCY_ID) ?: return null
-        val noiseCancellation = root.findMiLinkView(ANC_NOISE_CANCELLATION_ID) ?: return null
+        val originalAnc = root.findMiLinkView(ANC_NOISE_CANCELLATION_ID) ?: return null
         val off = root.findMiLinkView(ANC_OFF_ID) ?: return null
-        if (
-            transparency.parent !== ancCard ||
-            noiseCancellation.parent !== ancCard ||
-            off.parent !== ancCard
-        ) {
-            return null
-        }
+        if (listOf(transparency, originalAnc, off).any { it.parent !== ancCard }) return null
 
-        val wind = createNativeMiLinkAncItem(
-            context = root.context,
-            hostClassLoader = environment.hostClassLoader,
-            layoutTemplate = noiseCancellation,
+        val originalAncIndex = ancCard.indexOfChild(originalAnc).takeIf { it >= 0 } ?: return null
+        val visibleAnc = createNativeItem(
+            root = root,
+            environment = environment,
+            template = originalAnc,
+            id = originalAnc.id,
         ) ?: return null
-        val windTitle = wind.findMiLinkView(ANC_TITLE_ID) as? TextView ?: return null
-        val windIcon = wind.findMiLinkView(ANC_ICON_ID) as? ImageView ?: return null
-        val noiseIcon =
-            noiseCancellation.findMiLinkView(ANC_ICON_ID) as? ImageView ?: return null
+        val wind = createNativeItem(
+            root = root,
+            environment = environment,
+            template = originalAnc,
+            id = View.generateViewId(),
+            titleOverride = WIND_LABEL,
+        ) ?: return null
 
-        windTitle.text = WIND_LABEL
-        windIcon.setImageDrawable(
-            noiseIcon.drawable?.constantState
-                ?.newDrawable(root.resources)
-                ?.mutate()
-                ?: noiseIcon.drawable,
-        )
-        wind.contentDescription = WIND_LABEL
-        wind.visibility = View.VISIBLE
-        wind.isSaveEnabled = false
-        wind.isClickable = true
-        wind.isFocusable = true
+        ancCard.removeViewAt(originalAncIndex)
+        ancCard.addView(visibleAnc, originalAncIndex)
         ancCard.addView(wind)
 
         val binding = Binding(
             parent = ancCard,
+            originalAnc = originalAnc,
+            originalAncIndex = originalAncIndex,
             transparency = transparency,
-            noiseCancellation = noiseCancellation,
+            visibleAnc = visibleAnc,
             off = off,
             wind = wind,
             address = address,
             environment = environment,
         )
-        wind.setOnClickListener { binding.onWindClick() }
-        ModuleLog.debug("MiLinkUi", "bound Edifier four-mode presentation")
+        visibleAnc.setOnClickListener { binding.onOwnedModeClick(NoiseMode.ANC) }
+        wind.setOnClickListener { binding.onOwnedModeClick(NoiseMode.WIND) }
+        ModuleLog.debug("MiLinkUi", "bound Edifier native four-mode presentation")
         return binding
     }
 
     private class Binding(
         parent: LinearLayout,
+        originalAnc: View,
+        private val originalAncIndex: Int,
         transparency: View,
-        noiseCancellation: View,
+        visibleAnc: View,
         off: View,
         wind: View,
         private val address: String,
         private val environment: MiLinkCardEnvironment,
     ) : MiLinkCardBinding {
         private val parent = WeakReference(parent)
+        private val originalAnc = WeakReference(originalAnc)
         private val transparency = WeakReference(transparency)
-        private val noiseCancellation = WeakReference(noiseCancellation)
+        private val visibleAnc = WeakReference(visibleAnc)
         private val off = WeakReference(off)
         private val wind = WeakReference(wind)
 
         override fun render(state: EarbudState) {
-            val mode = state.noiseMode
-            val projected = projectNativeNoiseMode(mode)
-            transparency.get()?.isSelected =
-                isModeSelected(NoiseMode.TRANSPARENCY, projected)
-            noiseCancellation.get()?.isSelected =
-                isModeSelected(NoiseMode.ANC, projected)
-            off.get()?.isSelected =
-                isModeSelected(NoiseMode.OFF, projected)
-            wind.get()?.apply {
-                isSelected = isModeSelected(NoiseMode.WIND, mode)
-                isEnabled = state.sessionActive && state.connected
-                alpha = if (isEnabled) ENABLED_ALPHA else DISABLED_ALPHA
-            }
+            transparency.get()?.setSelectedTree(state.noiseMode == NoiseMode.TRANSPARENCY)
+            visibleAnc.get()?.applyOwnedState(state, NoiseMode.ANC)
+            off.get()?.setSelectedTree(state.noiseMode == NoiseMode.OFF)
+            wind.get()?.applyOwnedState(state, NoiseMode.WIND)
         }
 
-        fun onWindClick() {
+        fun onOwnedModeClick(requestedMode: NoiseMode) {
             val current = environment.stateProvider(address)
-            val target = EdifierFourModeControlPolicy.request(current) ?: return
+            val target = EdifierFourModeControlPolicy.request(current, requestedMode) ?: return
             environment.controlSender(
                 address,
                 StandardControlRequest.SetNoiseMode(target),
@@ -121,16 +108,60 @@ internal object EdifierFourModeMiLinkCardAdapter : MiLinkCardAdapter {
 
         override fun unbind() {
             val parent = parent.get() ?: return
-            val wind = wind.get() ?: return
-            wind.setOnClickListener(null)
-            if (wind.parent === parent) parent.removeView(wind)
+            val originalAnc = originalAnc.get() ?: return
+            listOf(visibleAnc.get(), wind.get()).filterNotNull().forEach { view ->
+                view.setOnClickListener(null)
+                if (view.parent === parent) parent.removeView(view)
+            }
+            if (originalAnc.parent == null) {
+                parent.addView(originalAnc, originalAncIndex.coerceAtMost(parent.childCount))
+            }
+        }
+
+        private fun View.applyOwnedState(state: EarbudState, mode: NoiseMode) {
+            setSelectedTree(state.noiseMode == mode)
+            val enabled = state.sessionActive && state.connected
+            isEnabled = enabled
+            isClickable = enabled
+            alpha = if (enabled) ENABLED_ALPHA else DISABLED_ALPHA
         }
     }
 
-    private fun isModeSelected(
-        itemMode: NoiseMode,
-        currentMode: NoiseMode?,
-    ): Boolean = itemMode == currentMode
+    private fun createNativeItem(
+        root: View,
+        environment: MiLinkCardEnvironment,
+        template: View,
+        id: Int,
+        titleOverride: String? = null,
+    ): View? {
+        val item = createNativeMiLinkAncItem(
+            context = root.context,
+            hostClassLoader = environment.hostClassLoader,
+            layoutTemplate = template,
+        ) ?: return null
+        val sourceTitle = template.findMiLinkView(ANC_TITLE_ID) as? TextView ?: return null
+        val sourceIcon = template.findMiLinkView(ANC_ICON_ID) as? ImageView ?: return null
+        val itemTitle = item.findMiLinkView(ANC_TITLE_ID) as? TextView ?: return null
+        val itemIcon = item.findMiLinkView(ANC_ICON_ID) as? ImageView ?: return null
+
+        item.id = id
+        itemTitle.text = titleOverride ?: sourceTitle.text
+        itemIcon.setImageDrawable(sourceIcon.drawable.copyFor(root))
+        item.contentDescription = titleOverride ?: template.contentDescription ?: sourceTitle.text
+        item.visibility = template.visibility
+        item.isSaveEnabled = false
+        item.isFocusable = true
+        return item
+    }
+
+    private fun Drawable?.copyFor(root: View): Drawable? =
+        this?.constantState?.newDrawable(root.resources)?.mutate() ?: this
+
+    private fun View.setSelectedTree(selected: Boolean) {
+        isSelected = selected
+        if (this !is ViewGroup) return
+        for (index in 0 until childCount) getChildAt(index).setSelectedTree(selected)
+    }
 
     private const val ANC_CARD_ID = "anc_card"
     private const val ANC_TRANSPARENCY_ID = "anc_clear"
@@ -143,10 +174,18 @@ internal object EdifierFourModeMiLinkCardAdapter : MiLinkCardAdapter {
     private const val DISABLED_ALPHA = 0.45f
 }
 
-/** Pure toggle policy for the fourth native Edifier mode item. */
+/** Pure request policy for owned four-mode items; the binding retains no independent state. */
 internal object EdifierFourModeControlPolicy {
-    fun request(state: EarbudState): NoiseMode? {
+    private val supportedModes = setOf(
+        NoiseMode.ANC,
+        NoiseMode.WIND,
+        NoiseMode.TRANSPARENCY,
+        NoiseMode.OFF,
+    )
+
+    fun request(state: EarbudState, requestedMode: NoiseMode): NoiseMode? {
         if (!state.sessionActive || !state.connected) return null
-        return if (state.noiseMode == NoiseMode.WIND) NoiseMode.ANC else NoiseMode.WIND
+        if (requestedMode !in supportedModes || requestedMode == state.noiseMode) return null
+        return requestedMode
     }
 }

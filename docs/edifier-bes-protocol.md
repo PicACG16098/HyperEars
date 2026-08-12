@@ -8,7 +8,7 @@
 > **Evidence levels:**
 >
 > - **W860NB PRO** — Full real-device verification (ANC, battery, capabilities, SPP framing)
-> - **花再 Evo Pro** — Real-device verification (BES framing, `ancIndex=0x1B`, aggregate battery
+> - **花再 Evo Pro** — Real-device verification (BES framing, `ancIndex=0x1B`, left/right battery
 >   via `0xF2`, and `1/2/3→ANC`, `4→WIND`, `5→TRANSPARENCY`, `6→OFF`)
 > - **Other Edifier models (W820NB, W830NB, STAX, etc.)** — Based on BES/Edifier family protocol
 >   speculation, **not yet verified on real hardware**. The same SPP UUID, channel 1, XOR 0xA5
@@ -117,7 +117,7 @@ ANC slot or battery query.
 |---|---|
 | ANC slot | `0x1B` |
 | Battery source | `0xF2` device-state response |
-| Battery topology exposed by HyperEars | One aggregate value mirrored to left/right; case unknown |
+| Battery topology exposed by HyperEars | Independent left/right values; case unknown |
 | Noise values | `1/2/3=ANC`, `4=WIND`, `5=TRANSPARENCY`, `6=OFF` |
 
 Captured ANC state:
@@ -131,11 +131,15 @@ Captured device state:
 
 ```text
 BB EC F2 00 06 A6 C1 C7 A5 A6 B4 CC
-                 └─ first payload byte A6 XOR A5 = 03 → aggregate battery 3%
+                 └─ payload XOR A5 = 03 64 62 00 03 11
+                                      └─ └─ left 100%, right 98%
 ```
 
-The remaining `0xF2` payload bytes are retained as unknown. HyperEars does not claim separate
-left, right or case telemetry from this frame. A wind-noise write uses value `4`, for example:
+The leading `03` is frame metadata, not a 3% battery value. This interpretation is corroborated by
+the same real-device session reporting full left/right batteries. HyperEars exposes bytes 1 and 2
+as left and right levels. The remaining `0xF2` fields stay unclaimed until charging and case
+semantics are independently captured; the case therefore remains unavailable. A wind-noise write
+uses value `4`, for example:
 
 ```text
 AA EC C1 00 02 BE A1 B8
@@ -175,3 +179,7 @@ AA EC C1 00 02 BE A1 B8
    response opens private battery; a valid ANC state response records that device's returned
    supported dialect and only then opens writable noise modes. A D8 function reply confirms the
    BES transport but does not by itself claim battery or ANC support.
+10. The stock MiLink transport has three ANC states. After four-mode evidence is confirmed,
+    HyperEars replaces only the conflicting visible ANC slot and appends WIND with MiLink's native
+    item class. One CardAdapter renders all four selections from authoritative Adapter state; the
+    protocol and card keep no duplicate UI state.

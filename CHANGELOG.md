@@ -4,13 +4,33 @@
 
 ## [Unreleased]
 
-- 主页不再为噪声模式额外增加分段按钮；原有“模式”指标现在可直接点击并从下拉列表切换
-  Adapter 已确认开放的模式。
-- 设置页将 MiLink 卡片入口明确标为“点击卡片‘更多设置’”，并以“打开系统设置”、
-  “打开厂商 App”或“打开 HyperEars”的单层下拉选项展示当前行为；当前动作显示在设置项
-  右侧，下拉菜单以该值为锚点。
-- 新增仅由维护者手动触发的 GitHub 签名构建：复用正式证书完成验证、签名和 SHA-256
-  生成，只上传短期 Actions Artifact，不创建标签或 GitHub Release。
+## [2.3.1] - 2026-08-13
+
+本版修正漫步者四态控制与花再 Evo Pro 电量解析，并整理主页模式切换和卡片“更多设置”
+选择方式。
+
+### 漫步者兼容
+
+- 漫步者协议确认后的四态卡片统一使用 MiLink 原生控件展示降噪、通透、关闭和抗风噪，
+  四项保持互斥；选择抗风噪时不再同时点亮降噪。
+- 修正花再 Evo Pro `0xF2` 复合状态帧解析：首字节是元数据，不再误报为 3%；按照实机回包
+  分别显示左右耳电量，不再把未确认字段当作充电盒电量或充电状态。
+- 四态卡片只在漫步者协议确认并开放对应模式后启用；未确认私有协议时仍保留标准流转、
+  音量和 Android 整机电量回退。
+
+### 应用交互
+
+- 主页不再额外增加一组模式按钮；原有“模式”指标在设备开放多个模式后可以直接点击，
+  通过下拉列表切换，当前模式由统一会话状态更新。
+- 设置页将卡片入口标为“点击卡片‘更多设置’”，当前动作显示在设置项右侧；点击后可直接
+  选择“打开系统设置”“打开厂商 App”或“打开 HyperEars”。
+
+### 构建、文档与验证
+
+- 新增维护者手动签名构建流程：使用正式发布证书完成测试、Lint、Release 构建、签名验证和
+  SHA-256 生成，只上传短期 Actions Artifact，不创建版本标签或 GitHub Release。
+- 同步中英文 README、兼容性矩阵、漫步者协议说明和应用内兼容性信息；增加花再 Evo Pro
+  复合电量帧、漫步者能力映射及四态卡片策略测试。
 
 ## [2.3.0] - 2026-08-12
 
@@ -484,7 +504,8 @@
 - Release 构建改用独立环境变量签名，不再使用 debug 证书。
 - 增加 CI、标签发布、APK 签名验证和 SHA-256 产物。
 
-[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/silverpoetry/HyperEars/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/silverpoetry/HyperEars/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/silverpoetry/HyperEars/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/silverpoetry/HyperEars/compare/v2.1.2...v2.2.0

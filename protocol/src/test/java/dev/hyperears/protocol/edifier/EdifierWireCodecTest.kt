@@ -20,7 +20,7 @@ class EdifierWireCodecTest {
         assertEquals(1, frames.size)
         val battery = EdifierWireCodec.parseBatteryState(frames[0])
         assertNotNull(battery)
-        assertEquals(60, battery!!.wholeUnit)
+        assertEquals(EdifierWireCodec.BatteryState.Aggregate(60), battery)
     }
 
     /** ANC response for NC off: BB EC CC 00 02 B5 A0 CA -> payload B5 A0 -> 10 05 */
@@ -51,15 +51,31 @@ class EdifierWireCodecTest {
         assertEquals(2, anc!!.level)
     }
 
-    /** Evo Pro device-state response: first decrypted byte A6^A5 = 3%. */
+    /** Evo Pro device state decrypts to 03 64 62 00 03 11; byte 0 is not a percentage. */
     @Test
-    fun `parse Evo Pro F2 response gives aggregate battery`() {
+    fun `parse Evo Pro F2 response gives independent ear batteries`() {
         val frame = EdifierWireCodec.Decoder().offer(
             hex("BB EC F2 00 06 A6 C1 C7 A5 A6 B4 CC"),
         ).single()
 
         assertEquals(EdifierWireCodec.CMD_DEVICE_STATE_QUERY, frame.commandIndex)
-        assertEquals(3, EdifierWireCodec.parseBatteryState(frame)?.wholeUnit)
+        assertEquals(
+            EdifierWireCodec.BatteryState.TwsComponents(
+                leftPercent = 100,
+                rightPercent = 98,
+            ),
+            EdifierWireCodec.parseBatteryState(frame),
+        )
+    }
+
+    @Test
+    fun `Evo Pro F2 metadata byte is never accepted as aggregate battery`() {
+        val frame = EdifierWireCodec.Decoder().offer(
+            hex("BB EC F2 00 06 A6 C1 C7 A5 A6 B4 CC"),
+        ).single()
+
+        val battery = EdifierWireCodec.parseBatteryState(frame)
+        assertEquals(100, (battery as EdifierWireCodec.BatteryState.TwsComponents).leftPercent)
     }
 
     /** Evo Pro ANC response: BE^A5=1B slot, A3^A5=06 (off). */

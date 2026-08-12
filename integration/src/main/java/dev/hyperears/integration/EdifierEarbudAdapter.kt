@@ -142,7 +142,7 @@ class EdifierW860NBProAdapter : EdifierHeadphonesAdapter() {
  * Concrete model adapter for Edifier 花再 Evo Pro.
  *
  * Contributor captures confirm the shared BES framing, an independent ANC slot (`0x1B`), the
- * six-value noise-mode dialect, and aggregate TWS battery telemetry delivered by command `0xF2`.
+ * six-value noise-mode dialect, and component TWS battery telemetry delivered by command `0xF2`.
  */
 class EdifierEvoProAdapter : EdifierEarbudAdapter() {
     override val id: String = ID
@@ -185,7 +185,7 @@ enum class EdifierBatteryProjection {
     /** Headphones and other single-pack devices expose one authoritative battery value. */
     OVERALL,
 
-    /** TWS devices expose one aggregate value, mirrored into MiLink's left/right slots. */
+    /** Legacy TWS aggregate values are mirrored only when the wire response is aggregate. */
     TWS_AGGREGATE,
 }
 
@@ -315,20 +315,15 @@ private class EdifierProtocolSession(
             EdifierWireCodec.parseBatteryState(frame)
                 ?.takeIf { acceptsBatteryCommand }
                 ?.let { battery ->
-                add(ProtocolEvent.CapabilitiesIdentified(battery = true))
-                val reading = BatteryReading(battery.wholeUnit, charging = false)
-                add(
-                    ProtocolEvent.FeatureStateChanged(
-                        BatteryFeatureState(when (configuration.batteryProjection) {
-                            EdifierBatteryProjection.OVERALL -> EarbudBattery(overall = reading)
-                            EdifierBatteryProjection.TWS_AGGREGATE ->
-                                EarbudBattery.fromAggregate(battery.wholeUnit)
-                        }),
-                    ),
-                )
-                publishHandshakeIfNeeded()
-                return@forEach
-            }
+                    add(ProtocolEvent.CapabilitiesIdentified(battery = true))
+                    add(
+                        ProtocolEvent.FeatureStateChanged(
+                            BatteryFeatureState(battery.toDomainBattery()),
+                        ),
+                    )
+                    publishHandshakeIfNeeded()
+                    return@forEach
+                }
 
             EdifierWireCodec.parseAncState(frame)?.let { anc ->
                 val dialect = configuration.dialect(anc.mode) ?: return@let
@@ -379,6 +374,20 @@ private class EdifierProtocolSession(
         if (handshakePublished) return
         handshakePublished = true
         add(ProtocolEvent.HandshakeAccepted)
+    }
+
+    private fun EdifierWireCodec.BatteryState.toDomainBattery(): EarbudBattery = when (this) {
+        is EdifierWireCodec.BatteryState.Aggregate -> when (configuration.batteryProjection) {
+            EdifierBatteryProjection.OVERALL -> EarbudBattery(
+                overall = BatteryReading(percent, charging = false),
+            )
+            EdifierBatteryProjection.TWS_AGGREGATE -> EarbudBattery.fromAggregate(percent)
+        }
+
+        is EdifierWireCodec.BatteryState.TwsComponents -> EarbudBattery(
+            left = BatteryReading(leftPercent, charging = false),
+            right = BatteryReading(rightPercent, charging = false),
+        )
     }
 
     private companion object {

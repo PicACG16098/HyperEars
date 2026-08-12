@@ -262,9 +262,9 @@ class EarbudAdapterHierarchyTest {
 
         adapter.receive(hex("BB EC F2 00 06 A6 C1 C7 A5 A6 B4 CC"))
         val battery = adapter.runtimeState().battery
-        assertEquals(3, battery.left.percent)
-        assertEquals(3, battery.right.percent)
-        assertEquals(3, battery.overall.percent)
+        assertEquals(100, battery.left.percent)
+        assertEquals(98, battery.right.percent)
+        assertEquals(null, battery.overall.percent)
         assertEquals(null, battery.case.percent)
 
         val state = adapter.receive(hex("BB EC CC 00 02 BE A3 D6"))

@@ -54,9 +54,23 @@ object EdifierWireCodec {
         val bytes: ByteArray,
     )
 
-    data class BatteryState(
-        val wholeUnit: Int?,
-    )
+    sealed interface BatteryState {
+        /** One authoritative pack level, used by the legacy `0xD0` response. */
+        data class Aggregate(
+            val percent: Int,
+        ) : BatteryState
+
+        /**
+         * Component levels carried by the TWS `0xF2` device-state response.
+         *
+         * The captured Evo Pro frame proves the left/right fields. The remaining bytes are kept
+         * out of the public model until their charging/case semantics are independently verified.
+         */
+        data class TwsComponents(
+            val leftPercent: Int,
+            val rightPercent: Int,
+        ) : BatteryState
+    }
 
     data class AncState(
         val mode: Int,
@@ -80,19 +94,33 @@ object EdifierWireCodec {
 
     // ── Parsing ──
 
-    /**
-     * Parse a battery response. Response payload is XOR-encrypted with [RESPONSE_XOR_KEY].
-     * Verified: `BB EC D0 00 01 99 11` -> payload[0]=0x99 -> 0x99^0xA5 = 0x3C = 60%.
-     */
+    /** Parses command-specific battery telemetry encrypted with [RESPONSE_XOR_KEY]. */
     fun parseBatteryState(frame: Frame): BatteryState? {
         if (!isProtocolResponse(frame)) return null
-        if (frame.commandIndex != CMD_BATTERY_QUERY && frame.commandIndex != CMD_DEVICE_STATE_QUERY) {
-            return null
+        return when (frame.commandIndex) {
+            // Verified: BB EC D0 00 01 99 11 -> 99 xor A5 = 3C = 60%.
+            CMD_BATTERY_QUERY -> frame.payload
+                .singleOrNull()
+                ?.decryptPercent()
+                ?.let { BatteryState.Aggregate(it) }
+
+            // Captured Evo Pro response:
+            // BB EC F2 00 06 A6 C1 C7 A5 A6 B4 CC
+            // decrypted payload: 03 64 62 00 03 11. Byte 0 is metadata; bytes 1/2 are the
+            // independently displayed left/right levels. No case field is claimed yet.
+            CMD_DEVICE_STATE_QUERY -> frame.payload
+                .takeIf { it.size >= TWS_COMPONENT_FIELD_COUNT }
+                ?.let { payload ->
+                    val left = payload[TWS_LEFT_BATTERY_OFFSET].decryptPercent() ?: return@let null
+                    val right = payload[TWS_RIGHT_BATTERY_OFFSET].decryptPercent() ?: return@let null
+                    BatteryState.TwsComponents(
+                        leftPercent = left,
+                        rightPercent = right,
+                    )
+                }
+
+            else -> null
         }
-        if (frame.payload.isEmpty()) return null
-        val whole = (frame.payload[0].unsigned() xor RESPONSE_XOR_KEY)
-        if (whole !in 0..100) return null
-        return BatteryState(wholeUnit = whole)
     }
 
     /**
@@ -246,4 +274,11 @@ object EdifierWireCodec {
         joinToString(" ") { "%02X".format(it.unsigned()) }
 
     private fun Byte.unsigned(): Int = toInt() and 0xFF
+
+    private fun Byte.decryptPercent(): Int? =
+        (unsigned() xor RESPONSE_XOR_KEY).takeIf { it in 0..100 }
+
+    private const val TWS_COMPONENT_FIELD_COUNT = 3
+    private const val TWS_LEFT_BATTERY_OFFSET = 1
+    private const val TWS_RIGHT_BATTERY_OFFSET = 2
 }

@@ -191,7 +191,7 @@ private val supportBrands = listOf(
             SupportEntry(
                 name = "花再 Evo Pro",
                 evidence = EvidenceLevel.VERIFIED,
-                battery = BatteryCapability.AGGREGATE,
+                battery = BatteryCapability.LEFT_RIGHT,
                 noiseControl = "降噪 / 关闭 / 通透 / 抗风噪",
             ),
             SupportEntry(

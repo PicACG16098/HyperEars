@@ -754,15 +754,32 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                 EdifierWireCodec.run { frame.bytes.hex() },
             )
             EdifierWireCodec.parseBatteryState(frame)?.let { battery ->
+                val observation: BatteryObservation
+                val summary: String
+                when (battery) {
+                    is EdifierWireCodec.BatteryState.Aggregate -> {
+                        observation = BatteryObservation(
+                            leftPercent = battery.percent,
+                            rightPercent = battery.percent,
+                            casePercent = null,
+                        )
+                        summary = "整机=${battery.percent}%"
+                    }
+
+                    is EdifierWireCodec.BatteryState.TwsComponents -> {
+                        observation = BatteryObservation(
+                            leftPercent = battery.leftPercent,
+                            rightPercent = battery.rightPercent,
+                            casePercent = null,
+                        )
+                        summary = "左=${battery.leftPercent}% 右=${battery.rightPercent}% 盒=—"
+                    }
+                }
                 mutableState.value = mutableState.value.copy(
-                    battery = BatteryObservation(
-                        leftPercent = battery.wholeUnit,
-                        rightPercent = battery.wholeUnit,
-                        casePercent = null,
-                    ),
+                    battery = observation,
                     batteryApiStatus = "可用 · Edifier 响应",
                 )
-                addLog("BAT", "电量=${battery.wholeUnit ?: "—"}%")
+                addLog("BAT", summary)
             }
             EdifierWireCodec.parseAncState(frame)?.let { anc ->
                 val modeLabel = when (anc.mode) {

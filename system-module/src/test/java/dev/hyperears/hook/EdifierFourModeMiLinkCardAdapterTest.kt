@@ -21,25 +21,42 @@ class EdifierFourModeMiLinkCardAdapterTest {
     )
 
     @Test
-    fun windItemTogglesBetweenWindAndDeepAnc() {
+    fun eachPeerModeRequestsExactlyItself() {
         assertEquals(
             NoiseMode.WIND,
-            EdifierFourModeControlPolicy.request(connected.withNoiseMode(NoiseMode.ANC)),
+            EdifierFourModeControlPolicy.request(
+                connected.withNoiseMode(NoiseMode.ANC),
+                NoiseMode.WIND,
+            ),
         )
         assertEquals(
             NoiseMode.ANC,
-            EdifierFourModeControlPolicy.request(connected.withNoiseMode(NoiseMode.WIND)),
+            EdifierFourModeControlPolicy.request(
+                connected.withNoiseMode(NoiseMode.WIND),
+                NoiseMode.ANC,
+            ),
         )
+        listOf(NoiseMode.ANC, NoiseMode.WIND, NoiseMode.TRANSPARENCY, NoiseMode.OFF)
+            .zipWithNext()
+            .forEach { (current, requested) ->
+            assertEquals(
+                requested,
+                EdifierFourModeControlPolicy.request(
+                    connected.withNoiseMode(current),
+                    requested,
+                ),
+            )
+        }
     }
 
     @Test
-    fun windItemCanBeEnteredFromEveryNativeMode() {
-        listOf(NoiseMode.TRANSPARENCY, NoiseMode.OFF, null).forEach { mode ->
-            assertEquals(
+    fun selectedModeDoesNotDispatchAgain() {
+        assertNull(
+            EdifierFourModeControlPolicy.request(
+                connected.withNoiseMode(NoiseMode.WIND),
                 NoiseMode.WIND,
-                EdifierFourModeControlPolicy.request(connected.withNoiseMode(mode)),
-            )
-        }
+            ),
+        )
     }
 
     @Test
@@ -47,11 +64,13 @@ class EdifierFourModeMiLinkCardAdapterTest {
         assertNull(
             EdifierFourModeControlPolicy.request(
                 connected.copy(lifecycle = DeviceLifecycle()).withNoiseMode(NoiseMode.ANC),
+                NoiseMode.WIND,
             ),
         )
         assertNull(
             EdifierFourModeControlPolicy.request(
                 connected.copy(lifecycle = DeviceLifecycle()).withNoiseMode(NoiseMode.WIND),
+                NoiseMode.ANC,
             ),
         )
     }
