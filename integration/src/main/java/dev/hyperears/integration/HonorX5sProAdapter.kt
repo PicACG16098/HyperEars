@@ -74,7 +74,8 @@ private class HonorX5sProProtocolSession : ProtocolSession {
 
     private val supportedDepths = HonorAncDepth.entries.toSet()
 
-    override fun initialReadCommands(): List<ByteArray> = listOf(HonorX5sSppCodec.queryBattery)
+    override fun initialReadCommands(): List<ByteArray> =
+        HonorX5sSppCodec.initSequence + HonorX5sSppCodec.queryBattery
 
     override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
         StandardControlRequest.Refresh -> listOf(HonorX5sSppCodec.queryBattery)
