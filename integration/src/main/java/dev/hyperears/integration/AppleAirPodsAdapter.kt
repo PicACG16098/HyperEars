@@ -41,14 +41,6 @@ class AppleAirPodsProAdapter : AppleAirPodsAdapter() {
     override val id: String = ID
     override val displayName: String = "Apple AirPods Pro"
     override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
-    override val capabilities: EarbudCapabilities = super.capabilities.copy(
-        noiseControl = true,
-    )
-    override val supportedNoiseModes: Set<NoiseMode> = setOf(
-        NoiseMode.ANC,
-        NoiseMode.OFF,
-        NoiseMode.TRANSPARENCY,
-    )
 
     override fun matches(identity: EarbudIdentity): Boolean =
         super.matches(identity) &&
@@ -63,14 +55,6 @@ class AppleAirPodsMaxAdapter : AppleAirPodsAdapter() {
     override val displayName: String = "Apple AirPods Max"
     override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
     override val formFactor: HeadsetFormFactor = HeadsetFormFactor.HEADPHONES
-    override val capabilities: EarbudCapabilities = super.capabilities.copy(
-        noiseControl = true,
-    )
-    override val supportedNoiseModes: Set<NoiseMode> = setOf(
-        NoiseMode.ANC,
-        NoiseMode.OFF,
-        NoiseMode.TRANSPARENCY,
-    )
 
     override fun matches(identity: EarbudIdentity): Boolean =
         super.matches(identity) &&
@@ -81,6 +65,7 @@ class AppleAirPodsMaxAdapter : AppleAirPodsAdapter() {
 
 private class AppleAapProtocolSession : ProtocolSession {
     private val decoder = AppleAapWireCodec.Decoder()
+    private var handshakePublished = false
 
     override fun initialReadCommands(): List<ByteArray> = listOf(
         AppleAapWireCodec.handshake,
@@ -98,23 +83,45 @@ private class AppleAapProtocolSession : ProtocolSession {
     }
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> =
-        decoder.offer(bytes).map { state ->
+        decoder.offer(bytes).flatMap { state ->
             when (state) {
-                is AppleAapWireCodec.State.Battery -> ProtocolEvent.FeatureStateChanged(
-                    BatteryFeatureState(EarbudBattery(
-                        left = state.left.toDomainReading(),
-                        right = state.right.toDomainReading(),
-                        case = state.case.toDomainReading(),
-                    )),
-                )
+                is AppleAapWireCodec.State.Battery -> buildList<ProtocolEvent> {
+                    add(ProtocolEvent.CapabilitiesIdentified(battery = true))
+                    add(
+                        ProtocolEvent.FeatureStateChanged(
+                            BatteryFeatureState(EarbudBattery(
+                                left = state.left.toDomainReading(),
+                                right = state.right.toDomainReading(),
+                                case = state.case.toDomainReading(),
+                            )),
+                        ),
+                    )
+                    publishHandshakeIfNeeded()
+                }
 
-                is AppleAapWireCodec.State.Noise -> ProtocolEvent.FeatureStateChanged(
-                    NoiseModeFeatureState(state.mode.toDomainMode()),
-                )
+                is AppleAapWireCodec.State.Noise -> buildList<ProtocolEvent> {
+                    add(
+                        ProtocolEvent.CapabilitiesIdentified(
+                            battery = false,
+                            noiseModes = THREE_STATE_NOISE_MODES,
+                        ),
+                    )
+                    add(ProtocolEvent.FeatureStateChanged(NoiseModeFeatureState(state.mode.toDomainMode())))
+                    publishHandshakeIfNeeded()
+                }
             }
         }
 
-    override fun reset() = decoder.reset()
+    override fun reset() {
+        decoder.reset()
+        handshakePublished = false
+    }
+
+    private fun MutableList<ProtocolEvent>.publishHandshakeIfNeeded() {
+        if (handshakePublished) return
+        handshakePublished = true
+        add(ProtocolEvent.HandshakeAccepted)
+    }
 
     private fun NoiseMode.toWireMode(): AppleAapWireCodec.NoiseMode = when (this) {
         NoiseMode.ANC -> AppleAapWireCodec.NoiseMode.ANC
@@ -134,4 +141,12 @@ private class AppleAapProtocolSession : ProtocolSession {
 
     private fun AppleAapWireCodec.Component.toDomainReading(): BatteryReading =
         BatteryReading(percent, charging)
+
+    private companion object {
+        val THREE_STATE_NOISE_MODES = setOf(
+            NoiseMode.ANC,
+            NoiseMode.OFF,
+            NoiseMode.TRANSPARENCY,
+        )
+    }
 }

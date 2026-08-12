@@ -47,19 +47,15 @@ open class VivoEarbudAdapter : StandardEarbudAdapter() {
     }
 }
 
-/** Exact vivo models whose GAIA write configuration is documented. */
-abstract class VivoVerifiedEarbudAdapter : VivoEarbudAdapter() {
-    final override val supportedNoiseModes: Set<NoiseMode> =
-        VivoEarbudAdapter.THREE_STATE_NOISE_MODES
-    final override val capabilities: EarbudCapabilities =
-        super.capabilities.copy(battery = true, noiseControl = true)
+/** Exact vivo models whose documented wire configuration may be probed safely. */
+abstract class VivoModelEarbudAdapter : VivoEarbudAdapter() {
     final override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
 }
 
 /**
  * Concrete adapter for the currently verified vivo TWS Air3 Pro.
  */
-class VivoTwsAir3ProAdapter : VivoVerifiedEarbudAdapter() {
+class VivoTwsAir3ProAdapter : VivoModelEarbudAdapter() {
 
     override val id: String = ID
     override val displayName: String = "vivo TWS Air3 Pro"
@@ -80,7 +76,7 @@ class VivoTwsAir3ProAdapter : VivoVerifiedEarbudAdapter() {
  * The v3 write shape and RFCOMM channel 13 are documented by ScrewVivoTWS. The service UUID is
  * still attempted first so normal SDP remains the preferred transport path.
  */
-class VivoTws3eAdapter : VivoVerifiedEarbudAdapter() {
+class VivoTws3eAdapter : VivoModelEarbudAdapter() {
 
     override val id: String = ID
     override val displayName: String = "vivo TWS 3e"
@@ -126,13 +122,7 @@ private class VivoProtocolSession(
             VivoTwsProtocol.parseHandshakeState(frame)?.let {
                 return@flatMap if (it.accepted) {
                     handshakePublished = true
-                    listOf(
-                        ProtocolEvent.CapabilitiesIdentified(
-                            battery = false,
-                            noiseModes = VivoEarbudAdapter.THREE_STATE_NOISE_MODES,
-                        ),
-                        ProtocolEvent.HandshakeAccepted,
-                    )
+                    listOf(ProtocolEvent.HandshakeAccepted)
                 } else {
                     listOf(ProtocolEvent.HandshakeRejected)
                 }

@@ -1,7 +1,6 @@
 package dev.hyperears.integration
 
 import dev.hyperears.protocol.starring.StarRingWireCodec
-import java.util.UUID
 
 /**
  * Shared StarRing family behavior.
@@ -14,15 +13,6 @@ open class StarRingEarbudAdapter : StandardEarbudAdapter() {
     override val displayName: String = "StarRing headset"
     override val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
     override val controlApps: List<ControlAppSpec> = listOf(ControlAppCatalog.lightYear)
-    override val transports: List<EarbudTransportSpec> = listOf(
-        RfcommEndpointSpec.Channel(number = 28),
-        RfcommEndpointSpec.Channel(number = 28, secure = false),
-        RfcommEndpointSpec.ServiceUuid(
-            uuid = SPP_UUID.toString(),
-            id = "spp-uuid",
-        ),
-        RfcommEndpointSpec.Channel(number = 5),
-    )
 
     override fun matches(identity: EarbudIdentity): Boolean {
         val name = normalizeDeviceName(identity.deviceName.orEmpty())
@@ -31,7 +21,6 @@ open class StarRingEarbudAdapter : StandardEarbudAdapter() {
 
     companion object {
         const val ID = "starring-family"
-        val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     }
 }
 
@@ -41,8 +30,11 @@ class StarRingUltraAdapter : StarRingEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "StarRing Ultra"
     override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
-    override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
+    override val miLinkCardPresentationId: MiLinkCardPresentationId?
+        get() = PRESENTATION_ID.takeIf { effectiveCapabilities().noiseControl }
     override val privateProtocolRequired: Boolean = true
+    override val transportReadiness: TransportReadiness =
+        TransportReadiness.PROTOCOL_HANDSHAKE
     override val transports: List<EarbudTransportSpec> = listOf(
         GattTransportSpec(
             writeCharacteristicUuid = WRITE_CHARACTERISTIC_UUID,
@@ -51,12 +43,14 @@ class StarRingUltraAdapter : StarRingEarbudAdapter() {
             notifyInstanceId = 0xA105,
             id = "starring-official-gatt",
         ),
-    ) + super.transports
-    override val capabilities: EarbudCapabilities = super.capabilities.copy(
-        noiseControl = true,
-        windNoiseControl = true,
+        RfcommEndpointSpec.Channel(number = 28),
+        RfcommEndpointSpec.Channel(number = 28, secure = false),
+        RfcommEndpointSpec.ServiceUuid(
+            uuid = STANDARD_SPP_UUID,
+            id = "starring-spp-uuid",
+        ),
+        RfcommEndpointSpec.Channel(number = 5),
     )
-    override val supportedNoiseModes: Set<NoiseMode> = NoiseMode.entries.toSet()
 
     override fun matches(identity: EarbudIdentity): Boolean =
         normalizeDeviceName(identity.deviceName.orEmpty()) == "starringultra"
@@ -66,6 +60,8 @@ class StarRingUltraAdapter : StarRingEarbudAdapter() {
     companion object {
         const val ID = "starring-ultra"
         val PRESENTATION_ID = MiLinkCardPresentationId(ID)
+        internal val SUPPORTED_NOISE_MODES = NoiseMode.entries.toSet()
+        private const val STANDARD_SPP_UUID = "00001101-0000-1000-8000-00805F9B34FB"
         private const val WRITE_CHARACTERISTIC_UUID =
             "00007777-0000-1000-8000-00805F9B34FB"
         private const val NOTIFY_CHARACTERISTIC_UUID =
@@ -75,6 +71,7 @@ class StarRingUltraAdapter : StarRingEarbudAdapter() {
 
 private class StarRingUltraProtocolSession : ProtocolSession {
     private val decoder = StarRingWireCodec.Decoder()
+    private var handshakePublished = false
 
     override fun initialReadCommands(): List<ByteArray> = listOf(
         StarRingWireCodec.queryNoiseMode,
@@ -93,31 +90,53 @@ private class StarRingUltraProtocolSession : ProtocolSession {
     override fun readback(request: ControlRequest): List<ByteArray> = emptyList()
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> =
-        decoder.offer(bytes).map { frame ->
+        decoder.offer(bytes).flatMap { frame ->
             StarRingWireCodec.parseBatteryState(frame)?.let {
-                return@map ProtocolEvent.FeatureStateChanged(
-                    BatteryFeatureState(EarbudBattery(
-                        left = BatteryReading(it.leftPercent, charging = false),
-                        right = BatteryReading(it.rightPercent, charging = false),
-                        case = BatteryReading(it.casePercent, charging = false),
-                    )),
-                )
+                return@flatMap buildList<ProtocolEvent> {
+                    add(ProtocolEvent.CapabilitiesIdentified(battery = true))
+                    add(
+                        ProtocolEvent.FeatureStateChanged(
+                            BatteryFeatureState(EarbudBattery(
+                                left = BatteryReading(it.leftPercent, charging = false),
+                                right = BatteryReading(it.rightPercent, charging = false),
+                                case = BatteryReading(it.casePercent, charging = false),
+                            )),
+                        ),
+                    )
+                    publishHandshakeIfNeeded()
+                }
             }
             StarRingWireCodec.parseNoiseState(frame)?.let {
-                return@map ProtocolEvent.FeatureStateChanged(
-                    NoiseModeFeatureState(it.mode.toDomainMode()),
-                )
+                return@flatMap buildList<ProtocolEvent> {
+                    add(
+                        ProtocolEvent.CapabilitiesIdentified(
+                            battery = false,
+                            noiseModes = StarRingUltraAdapter.SUPPORTED_NOISE_MODES,
+                        ),
+                    )
+                    add(ProtocolEvent.FeatureStateChanged(NoiseModeFeatureState(it.mode.toDomainMode())))
+                    publishHandshakeIfNeeded()
+                }
             }
-            ProtocolEvent.UnknownFrame(
-                version = 0,
-                vendor = frame.group,
-                command = frame.command,
-                payloadSize = frame.payload.size,
+            listOf<ProtocolEvent>(
+                ProtocolEvent.UnknownFrame(
+                    version = 0,
+                    vendor = frame.group,
+                    command = frame.command,
+                    payloadSize = frame.payload.size,
+                ),
             )
         }
 
     override fun reset() {
         decoder.reset()
+        handshakePublished = false
+    }
+
+    private fun MutableList<ProtocolEvent>.publishHandshakeIfNeeded() {
+        if (handshakePublished) return
+        handshakePublished = true
+        add(ProtocolEvent.HandshakeAccepted)
     }
 
     private fun NoiseMode.toProtocolMode(): StarRingWireCodec.NoiseMode = when (this) {

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +17,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
@@ -31,6 +34,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.hyperears.BuildConfig
 import dev.hyperears.ui.components.HyperEarsPage
+import dev.hyperears.update.ReleaseInfo
+import dev.hyperears.update.UpdateCheckResult
+import dev.hyperears.update.UpdateCheckUiState
 
 private data class SupportEntry(
     val name: String,
@@ -218,6 +224,12 @@ private val supportBrands = listOf(
                 noiseControl = "降噪 / 关闭 / 通透 / 抗风噪",
             ),
             SupportEntry(
+                name = "ROSE Ceramics Ultra（琉璃 Ultra）",
+                evidence = EvidenceLevel.VERIFIED,
+                battery = BatteryCapability.COMPONENT,
+                noiseControl = "降噪 / 关闭 / 通透 / 抗风噪",
+            ),
+            SupportEntry(
                 name = "ROSE BudsFeel MK2",
                 evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
                 battery = BatteryCapability.COMPONENT,
@@ -388,7 +400,11 @@ private val projectLinks = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen() {
+fun AboutScreen(
+    updateCheckState: UpdateCheckUiState,
+    onCheckUpdates: () -> Unit,
+    onOpenRelease: (ReleaseInfo) -> Unit,
+) {
     HyperEarsPage(title = "关于") { pagePadding, scrollBehavior ->
         val uriHandler = LocalUriHandler.current
         val listState = rememberLazyListState()
@@ -433,6 +449,16 @@ fun AboutScreen() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+        }
+        item(key = "update") {
+            CenteredContent { modifier ->
+                UpdateCheckCard(
+                    state = updateCheckState,
+                    onCheck = onCheckUpdates,
+                    onOpenRelease = onOpenRelease,
+                    modifier = modifier,
+                )
             }
         }
         items(
@@ -491,6 +517,54 @@ fun AboutScreen() {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun UpdateCheckCard(
+    state: UpdateCheckUiState,
+    onCheck: () -> Unit,
+    onOpenRelease: (ReleaseInfo) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val available = state.result as? UpdateCheckResult.Available
+    val detail = when (val result = state.result) {
+        is UpdateCheckResult.Available -> "发现新版本 ${result.release.version}"
+        UpdateCheckResult.UpToDate -> "当前已是最新版本"
+        is UpdateCheckResult.Failed -> result.message
+        null -> "从 GitHub Releases 获取最新版本"
+    }
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+    ) {
+        ListItem(
+            headlineContent = { Text("检查更新") },
+            supportingContent = { Text(detail) },
+            trailingContent = {
+                Button(
+                    onClick = {
+                        if (available == null) onCheck() else onOpenRelease(available.release)
+                    },
+                    enabled = !state.checking,
+                ) {
+                    if (state.checking) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Text(if (available == null) "检查" else "查看")
+                    }
+                }
+            },
+            colors = ListItemDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            ),
+        )
     }
 }
 

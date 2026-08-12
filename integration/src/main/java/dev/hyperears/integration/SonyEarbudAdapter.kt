@@ -48,15 +48,15 @@ internal data class SonyAdapterConfig(
     val preferServiceV2: Boolean = false,
     val exactName: Boolean = false,
     val miLinkPresentationId: MiLinkCardPresentationId? = null,
-    val capabilitiesPreverified: Boolean = true,
+    val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH,
 )
 
 /**
  * Sony's common private-protocol layer.
  *
  * It owns the RFCOMM endpoints and the ACK-driven v1/v2 protocol, while immutable configurations only
- * declare product differences. A valid init reply is required before private capabilities are
- * published.
+ * declare product differences. Model identity selects a safe probe configuration; valid feature
+ * reports remain the only authority that publishes private capabilities.
  */
 open class SonyProtocolFamilyAdapter internal constructor(
     private val configuration: SonyAdapterConfig,
@@ -65,36 +65,19 @@ open class SonyProtocolFamilyAdapter internal constructor(
     final override val id: String = configuration.id
     final override val displayName: String = configuration.displayName
     final override val formFactor: HeadsetFormFactor = configuration.formFactor
-    final override val miLinkCardPresentationId: MiLinkCardPresentationId? =
-        configuration.miLinkPresentationId
+    final override val miLinkCardPresentationId: MiLinkCardPresentationId?
+        get() = configuration.miLinkPresentationId.takeIf {
+            effectiveCapabilities().noiseControl
+        }
     final override val privateProtocolRequired: Boolean = true
     final override val transportReadiness: TransportReadiness =
         TransportReadiness.PROTOCOL_HANDSHAKE
     final override val capabilities: EarbudCapabilities = EarbudCapabilities(
         battery = true,
-        noiseControl = configuration.capabilitiesPreverified &&
-            configuration.ambientDialect.supportsControl,
-        windNoiseControl = configuration.capabilitiesPreverified &&
-            configuration.ambientDialect.supportsWind,
         audioHandoff = true,
     )
-    final override val supportedNoiseModes: Set<NoiseMode> = buildSet {
-        if (configuration.capabilitiesPreverified &&
-            configuration.ambientDialect.supportsNoiseCancelling
-        ) add(NoiseMode.ANC)
-        if (configuration.capabilitiesPreverified && configuration.ambientDialect.supportsControl) {
-            add(NoiseMode.OFF)
-            add(NoiseMode.TRANSPARENCY)
-        }
-        if (configuration.capabilitiesPreverified && configuration.ambientDialect.supportsWind) {
-            add(NoiseMode.WIND)
-        }
-    }
-    final override val resolution: AdapterResolution = if (configuration.capabilitiesPreverified) {
-        AdapterResolution.EXACT_MATCH
-    } else {
-        AdapterResolution.FAMILY_MATCH
-    }
+    final override val supportedNoiseModes: Set<NoiseMode> = emptySet()
+    final override val resolution: AdapterResolution = configuration.resolution
     final override val transports: List<EarbudTransportSpec> =
         if (configuration.preferServiceV2) SONY_V2_FIRST_TRANSPORTS else SONY_V1_FIRST_TRANSPORTS
 
@@ -182,7 +165,7 @@ object SonyAdapterRegistry {
         formFactor = HeadsetFormFactor.HEADPHONES,
         batteryKinds = listOf(SonyBatteryKind.SINGLE),
         ambientDialect = SonyAmbientDialect.STANDARD,
-        capabilitiesPreverified = false,
+        resolution = AdapterResolution.FAMILY_MATCH,
     )
 
     private val headphonesBatteryFamilyConfig = SonyAdapterConfig(
@@ -192,7 +175,7 @@ object SonyAdapterRegistry {
         formFactor = HeadsetFormFactor.HEADPHONES,
         batteryKinds = listOf(SonyBatteryKind.SINGLE),
         ambientDialect = SonyAmbientDialect.NONE,
-        capabilitiesPreverified = false,
+        resolution = AdapterResolution.FAMILY_MATCH,
     )
 
     private val twsNoiseFamilyConfig = SonyAdapterConfig(
@@ -202,7 +185,7 @@ object SonyAdapterRegistry {
         formFactor = HeadsetFormFactor.TWS,
         batteryKinds = listOf(SonyBatteryKind.DUAL, SonyBatteryKind.DUAL2, SonyBatteryKind.CASE),
         ambientDialect = SonyAmbientDialect.STANDARD,
-        capabilitiesPreverified = false,
+        resolution = AdapterResolution.FAMILY_MATCH,
     )
 
     private val twsBatteryFamilyConfig = SonyAdapterConfig(
@@ -212,7 +195,7 @@ object SonyAdapterRegistry {
         formFactor = HeadsetFormFactor.TWS,
         batteryKinds = listOf(SonyBatteryKind.DUAL, SonyBatteryKind.DUAL2, SonyBatteryKind.CASE),
         ambientDialect = SonyAmbientDialect.NONE,
-        capabilitiesPreverified = false,
+        resolution = AdapterResolution.FAMILY_MATCH,
     )
 
     val factories: List<() -> EarbudAdapter> = buildList {

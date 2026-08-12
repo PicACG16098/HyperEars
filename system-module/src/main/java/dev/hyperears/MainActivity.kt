@@ -12,10 +12,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.net.toUri
 import dev.hyperears.bridge.ModuleContract
 import dev.hyperears.diagnostics.AppDiagnosticLog
 import dev.hyperears.diagnostics.DiagnosticLogExporter
 import dev.hyperears.integration.EarbudState
+import dev.hyperears.integration.ControlOwnership
+import dev.hyperears.integration.NoiseMode
 import dev.hyperears.integration.StandardControlRequest
 import dev.hyperears.root.RootAction
 import dev.hyperears.root.RootActionState
@@ -28,6 +31,9 @@ import dev.hyperears.ui.dashboard.DeviceSessionReducer
 import dev.hyperears.ui.dashboard.DeviceSessionSnapshot
 import dev.hyperears.ui.navigation.HyperEarsApp
 import dev.hyperears.ui.theme.HyperEarsTheme
+import dev.hyperears.update.ReleaseInfo
+import dev.hyperears.update.UpdateCheckCoordinator
+import dev.hyperears.update.UpdateCheckPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,9 +47,18 @@ class MainActivity : ComponentActivity() {
     private val miLinkProcesses = MutableStateFlow<Set<String>>(emptySet())
     private val lastUpdatedAtMillis = MutableStateFlow<Long?>(null)
     private val settings = MutableStateFlow(ModuleSettings())
+    private val autoCheckUpdates = MutableStateFlow(true)
     private val rootAvailable = MutableStateFlow<Boolean?>(null)
     private val rootActionState = MutableStateFlow<RootActionState>(RootActionState.Idle)
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val updateCheckPreferences by lazy { UpdateCheckPreferences(this) }
+    private val updateCheckCoordinator by lazy {
+        UpdateCheckCoordinator(
+            preferences = updateCheckPreferences,
+            scope = activityScope,
+            currentVersion = BuildConfig.VERSION_NAME,
+        )
+    }
     private val dashboardRefreshedSessionTokens = mutableSetOf<String>()
     private var remotePreferences: SharedPreferences? = null
     private var activityStarted = false
@@ -133,6 +148,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         settings.value = ModuleSettingsStore.readLocal(this)
+        autoCheckUpdates.value = updateCheckPreferences.automaticChecksEnabled
         registerReceiver(
             receiver,
             IntentFilter().apply {
@@ -154,6 +170,10 @@ class MainActivity : ComponentActivity() {
                 val currentSettings = settings.collectAsStateWithLifecycle().value
                 val hasRoot = rootAvailable.collectAsStateWithLifecycle().value
                 val rootAction = rootActionState.collectAsStateWithLifecycle().value
+                val updateCheck = updateCheckCoordinator.state
+                    .collectAsStateWithLifecycle()
+                    .value
+                val automaticUpdates = autoCheckUpdates.collectAsStateWithLifecycle().value
 
                 HyperEarsApp(
                     uiState = DashboardUiState(
@@ -167,13 +187,20 @@ class MainActivity : ComponentActivity() {
                         requestRuntimeState()
                         activeSessions.values.forEach(::sendRefreshControl)
                     },
+                    onSetNoiseMode = ::sendNoiseModeControl,
                     onDashboardVisibilityChanged = ::onDashboardVisibilityChanged,
                     settings = currentSettings,
+                    autoCheckUpdates = automaticUpdates,
                     rootAvailable = hasRoot,
                     rootActionState = rootAction,
                     onSettingsChanged = ::updateSettings,
+                    onAutoCheckUpdatesChanged = ::updateAutoCheckUpdates,
                     onRunRootAction = ::runRootAction,
                     onExportLogs = ::exportLogs,
+                    updateCheckState = updateCheck,
+                    onCheckUpdates = updateCheckCoordinator::checkManually,
+                    onDismissUpdate = updateCheckCoordinator::dismissAvailableDialog,
+                    onOpenRelease = ::openRelease,
                 )
             }
         }
@@ -190,6 +217,7 @@ class MainActivity : ComponentActivity() {
         miLinkProcesses.value = emptySet()
         requestRuntimeState()
         if (dashboardVisible) beginDashboardRefresh()
+        if (autoCheckUpdates.value) updateCheckCoordinator.checkAutomatically()
     }
 
     override fun onDestroy() {
@@ -223,6 +251,34 @@ class MainActivity : ComponentActivity() {
         sendBroadcast(
             ModuleContract.control(StandardControlRequest.Refresh, address, sessionToken)
                 .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
+        )
+    }
+
+    private fun sendNoiseModeControl(
+        address: String,
+        sessionToken: String,
+        mode: NoiseMode,
+    ) {
+        val session = sessionCollection.value.sessions.values.firstOrNull { snapshot ->
+            snapshot.sessionToken == sessionToken &&
+                snapshot.state.address.equals(address, ignoreCase = true)
+        } ?: return
+        val state = session.state
+        val adapter = state.adapter ?: return
+        if (
+            !state.connected ||
+            state.lifecycle.controlOwnership != ControlOwnership.MODULE ||
+            !adapter.capabilities.noiseControl ||
+            mode !in adapter.supportedNoiseModes
+        ) {
+            return
+        }
+        sendBroadcast(
+            ModuleContract.control(
+                StandardControlRequest.SetNoiseMode(mode),
+                address,
+                sessionToken,
+            ).addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
         )
     }
 
@@ -321,6 +377,32 @@ class MainActivity : ComponentActivity() {
         createDiagnosticDocument.launch(DiagnosticLogExporter.defaultFileName())
     }
 
+    private fun updateAutoCheckUpdates(enabled: Boolean) {
+        if (autoCheckUpdates.value == enabled) return
+        updateCheckPreferences.automaticChecksEnabled = enabled
+        autoCheckUpdates.value = enabled
+        if (enabled) updateCheckCoordinator.checkAutomatically()
+        activityScope.launch {
+            AppDiagnosticLog.record(
+                context = this@MainActivity,
+                enabled = settings.value.diagnosticLogging,
+                component = "Settings",
+                message = "autoCheckUpdates=$enabled",
+            )
+        }
+    }
+
+    private fun openRelease(release: ReleaseInfo) {
+        runCatching {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, release.pageUrl.toUri()),
+            )
+        }.onFailure {
+            Toast.makeText(this, "无法打开 Release 页面", Toast.LENGTH_SHORT).show()
+        }
+        updateCheckCoordinator.dismissAvailableDialog()
+    }
+
     private fun recordSettingsChange(
         previous: ModuleSettings,
         updated: ModuleSettings,
@@ -335,8 +417,8 @@ class MainActivity : ComponentActivity() {
                     if (previous.modulePaused != updated.modulePaused) {
                         add("modulePaused=${updated.modulePaused}")
                     }
-                    if (previous.preferVendorControlApp != updated.preferVendorControlApp) {
-                        add("preferVendorControlApp=${updated.preferVendorControlApp}")
+                    if (previous.moreSettingsTarget != updated.moreSettingsTarget) {
+                        add("moreSettingsTarget=${updated.moreSettingsTarget.name}")
                     }
                     if (previous.yieldToVendorControlApp != updated.yieldToVendorControlApp) {
                         add("yieldToVendorControlApp=${updated.yieldToVendorControlApp}")

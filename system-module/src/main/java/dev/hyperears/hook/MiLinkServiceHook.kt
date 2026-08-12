@@ -26,6 +26,7 @@ import dev.hyperears.integration.NoiseModeFeatureState
 import dev.hyperears.integration.withFeature
 import dev.hyperears.settings.ModuleSettings
 import dev.hyperears.settings.ModuleSettingsRuntime
+import dev.hyperears.settings.MoreSettingsTarget
 import java.io.Closeable
 import java.lang.reflect.Method
 import java.util.Collections
@@ -263,8 +264,24 @@ internal class MiLinkServiceHook : HookContext() {
 
     private fun openPreferredHeadsetSettings(address: String): Boolean {
         val state = stateForAddress(address)
-        if (settings.preferVendorControlApp && openControlApp(state)) return true
-        return openBluetoothDeviceSettings(address)
+        return when (settings.moreSettingsTarget) {
+            MoreSettingsTarget.SYSTEM_SETTINGS -> openBluetoothDeviceSettings(address)
+            MoreSettingsTarget.VENDOR_APP ->
+                openControlApp(state) || openBluetoothDeviceSettings(address)
+            MoreSettingsTarget.HYPEREARS ->
+                openHyperEars() || openBluetoothDeviceSettings(address)
+        }
+    }
+
+    private fun openHyperEars(): Boolean {
+        val appContext = context ?: return false
+        val intent = Intent(Intent.ACTION_MAIN)
+            .setClassName(ModuleContract.MODULE_PACKAGE, HYPEREARS_MAIN_ACTIVITY)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        return runCatching { appContext.startActivity(intent) }
+            .onFailure { ModuleLog.warn("MiLink", "unable to open HyperEars", it) }
+            .isSuccess
     }
 
     private fun openControlApp(state: EarbudState): Boolean {
@@ -1301,6 +1318,7 @@ internal class MiLinkServiceHook : HookContext() {
         const val EXTRA_DEVICE_ADDRESS = "device_address"
         const val EXTRA_SHOW_FRAGMENT_ARGUMENTS = ":settings:show_fragment_args"
         const val SETTINGS_PACKAGE = "com.android.settings"
+        const val HYPEREARS_MAIN_ACTIVITY = "dev.hyperears.MainActivity"
         const val MILINK_RAW_ANC_NO_TRANSPARENCY = 3
         const val MILINK_RAW_ANC_ALL_MODES = 7
         const val NO_ANC_CAPABILITY = 0

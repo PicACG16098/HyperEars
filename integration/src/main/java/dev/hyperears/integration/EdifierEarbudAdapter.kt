@@ -111,19 +111,7 @@ class EdifierW860NBProAdapter : EdifierHeadphonesAdapter() {
     override val wireConfig: EdifierWireConfig = EdifierWireConfig(
         batteryQueries = listOf(EdifierBatteryQuery.BATTERY),
         ancDialects = listOf(EdifierAncDialects.W860_NB_PRO),
-        preverifiedAncIndex = EdifierAncDialects.W860_NB_PRO.index,
-    )
-    override val capabilities: EarbudCapabilities = EarbudCapabilities(
-        battery = true,
-        noiseControl = true,
-        windNoiseControl = true,
-        audioHandoff = true,
-    )
-    override val supportedNoiseModes: Set<NoiseMode> = setOf(
-        NoiseMode.ANC,
-        NoiseMode.TRANSPARENCY,
-        NoiseMode.WIND,
-        NoiseMode.OFF,
+        preferredAncIndex = EdifierAncDialects.W860_NB_PRO.index,
     )
     /**
      * The W860NB PRO plays a voice prompt for ~1.9 s after an ANC switch and ignores commands
@@ -164,16 +152,8 @@ class EdifierEvoProAdapter : EdifierEarbudAdapter() {
         batteryQueries = listOf(EdifierBatteryQuery.DEVICE_STATE),
         batteryProjection = EdifierBatteryProjection.TWS_AGGREGATE,
         ancDialects = listOf(EdifierAncDialects.EVO_PRO),
-        preverifiedAncIndex = EdifierAncDialects.EVO_PRO.index,
+        preferredAncIndex = EdifierAncDialects.EVO_PRO.index,
     )
-    override val capabilities: EarbudCapabilities = EarbudCapabilities(
-        battery = true,
-        noiseControl = true,
-        windNoiseControl = true,
-        audioHandoff = true,
-    )
-    override val supportedNoiseModes: Set<NoiseMode> =
-        EdifierAncDialects.EVO_PRO.supportedModes
     override fun controlPolicy(request: ControlRequest): ControlExecutionPolicy =
         super.controlPolicy(request).let { policy ->
             if (request is StandardControlRequest.SetNoiseMode) {
@@ -270,12 +250,12 @@ data class EdifierWireConfig(
         EdifierAncDialects.W860_NB_PRO,
         EdifierAncDialects.EVO_PRO,
     ),
-    val preverifiedAncIndex: Int? = null,
+    val preferredAncIndex: Int? = null,
 ) {
     init {
         require(batteryQueries.isNotEmpty())
         require(ancDialects.map(EdifierAncDialect::index).distinct().size == ancDialects.size)
-        require(preverifiedAncIndex == null || ancDialects.any { it.index == preverifiedAncIndex })
+        require(preferredAncIndex == null || ancDialects.any { it.index == preferredAncIndex })
     }
 
     fun dialect(index: Int): EdifierAncDialect? = ancDialects.firstOrNull { it.index == index }
@@ -293,7 +273,7 @@ private class EdifierProtocolSession(
     private val decoder = EdifierWireCodec.Decoder()
     private var handshakePublished = false
     private var activeAncDialect: EdifierAncDialect? =
-        configuration.preverifiedAncIndex?.let(configuration::dialect)
+        configuration.preferredAncIndex?.let(configuration::dialect)
 
     override fun initialReadCommands(): List<ByteArray> = buildList {
         addAll(configuration.batteryQueries.map { batteryQueryPacket(it) })
@@ -392,7 +372,7 @@ private class EdifierProtocolSession(
     override fun reset() {
         decoder.reset()
         handshakePublished = false
-        activeAncDialect = configuration.preverifiedAncIndex?.let(configuration::dialect)
+        activeAncDialect = configuration.preferredAncIndex?.let(configuration::dialect)
     }
 
     private fun MutableList<ProtocolEvent>.publishHandshakeIfNeeded() {

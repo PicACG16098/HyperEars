@@ -45,7 +45,7 @@ abstract class EarbudAdapter(
     open val transports: List<EarbudTransportSpec> = emptyList()
 
     /** Evidence required before a transport candidate becomes the session's active channel. */
-    open val transportReadiness: TransportReadiness = TransportReadiness.CONNECTED
+    open val transportReadiness: TransportReadiness = TransportReadiness.PROTOCOL_HANDSHAKE
 
     /** Vendor applications that must own the private channel while their process is alive. */
     open val controlApps: List<ControlAppSpec> = emptyList()
@@ -528,8 +528,12 @@ object EarbudAdapterRegistry {
         val group: GroupMetadata,
         val factory: () -> EarbudAdapter,
     ) {
-        val descriptor: EarbudAdapterDescriptor = factory().let { adapter ->
-            EarbudAdapterDescriptor(
+        val descriptor: EarbudAdapterDescriptor
+        val privateCapabilitiesInitiallyLocked: Boolean
+
+        init {
+            val adapter = factory()
+            descriptor = EarbudAdapterDescriptor(
                 id = adapter.id,
                 displayName = adapter.displayName,
                 kind = when (adapter.resolution) {
@@ -541,6 +545,22 @@ object EarbudAdapterRegistry {
                     AdapterResolution.STANDARD -> EarbudAdapterKind.STANDARD
                 },
             )
+            val snapshot = adapter.snapshot()
+            val capabilities = snapshot.capabilities
+            privateCapabilitiesInitiallyLocked = !adapter.privateProtocolRequired ||
+                (
+                    snapshot.batterySource == BatterySource.SYSTEM_AGGREGATE &&
+                        capabilities.battery &&
+                        capabilities.audioHandoff &&
+                        !capabilities.noiseControl &&
+                        !capabilities.windNoiseControl &&
+                        !capabilities.spatialAudio &&
+                        !capabilities.wearDetection &&
+                        !capabilities.findDevice &&
+                        snapshot.supportedNoiseModes.isEmpty() &&
+                        snapshot.presentationId == null &&
+                        adapter.transportReadiness == TransportReadiness.PROTOCOL_HANDSHAKE
+                )
         }
     }
 
@@ -638,6 +658,7 @@ object EarbudAdapterRegistry {
 
     init {
         requireUniqueIds(initialRegistrations)
+        requireInitialPrivateCapabilitiesLocked(initialRegistrations)
     }
 
     fun resolve(
@@ -666,6 +687,23 @@ object EarbudAdapterRegistry {
             .keys
         require(duplicates.isEmpty()) {
             "Earbud adapter IDs must be unique: $duplicates"
+        }
+    }
+
+    /**
+     * Identity matching may select a protocol candidate, but it must never authorize a private
+     * feature. Every directly registered private Adapter starts from Android's standard headset
+     * projection and unlocks telemetry, controls, and custom cards only from protocol evidence.
+     * Protocol-confirmed replacement Adapters (for example Bose product-ID models) are catalogued
+     * separately and therefore are intentionally outside this invariant.
+     */
+    private fun requireInitialPrivateCapabilitiesLocked(registrations: List<Registration>) {
+        val violations = registrations
+            .filterNot(Registration::privateCapabilitiesInitiallyLocked)
+            .map { it.descriptor.id }
+        require(violations.isEmpty()) {
+            "Initial private adapters must keep vendor capabilities locked until protocol evidence: " +
+                violations.joinToString()
         }
     }
 

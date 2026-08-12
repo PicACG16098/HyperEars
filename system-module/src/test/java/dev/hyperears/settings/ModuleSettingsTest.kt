@@ -11,9 +11,38 @@ class ModuleSettingsTest {
     fun vendorApplicationIntegrationIsOptIn() {
         val defaults = ModuleSettings()
 
-        assertFalse(defaults.preferVendorControlApp)
+        assertEquals(MoreSettingsTarget.SYSTEM_SETTINGS, defaults.moreSettingsTarget)
         assertFalse(defaults.yieldToVendorControlApp)
         assertTrue(defaults.disabledAdapterIds.isEmpty())
+    }
+
+    @Test
+    fun moreSettingsTargetRejectsUnknownStoredValues() {
+        assertEquals(
+            MoreSettingsTarget.VENDOR_APP,
+            MoreSettingsTarget.fromStoredValue("VENDOR_APP"),
+        )
+        assertEquals(null, MoreSettingsTarget.fromStoredValue("vendor"))
+        assertEquals(null, MoreSettingsTarget.fromStoredValue(null))
+    }
+
+    @Test
+    fun legacyVendorBooleanMigratesToTheClosestNavigationTarget() {
+        assertEquals(
+            MoreSettingsTarget.VENDOR_APP,
+            resolveMoreSettingsTarget(storedValue = null, legacyPreferVendorApp = true),
+        )
+        assertEquals(
+            MoreSettingsTarget.SYSTEM_SETTINGS,
+            resolveMoreSettingsTarget(storedValue = null, legacyPreferVendorApp = false),
+        )
+        assertEquals(
+            MoreSettingsTarget.HYPEREARS,
+            resolveMoreSettingsTarget(
+                storedValue = "HYPEREARS",
+                legacyPreferVendorApp = true,
+            ),
+        )
     }
 
     @Test

@@ -264,8 +264,9 @@ MiLink 子进程在收到系统认领前可以消费相同的活动候选快照�
 
 ## 5. 能力真实性
 
-具体型号可直接声明已有实机或公开资料确认的能力。仅靠家族名称匹配的 Adapter 默认不
-开放未经确认的私有写能力：
+初始匹配链中的家族与具体型号 Adapter 都只从标准流转、系统音量和 Android 整机电量
+起步。名称、服务 UUID、设备形态和已知型号配置只授权选择候选协议，不直接授权私有
+遥测、写能力或专用卡片：
 
 1. 建立候选传输；
 2. 发送只读握手/状态查询；
@@ -305,9 +306,9 @@ ProtocolHandshakeState
 ```
 
 `sessionActive`、`connected`、`privateChannelConnected` 和 `handshakeAccepted` 仅是从该对象
-计算出的兼容视图。声明 `PROTOCOL_HANDSHAKE` 的设备需要系统音频、私有传输和协议确认
-同时就绪；声明“传输连接即就绪”的已验证设备将协议状态保持为 `NOT_REQUIRED`，不会
-伪造一次确认事件。
+计算出的兼容视图。所有需要私有协议的初始 Adapter 都声明 `PROTOCOL_HANDSHAKE`，必须在
+系统音频、私有传输和协议确认同时就绪后进入可操作状态。无需私有协议的标准回退保持
+`NOT_REQUIRED`，不会建立厂商控制通道。
 
 典型流程：
 
@@ -367,8 +368,9 @@ MiLink 流转、系统音量、标准蓝牙电量和设备形态，移除私有�
 能力，避免卡片显示“可点击但实际无效”的控制项。控制 App 退出后，会话在仍连接的前提下
 按同一有界重连策略恢复私有通道和协议确认；耳机已断开时不创建新的连接任务。
 
-MiLink 的“更多设置”按 Adapter 声明的优先级选择已安装且有 Launcher Activity 的控制 App，
-没有可启动的控制 App 时回退到真实蓝牙设备详情。LSPosed 没有公开的运行时作用域查询接口，
+MiLink 的“更多设置”按用户策略打开真实蓝牙设备详情、HyperEars，或按 Adapter 声明的优先级
+选择已安装且有 Launcher Activity 的控制 App。后两种目标启动失败时回退到真实蓝牙设备详情。
+LSPosed 没有公开的运行时作用域查询接口，
 因此“已 Hook”以控制 App 实际发出的 Binder 登记为准；静态作用域只决定该登记 Hook 是否会
 被安装。页面跳转本身不依赖该登记，运行时退避则必须依赖登记。
 
@@ -414,6 +416,15 @@ AudioModes 两态设备保留系统三项布局，但把协议不支持的“关
 `DeviceSessionUiProjector` 只读取不可变状态快照，输出通用 `DeviceSessionUiModel`。
 Compose 不导入具体 Adapter、ProtocolSession、WireCodec 或厂商类型。
 
+已确认噪声能力同样在该投影边界转换为通用模式控件描述。主页点击只携带地址、会话令牌和
+`StandardControlRequest.SetNoiseMode`；Bluetooth 进程仍由当前 Adapter 校验能力与模式集合，
+所以 Compose 不会绕过协议门禁，也不需要知道具体型号。
+
+应用内更新检查是与注入层隔离的 app-process 服务：自动检查只在 HyperEars 打开时触发并按
+24 小时间隔限流，手动检查只由“关于”页触发。Bluetooth、MiLink 和厂商控制 App 进程不创建
+更新检查器，也不执行网络请求。自动检查开关和上次检查时间保存在应用本地偏好中，不进入
+libxposed `RemotePreferences`，因此修改该开关不会唤醒或重配任何注入会话。
+
 每个会话展示三类真实状态：
 
 - 耳机侧：系统音频、Adapter 分辨率、私有传输、协议确认；
@@ -433,6 +444,10 @@ Compose 不导入具体 Adapter、ProtocolSession、WireCodec 或厂商类型。
 5. 新帧格式：增加 WireCodec；
 6. 新动态状态：增加 `DeviceFeatureState` 子类型与 Adapter 状态契约；
 7. 原生卡片无法表达的呈现：增加独立 MiLinkCardAdapter。
+
+初始 Registry 在进程加载时验证统一门禁：任何直接注册且需要私有协议的 Adapter，都必须
+以系统整机电量、流转能力、空噪声模式和空专用卡片开始，并使用 `PROTOCOL_HANDSHAKE`。
+协议产品身份确认后创建的替换 Adapter 不属于初始匹配链，可按已确认产品配置原子发布能力。
 
 不得让 Registry、UI 或 MiLink Hook 解析厂商帧；不得让 ProtocolSession 按零售名称选择
 设备；不得通过共享 Adapter/ProtocolSession 单例复用会话状态；不得为型号专属状态向

@@ -7,10 +7,12 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +35,10 @@ import dev.hyperears.ui.settings.SettingsScreen
 import dev.hyperears.ui.settings.AdapterSettingsScreen
 import dev.hyperears.ui.settings.DebugSettingsScreen
 import dev.hyperears.ui.settings.SettingsDestination
+import dev.hyperears.integration.NoiseMode
+import dev.hyperears.update.ReleaseInfo
+import dev.hyperears.update.UpdateCheckResult
+import dev.hyperears.update.UpdateCheckUiState
 import kotlinx.coroutines.launch
 
 private data class AppPage(
@@ -57,13 +63,20 @@ private const val TOP_LEVEL_PAGE_PRELOAD_COUNT = 1
 fun HyperEarsApp(
     uiState: DashboardUiState,
     onRefresh: () -> Unit,
+    onSetNoiseMode: (address: String, sessionToken: String, mode: NoiseMode) -> Unit,
     onDashboardVisibilityChanged: (Boolean) -> Unit,
     settings: ModuleSettings,
+    autoCheckUpdates: Boolean,
     rootAvailable: Boolean?,
     rootActionState: RootActionState,
     onSettingsChanged: (ModuleSettings) -> Unit,
+    onAutoCheckUpdatesChanged: (Boolean) -> Unit,
     onRunRootAction: (RootAction) -> Unit,
     onExportLogs: () -> Unit,
+    updateCheckState: UpdateCheckUiState,
+    onCheckUpdates: () -> Unit,
+    onDismissUpdate: () -> Unit,
+    onOpenRelease: (ReleaseInfo) -> Unit,
 ) {
     val pagerState = rememberPagerState(pageCount = { appPages.size })
     val coroutineScope = rememberCoroutineScope()
@@ -149,19 +162,43 @@ fun HyperEarsApp(
                 0 -> DashboardScreen(
                     uiState = uiState,
                     onRefresh = onRefresh,
+                    onSetNoiseMode = onSetNoiseMode,
                 )
 
                 1 -> SettingsScreen(
                     settings = settings,
+                    autoCheckUpdates = autoCheckUpdates,
                     rootAvailable = rootAvailable,
                     rootActionState = rootActionState,
                     onSettingsChanged = onSettingsChanged,
+                    onAutoCheckUpdatesChanged = onAutoCheckUpdatesChanged,
                     onRunRootAction = onRunRootAction,
                     onOpenDebug = { settingsDestination = SettingsDestination.DEBUG },
                 )
 
-                2 -> AboutScreen()
+                2 -> AboutScreen(
+                    updateCheckState = updateCheckState,
+                    onCheckUpdates = onCheckUpdates,
+                    onOpenRelease = onOpenRelease,
+                )
             }
         }
+    }
+
+    val available = updateCheckState.result as? UpdateCheckResult.Available
+    if (available != null && updateCheckState.showAvailableDialog) {
+        AlertDialog(
+            onDismissRequest = onDismissUpdate,
+            title = { Text("发现新版本 ${available.release.version}") },
+            text = { Text("可前往 GitHub Releases 下载更新。") },
+            confirmButton = {
+                TextButton(onClick = { onOpenRelease(available.release) }) {
+                    Text("查看 Release")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissUpdate) { Text("稍后") }
+            },
+        )
     }
 }

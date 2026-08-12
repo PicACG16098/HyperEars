@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -50,6 +51,7 @@ import dev.hyperears.integration.EarbudAdapterKind
 import dev.hyperears.root.RootAction
 import dev.hyperears.root.RootActionState
 import dev.hyperears.settings.ModuleSettings
+import dev.hyperears.settings.MoreSettingsTarget
 import dev.hyperears.ui.components.HyperEarsPage
 import dev.hyperears.ui.components.rememberSwitchHaptics
 
@@ -62,14 +64,17 @@ enum class SettingsDestination {
 @Composable
 fun SettingsScreen(
     settings: ModuleSettings,
+    autoCheckUpdates: Boolean,
     rootAvailable: Boolean?,
     rootActionState: RootActionState,
     onSettingsChanged: (ModuleSettings) -> Unit,
+    onAutoCheckUpdatesChanged: (Boolean) -> Unit,
     onRunRootAction: (RootAction) -> Unit,
     onOpenDebug: () -> Unit,
 ) {
     HyperEarsPage(title = "设置") { pagePadding, scrollBehavior ->
         var pendingRootAction by remember { mutableStateOf<RootAction?>(null) }
+        var selectingMoreSettingsTarget by rememberSaveable { mutableStateOf(false) }
         val listState = rememberLazyListState()
 
         LazyColumn(
@@ -97,13 +102,10 @@ fun SettingsScreen(
                         },
                     )
                     PreferenceDivider()
-                    TogglePreference(
-                        title = "打开厂商设置",
-                        detail = "需勾选对应厂商应用作用域。",
-                        checked = settings.preferVendorControlApp,
-                        onCheckedChange = {
-                            onSettingsChanged(settings.copy(preferVendorControlApp = it))
-                        },
+                    NavigationPreference(
+                        title = "更多设置",
+                        detail = settings.moreSettingsTarget.preferenceSummary,
+                        onClick = { selectingMoreSettingsTarget = true },
                     )
                     PreferenceDivider()
                     TogglePreference(
@@ -113,6 +115,13 @@ fun SettingsScreen(
                         onCheckedChange = {
                             onSettingsChanged(settings.copy(yieldToVendorControlApp = it))
                         },
+                    )
+                    PreferenceDivider()
+                    TogglePreference(
+                        title = "自动检查更新",
+                        detail = "打开应用时检查 GitHub Release，每天最多一次。",
+                        checked = autoCheckUpdates,
+                        onCheckedChange = onAutoCheckUpdatesChanged,
                     )
                     PreferenceDivider()
                     NavigationPreference(
@@ -178,8 +187,69 @@ fun SettingsScreen(
                 },
             )
         }
+
+        if (selectingMoreSettingsTarget) {
+            MoreSettingsTargetDialog(
+                selected = settings.moreSettingsTarget,
+                onSelected = { target ->
+                    selectingMoreSettingsTarget = false
+                    onSettingsChanged(settings.copy(moreSettingsTarget = target))
+                },
+                onDismiss = { selectingMoreSettingsTarget = false },
+            )
+        }
     }
 }
+
+@Composable
+private fun MoreSettingsTargetDialog(
+    selected: MoreSettingsTarget,
+    onSelected: (MoreSettingsTarget) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("更多设置") },
+        text = {
+            Column {
+                MoreSettingsTarget.entries.forEach { target ->
+                    ListItem(
+                        headlineContent = { Text(target.displayName) },
+                        supportingContent = { Text(target.description) },
+                        leadingContent = {
+                            RadioButton(
+                                selected = target == selected,
+                                onClick = null,
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.clickable { onSelected(target) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
+}
+
+private val MoreSettingsTarget.displayName: String
+    get() = when (this) {
+        MoreSettingsTarget.SYSTEM_SETTINGS -> "系统设置"
+        MoreSettingsTarget.VENDOR_APP -> "厂商 App"
+        MoreSettingsTarget.HYPEREARS -> "HyperEars"
+    }
+
+private val MoreSettingsTarget.description: String
+    get() = when (this) {
+        MoreSettingsTarget.SYSTEM_SETTINGS -> "打开真实蓝牙设备详情。"
+        MoreSettingsTarget.VENDOR_APP -> "打开对应厂商控制 App；不可用时打开系统设置。"
+        MoreSettingsTarget.HYPEREARS -> "打开 HyperEars 主页。"
+    }
+
+private val MoreSettingsTarget.preferenceSummary: String
+    get() = "$displayName · $description"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

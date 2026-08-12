@@ -58,7 +58,7 @@ class ControlRequestTransportTest {
         assertFalse(
             standard.supportsControl(StandardControlRequest.SetNoiseMode(NoiseMode.ANC)),
         )
-        assertTrue(vivo.supportsControl(StandardControlRequest.SetNoiseMode(NoiseMode.ANC)))
+        assertFalse(vivo.supportsControl(StandardControlRequest.SetNoiseMode(NoiseMode.ANC)))
         assertFalse(vivo.supportsControl(StandardControlRequest.SetNoiseMode(NoiseMode.WIND)))
     }
 

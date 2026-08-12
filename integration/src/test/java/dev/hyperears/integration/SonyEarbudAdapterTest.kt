@@ -13,14 +13,8 @@ class SonyEarbudAdapterTest {
         assertEquals("sony-wh-1000xm5", resolve("WH-1000XM5").id)
         assertEquals(HeadsetFormFactor.HEADPHONES, resolve("WH-1000XM5").formFactor)
         assertEquals("sony-wf-c510", resolve("WF-C510").id)
-        assertEquals(
-            setOf(NoiseMode.OFF, NoiseMode.TRANSPARENCY),
-            resolve("WF-C510").supportedNoiseModes,
-        )
-        assertEquals(
-            SonyMiLinkPresentationIds.AMBIENT_ONLY,
-            resolve("WF-C510").miLinkCardPresentationId,
-        )
+        assertTrue(resolve("WF-C510").supportedNoiseModes.isEmpty())
+        assertEquals(null, resolve("WF-C510").miLinkCardPresentationId)
         assertEquals("sony-linkbuds-s", resolve("LinkBuds S").id)
         assertEquals("sony-linkbuds", resolve("LinkBuds").id)
         assertEquals("sony-linkbuds", resolve("Sony LinkBuds").id)
@@ -171,6 +165,29 @@ class SonyEarbudAdapterTest {
         assertTrue(adapter.snapshot().capabilities.noiseControl)
         assertEquals(
             setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
+            adapter.snapshot().supportedNoiseModes,
+        )
+    }
+
+    @Test
+    fun exactSonyModelAlsoUnlocksNoiseOnlyAfterItsStateEvidence() {
+        val adapter = resolve("WH-1000XM3")
+
+        assertEquals(AdapterResolution.EXACT_MATCH, adapter.resolution)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+        assertTrue(adapter.snapshot().supportedNoiseModes.isEmpty())
+
+        adapter.beginHandshake()
+        val handshake = adapter.receive(command(0, "01 00 40 10"))
+
+        assertEquals(HandshakeResult.Ready, handshake.handshake)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+
+        adapter.receive(command(0, "67 02 01 02 02 01 00 00"))
+
+        assertTrue(adapter.snapshot().capabilities.noiseControl)
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY, NoiseMode.WIND),
             adapter.snapshot().supportedNoiseModes,
         )
     }

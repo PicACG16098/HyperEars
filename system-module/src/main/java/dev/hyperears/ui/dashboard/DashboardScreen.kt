@@ -22,6 +22,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.hyperears.ui.components.HyperEarsPage
+import dev.hyperears.integration.NoiseMode
 import java.text.DateFormat
 import java.util.Date
 
@@ -42,6 +46,7 @@ import java.util.Date
 fun DashboardScreen(
     uiState: DashboardUiState,
     onRefresh: () -> Unit,
+    onSetNoiseMode: (address: String, sessionToken: String, mode: NoiseMode) -> Unit,
 ) {
     HyperEarsPage(title = "HyperEars") { pagePadding, scrollBehavior ->
         val listState = rememberLazyListState()
@@ -77,7 +82,12 @@ fun DashboardScreen(
                     items = uiState.deviceCards,
                     key = { session -> "${session.address}:${session.adapterId}" },
                 ) { session ->
-                    DeviceSessionCard(session)
+                    DeviceSessionCard(
+                        session = session,
+                        onSetNoiseMode = { mode ->
+                            onSetNoiseMode(session.address, session.sessionToken, mode)
+                        },
+                    )
                 }
             }
         }
@@ -248,6 +258,7 @@ private fun EmptySessionsCard() {
 @Composable
 private fun DeviceSessionCard(
     session: DeviceSessionUiModel,
+    onSetNoiseMode: (NoiseMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -301,6 +312,13 @@ private fun DeviceSessionCard(
 
             AdapterFacts(session)
 
+            session.noiseControl?.let { control ->
+                NoiseModeControl(
+                    control = control,
+                    onSetNoiseMode = onSetNoiseMode,
+                )
+            }
+
             Text(
                 text = "会话状态",
                 style = MaterialTheme.typography.labelLarge,
@@ -318,6 +336,42 @@ private fun DeviceSessionCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             MetricStrip(session.metrics)
+        }
+    }
+}
+
+@Composable
+private fun NoiseModeControl(
+    control: NoiseControlUiModel,
+    onSetNoiseMode: (NoiseMode) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "降噪模式",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            control.supportedModes.forEachIndexed { index, mode ->
+                SegmentedButton(
+                    selected = control.selectedMode == mode,
+                    onClick = {
+                        if (control.selectedMode != mode) onSetNoiseMode(mode)
+                    },
+                    enabled = control.enabled,
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = control.supportedModes.size,
+                    ),
+                    label = {
+                        Text(
+                            text = mode.displayName(),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                )
+            }
         }
     }
 }

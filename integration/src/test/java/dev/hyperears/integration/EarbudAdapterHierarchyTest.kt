@@ -157,8 +157,13 @@ class EarbudAdapterHierarchyTest {
         val result = adapter.receive(handshake)
 
         assertEquals(HandshakeResult.Ready, result.handshake)
-        assertTrue(result.stateChanged)
+        assertFalse(result.stateChanged)
         assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+
+        val state = adapter.receive(hex("FF 03 00 03 00 1B 81 30 00 02 03"))
+
+        assertTrue(state.stateChanged)
         assertTrue(adapter.snapshot().capabilities.noiseControl)
         assertEquals(
             setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
@@ -167,7 +172,7 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun oppoFamilyPublishesControlsOnlyAfterAValidProtocolResponse() {
+    fun oppoNotificationDiscoveryConfirmsTransportWithoutInventingNoiseModes() {
         val adapter = OppoEarbudAdapter()
         val notificationSupport = OppoWireCodec.packet(
             command = OppoWireCodec.NOTIFICATION_SUPPORT_RESPONSE,
@@ -178,11 +183,8 @@ class EarbudAdapterHierarchyTest {
 
         assertEquals(HandshakeResult.Ready, result.handshake)
         assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
-        assertTrue(adapter.snapshot().capabilities.noiseControl)
-        assertEquals(
-            setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
-            adapter.snapshot().supportedNoiseModes,
-        )
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+        assertTrue(adapter.snapshot().supportedNoiseModes.isEmpty())
     }
 
     @Test
@@ -242,15 +244,13 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun edifierEvoProUsesItsVerifiedDialectAndAggregateTwsBattery() {
+    fun edifierEvoProUnlocksItsPreferredDialectFromAncEvidence() {
         val adapter = EdifierEvoProAdapter()
 
         assertEquals(AdapterResolution.EXACT_MATCH, adapter.snapshot().resolution)
         assertEquals(HeadsetFormFactor.TWS, adapter.snapshot().formFactor)
-        assertEquals(
-            EdifierMiLinkPresentationIds.FOUR_MODE,
-            adapter.snapshot().presentationId,
-        )
+        assertEquals(null, adapter.snapshot().presentationId)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
         assertEquals(
             listOf(
                 EdifierWireCodec.queryDeviceState.toList(),
@@ -270,6 +270,11 @@ class EarbudAdapterHierarchyTest {
         val state = adapter.receive(hex("BB EC CC 00 02 BE A3 D6"))
         assertTrue(state.stateChanged)
         assertEquals(NoiseMode.OFF, adapter.runtimeState().noiseMode)
+        assertEquals(
+            EdifierMiLinkPresentationIds.FOUR_MODE,
+            adapter.snapshot().presentationId,
+        )
+        assertTrue(adapter.snapshot().capabilities.noiseControl)
 
         mapOf(
             NoiseMode.ANC to 1,
@@ -682,7 +687,7 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun exactRoseModelRetainsItsVerifiedAdapterAfterTransportFailure() {
+    fun exactRoseModelRetainsItsProtocolCandidateAfterTransportFailure() {
         assertEquals(
             InitialProtocolFailureResolution.KeepDormant,
             RoseEarfreeI5Adapter().onInitialProtocolUnavailable(),

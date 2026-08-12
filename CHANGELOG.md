@@ -4,15 +4,56 @@
 
 ## [Unreleased]
 
-### 兼容性与可靠性
+## [2.3.0] - 2026-08-12
 
-- 新增弱水时砂 ROSE Ceramics Ultra（琉璃 Ultra）具体型号适配。实机验证该型号通过
-  RoseLink 官方 App 使用同一 BudsFeel RFCOMM `0cf12d31` 通道控制；其状态响应在首个
-  payload 块后追加无长度头的扩展 TLV 流（噪声 `09`、电量 `0C` 记录位于扩展流内）。
-  BudsFeel 解码器新增扩展帧路径：先按紧凑帧校验，失败后按帧尾 checksum 解析扩展
-  TLV 流；保持原有紧凑帧和分片重同步行为不变。
-- `protocol-test` 新增 ROSE BudsFeel 探测目标：连接 0cf12d31 / 标准 SPP / 通道 1/5，
-  自动发送状态查询并解析电量与噪声模式，用于实机验证与协议采集。
+本版统一所有私有协议适配器的能力确认规则，并补充 ROSE Ceramics Ultra 与荣耀 X5s Pro
+连接兼容；应用新增主页模式控制、可选择的“更多设置”目标和 GitHub Release 更新检查。
+
+### 能力确认与回退
+
+- 具体型号和家族 Adapter 现在遵循同一初始门禁：名称、服务 UUID、设备形态和型号配置只用于
+  选择候选协议，初始状态仅发布 MiLink 流转、系统音量和 Android 整机电量，不再提前发布
+  私有电量、噪声模式或型号专属卡片。
+- 合法电量与模式响应分别开放对应能力；仅收到电量时保留系统卡片且不出现无效模式按钮，收到
+  合法模式状态后才开放该协议确认的模式集合和专属呈现。协议失败时继续保留标准耳机能力。
+- 所有直接注册且需要私有协议的 Adapter 统一要求协议确认。Registry 在进程初始化时验证初始
+  能力门禁，防止新增型号把身份匹配误当成能力证明；Bose 等通过线端产品 ID 确认后创建的
+  替换 Adapter 仍可原子发布已确认配置。
+
+### 设备与系统兼容
+
+- 新增 ROSE Ceramics Ultra（琉璃 Ultra）实机适配。该型号复用 BudsFeel RFCOMM 通道，状态
+  响应在首个数据块后追加无长度头的扩展 TLV；解码器支持扩展流、分片、连续多帧、坏帧重同步
+  和紧凑帧兼容，并开放组件电量及降噪、关闭、通透、抗风噪。
+- `protocol-test` 新增 ROSE BudsFeel 探测目标，可尝试 `0cf12d31`、标准 SPP 及通道 1/5，
+  自动查询并解析电量与噪声模式。
+- 荣耀亲选耳机 X5s Pro 在 SPP 建立后执行经实机抓取的初始化与状态查询序列，单耳独立连接时
+  无需等待后续主动上报即可确认模式能力；电量查询和原有类型化降噪深度控制保持不变。
+- 增加 MiLink `17.2.2 (170020200)` 严格版本限定的“更多设置”语义入口兼容，保持未知版本
+  不 Hook；补齐 QCYpods 公开协议来源、`QYCC50S` 标识和资料贡献记录。
+
+### 应用与系统集成
+
+- 已确认并开放噪声控制的设备，可在 HyperEars 主页会话卡片中直接切换 Adapter 声明的模式；
+  控件只消费通用状态快照，点击当前模式不会重复发送，控制请求仍由当前设备会话和 Adapter
+  完成会话令牌、控制权、能力与目标模式校验。
+- 原“打开厂商设置”布尔开关升级为“更多设置”目标，可选择系统设置、厂商 App 或 HyperEars；
+  厂商 App 与 HyperEars 无法启动时均回退到真实蓝牙设备详情。旧配置会自动迁移，并保留降级
+  兼容写入。
+- “关于”页新增 GitHub Release 手动检查；“自动检查更新”默认开启，只在应用打开时运行且每天
+  最多一次，也可关闭。更新检查仅解析受信任仓库的 HTTPS Release 跳转，网络访问与 Bluetooth、
+  MiLink 及厂商控制 App 注入进程完全隔离。
+
+### 构建、文档与验证
+
+- `kotlinx-coroutines-android` 更新至 `1.11.0`；GitHub Actions 的 checkout、Node、Java、
+  Gradle 和 artifact 运行时更新至当前主版本，保留标签版本校验、Release 签名验证和 SHA-256
+  产物流程。
+- 兼容性矩阵、系统架构、主页投影、控制 App、安装、排障、隐私和中英文 README 已同步新的
+  能力确认、页面跳转与联网边界；新增主页控制、配置迁移、版本比较、受信任 Release 地址、
+  私有能力门禁、ROSE 流式解码和荣耀初始化序列测试。
+- 发布前验证覆盖全部 Debug 单元测试、协议测试工具编译、Android Release Lint、R8 Release
+  构建、MarkdownLint、文档结构与站内链接检查。
 
 ## [2.2.1] - 2026-08-10
 
@@ -435,7 +476,8 @@
 - Release 构建改用独立环境变量签名，不再使用 debug 证书。
 - 增加 CI、标签发布、APK 签名验证和 SHA-256 产物。
 
-[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/silverpoetry/HyperEars/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/silverpoetry/HyperEars/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/silverpoetry/HyperEars/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/silverpoetry/HyperEars/compare/v2.1.2...v2.2.0
 [2.1.2]: https://github.com/silverpoetry/HyperEars/compare/v2.1.1...v2.1.2

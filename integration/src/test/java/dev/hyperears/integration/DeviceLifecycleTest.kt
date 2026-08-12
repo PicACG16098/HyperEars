@@ -48,12 +48,12 @@ class DeviceLifecycleTest {
     }
 
     @Test
-    fun transportReadyAdapterDoesNotNeedAFabricatedProtocolConfirmation() {
+    fun standardAdapterDoesNotNeedAFabricatedProtocolConfirmation() {
         val state = EarbudState(
-            adapter = StarRingUltraAdapter().snapshot(),
+            adapter = StandardEarbudAdapter().snapshot(),
             lifecycle = DeviceLifecycle(
                 systemProfile = SystemProfileState.CONNECTED,
-                privateTransport = PrivateTransportState.CONNECTED,
+                privateTransport = PrivateTransportState.NOT_REQUIRED,
                 protocolHandshake = ProtocolHandshakeState.NOT_REQUIRED,
             ),
         )

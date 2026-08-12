@@ -5,11 +5,14 @@ import dev.hyperears.bridge.BridgeStage
 import dev.hyperears.integration.BoseHeadphonesAdapter
 import dev.hyperears.integration.DeviceLifecycle
 import dev.hyperears.integration.EarbudState
+import dev.hyperears.integration.EarbudCapabilities
+import dev.hyperears.integration.NoiseMode
 import dev.hyperears.integration.PrivateTransportState
 import dev.hyperears.integration.ProtocolHandshakeState
 import dev.hyperears.integration.StandardEarbudAdapter
 import dev.hyperears.integration.SystemProfileState
 import dev.hyperears.integration.VivoEarbudAdapter
+import dev.hyperears.integration.withNoiseMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -94,6 +97,41 @@ class DashboardUiStateTest {
         assertEquals(adapter.id, card.adapterId)
         assertTrue(card.adapterResolved)
         assertEquals(4, card.headsetLifecycle.size)
+    }
+
+    @Test
+    fun projectorExposesOnlyConfirmedGenericNoiseControl() {
+        val base = VivoEarbudAdapter().snapshot()
+        val state = EarbudState(
+            adapter = base.copy(
+                capabilities = EarbudCapabilities(
+                    battery = true,
+                    noiseControl = true,
+                    audioHandoff = true,
+                ),
+                supportedNoiseModes = setOf(
+                    NoiseMode.TRANSPARENCY,
+                    NoiseMode.ANC,
+                    NoiseMode.OFF,
+                ),
+            ),
+            address = FIRST_ADDRESS,
+            lifecycle = privateLifecycle(
+                PrivateTransportState.CONNECTED,
+                ProtocolHandshakeState.CONFIRMED,
+            ),
+        ).withNoiseMode(NoiseMode.ANC)
+
+        val card = DeviceSessionUiProjector.project(DeviceSessionSnapshot(state, "token"))
+
+        val control = requireNotNull(card.noiseControl)
+        assertTrue(control.enabled)
+        assertEquals(NoiseMode.ANC, control.selectedMode)
+        assertEquals(
+            listOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
+            control.supportedModes,
+        )
+        assertEquals("token", card.sessionToken)
     }
 
     @Test

@@ -30,7 +30,8 @@ StarRing, ROSESELSA, NiceHCK, MOONDROP, Honor, QCY and Sony devices.
 
 - Publishes battery according to the headset form and confirmed protocol: left/right and case, headphone aggregate, or Android system battery.
 - Publishes noise cancellation, off, transparency and model-specific modes only after private-protocol confirmation; unconfirmed private controls remain unavailable.
-- The MiLink card's “More settings” action opens the launchable controller for that headset; when disabled or unavailable, it opens the real Android Bluetooth-device details page.
+- Devices with confirmed noise control can switch their supported modes directly from the session card on the HyperEars home page.
+- The MiLink card's “More settings” action can open the real Android Bluetooth-device details page, the declared vendor controller, or HyperEars. An unavailable controller falls back to system settings.
 
 ### Sessions and ownership
 
@@ -40,7 +41,7 @@ StarRing, ROSESELSA, NiceHCK, MOONDROP, Honor, QCY and Sony devices.
 
 ### Settings and diagnostics
 
-- Provides settings for vendor-controller navigation, runtime yielding and pausing the integration.
+- Provides settings for the “More settings” destination, runtime yielding, automatic update checks and pausing the integration.
 - Provides a Debug > Adapters page that groups every model, family fallback and standard fallback Adapter by brand, with a group switch that disables or restores all Adapters in that brand.
 - Provides a Debug page for detailed logging and diagnostic export.
 - Provides root-only shortcuts for restarting MiLink, restarting Bluetooth and stopping supported vendor controllers.
@@ -139,8 +140,11 @@ Adapter-declared priority and scope behavior are maintained in the
 
 ## Privacy and security
 
-The production module declares no Internet permission and includes no analytics, advertising or
-remote crash reporting. Bluetooth addresses remain local and are masked in normal module logs.
+The production app uses Internet access only to query the public latest GitHub Release. Automatic
+checks are enabled by default, run only while HyperEars is opened, and are limited to once per day;
+they can be disabled in Settings. No Bluetooth identity, settings, logs or protocol data is sent,
+and injected processes never perform network requests. The app includes no analytics, advertising
+or remote crash reporting. Bluetooth addresses remain local and are masked in normal module logs.
 The protocol laboratory intentionally displays raw frames and device addresses, so redact them
 before sharing diagnostics. See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).
 

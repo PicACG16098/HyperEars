@@ -5,9 +5,22 @@ import android.content.Context
 import android.content.SharedPreferences
 import java.util.HashSet
 
-/** User-controlled policy for vendor settings navigation and private-channel arbitration. */
+/** Destination opened from the MiLink headset card's semantic "more settings" action. */
+enum class MoreSettingsTarget {
+    SYSTEM_SETTINGS,
+    VENDOR_APP,
+    HYPEREARS,
+    ;
+
+    companion object {
+        fun fromStoredValue(value: String?): MoreSettingsTarget? =
+            entries.firstOrNull { it.name == value }
+    }
+}
+
+/** User-controlled integration, navigation and diagnostics policy. */
 data class ModuleSettings(
-    val preferVendorControlApp: Boolean = false,
+    val moreSettingsTarget: MoreSettingsTarget = MoreSettingsTarget.SYSTEM_SETTINGS,
     val yieldToVendorControlApp: Boolean = false,
     val modulePaused: Boolean = false,
     val diagnosticLogging: Boolean = false,
@@ -24,7 +37,8 @@ data class ModuleSettings(
 object ModuleSettingsStore {
     const val PREFERENCES_GROUP = "hyper_ears_settings"
 
-    private const val PREFER_VENDOR_CONTROL_APP = "prefer_vendor_control_app"
+    private const val MORE_SETTINGS_TARGET = "more_settings_target"
+    private const val LEGACY_PREFER_VENDOR_CONTROL_APP = "prefer_vendor_control_app"
     private const val YIELD_TO_VENDOR_CONTROL_APP = "yield_to_vendor_control_app"
     private const val MODULE_PAUSED = "module_paused"
     private const val DIAGNOSTIC_LOGGING = "diagnostic_logging"
@@ -33,7 +47,7 @@ object ModuleSettingsStore {
     private const val REMOTE_WRITE_PENDING = "remote_write_pending"
 
     fun read(preferences: SharedPreferences): ModuleSettings = ModuleSettings(
-        preferVendorControlApp = preferences.getBoolean(PREFER_VENDOR_CONTROL_APP, false),
+        moreSettingsTarget = readMoreSettingsTarget(preferences),
         yieldToVendorControlApp = preferences.getBoolean(YIELD_TO_VENDOR_CONTROL_APP, false),
         modulePaused = preferences.getBoolean(MODULE_PAUSED, false),
         diagnosticLogging = preferences.getBoolean(DIAGNOSTIC_LOGGING, false),
@@ -45,7 +59,13 @@ object ModuleSettingsStore {
 
     fun write(preferences: SharedPreferences, settings: ModuleSettings): Boolean =
         preferences.edit()
-            .putBoolean(PREFER_VENDOR_CONTROL_APP, settings.preferVendorControlApp)
+            .putString(MORE_SETTINGS_TARGET, settings.moreSettingsTarget.name)
+            // Keep the former boolean synchronized so a temporary downgrade retains the closest
+            // representable behavior. HYPEREARS degrades to the legacy system-settings path.
+            .putBoolean(
+                LEGACY_PREFER_VENDOR_CONTROL_APP,
+                settings.moreSettingsTarget == MoreSettingsTarget.VENDOR_APP,
+            )
             .putBoolean(YIELD_TO_VENDOR_CONTROL_APP, settings.yieldToVendorControlApp)
             .putBoolean(MODULE_PAUSED, settings.modulePaused)
             .putBoolean(DIAGNOSTIC_LOGGING, settings.diagnosticLogging)
@@ -76,11 +96,15 @@ object ModuleSettingsStore {
         val migrationRequired = !local.getBoolean(REMOTE_MIGRATION_COMPLETE, false)
         val pendingWrite = local.getBoolean(REMOTE_WRITE_PENDING, false)
         val remoteConfigured = PREFERENCE_KEYS.any(remote::contains)
+        val navigationMigrationRequired =
+            !remote.contains(MORE_SETTINGS_TARGET) &&
+                remote.contains(LEGACY_PREFER_VENDOR_CONTROL_APP)
         val effective = if (migrationRequired || pendingWrite || !remoteConfigured) {
             read(local).also { write(remote, it) }
         } else {
             read(remote)
         }
+        if (navigationMigrationRequired) write(remote, effective)
         write(local, effective)
         local.edit()
             .putBoolean(REMOTE_MIGRATION_COMPLETE, true)
@@ -92,14 +116,35 @@ object ModuleSettingsStore {
     private fun localPreferences(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFERENCES_GROUP, Context.MODE_PRIVATE)
 
+    private fun readMoreSettingsTarget(preferences: SharedPreferences): MoreSettingsTarget {
+        val stored = runCatching { preferences.getString(MORE_SETTINGS_TARGET, null) }.getOrNull()
+        val legacyPreference = if (preferences.contains(LEGACY_PREFER_VENDOR_CONTROL_APP)) {
+            preferences.getBoolean(LEGACY_PREFER_VENDOR_CONTROL_APP, false)
+        } else {
+            null
+        }
+        return resolveMoreSettingsTarget(stored, legacyPreference)
+    }
+
     private val PREFERENCE_KEYS = setOf(
-        PREFER_VENDOR_CONTROL_APP,
+        MORE_SETTINGS_TARGET,
+        LEGACY_PREFER_VENDOR_CONTROL_APP,
         YIELD_TO_VENDOR_CONTROL_APP,
         MODULE_PAUSED,
         DIAGNOSTIC_LOGGING,
         DISABLED_ADAPTER_IDS,
     )
 }
+
+internal fun resolveMoreSettingsTarget(
+    storedValue: String?,
+    legacyPreferVendorApp: Boolean?,
+): MoreSettingsTarget = MoreSettingsTarget.fromStoredValue(storedValue)
+    ?: if (legacyPreferVendorApp == true) {
+        MoreSettingsTarget.VENDOR_APP
+    } else {
+        MoreSettingsTarget.SYSTEM_SETTINGS
+    }
 
 /**
  * RemotePreferences serializes values in the module process and deserializes them in the LSPosed

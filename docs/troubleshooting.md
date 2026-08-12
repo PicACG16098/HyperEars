@@ -18,8 +18,8 @@
 只有音量可能是正常回退，也可能是私有能力尚未就绪：
 
 - 标准蓝牙耳机本来就只发布系统电量和音量；
-- 需要私有 GATT、RFCOMM 或 BR/EDR L2CAP 的型号必须先完成“私有通道”；只有 Adapter
-  明确要求握手时才需要“协议确认”，其他型号显示“连接即就绪”；
+- 需要私有 GATT、RFCOMM 或 BR/EDR L2CAP 的型号必须先完成“私有通道”和“协议确认”；
+  名称、服务 UUID 或具体型号配置只选择候选协议，不会直接开放私有控制；
 - 快速反复展开卡片时，MiLink 可能先用基础快照创建界面，后续状态应触发原生刷新；
 - 如果同一会话长期没有恢复控制按钮，采集看板 revision 和 MiLink 日志。
 
@@ -35,11 +35,12 @@
 
 ## “更多设置”闪退或打开错误页面
 
-当前实现从 MiLink 的语义控制器边界读取真实蓝牙地址，并打开 HyperOS 的
-`BluetoothDeviceDetailsFragment`。若 ROM 更改了 Settings Intent 或 Fragment 参数，
-模块会尝试回退到蓝牙设置列表。提交问题时请附 Settings 崩溃堆栈和 ROM 完整版本。
+当前实现从 MiLink 的语义控制器边界读取真实蓝牙地址，再按“更多设置”的选项打开系统设备
+详情、厂商 App 或 HyperEars。选择“系统设置”时会打开 HyperOS 的
+`BluetoothDeviceDetailsFragment`；若 ROM 更改了 Settings Intent 或 Fragment 参数，模块会
+回退到蓝牙设置列表。提交问题时请附 Settings 崩溃堆栈和 ROM 完整版本。
 
-启用“打开厂商设置”后，模块只会打开当前 Adapter 在
+选择“厂商 App”后，模块只会打开当前 Adapter 在
 [控制 App 目录](control-apps.md#2-当前目录)中声明、已经安装且具有 Launcher Activity 的
 候选 App。没有可启动候选时仍进入真实蓝牙设备详情。App 页面跳转本身不依赖 LSPosed
 作用域；未勾选作用域只会导致该 App 无法登记进程状态、不能触发运行时退避。

@@ -25,16 +25,10 @@ class NiceHckYuanDaoOrigAdapter : NiceHckEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "NiceHCK YuanDao OriG in"
     override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
-    override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
+    override val miLinkCardPresentationId: MiLinkCardPresentationId?
+        get() = PRESENTATION_ID.takeIf { effectiveCapabilities().noiseControl }
     override val privateProtocolRequired: Boolean = true
     override val transportReadiness: TransportReadiness = TransportReadiness.PROTOCOL_HANDSHAKE
-    override val capabilities: EarbudCapabilities = EarbudCapabilities(
-        battery = true,
-        noiseControl = true,
-        windNoiseControl = true,
-        audioHandoff = true,
-    )
-    override val supportedNoiseModes: Set<NoiseMode> = NoiseMode.entries.toSet()
     override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.ServiceUuid(
             uuid = SPP_UUID,
@@ -53,6 +47,7 @@ class NiceHckYuanDaoOrigAdapter : NiceHckEarbudAdapter() {
     companion object {
         const val ID = "nicehck-yuandao-orig-in"
         val PRESENTATION_ID = MiLinkCardPresentationId(ID)
+        internal val SUPPORTED_NOISE_MODES = NoiseMode.entries.toSet()
         private const val SPP_UUID = "0000a100-1000-8000-4e48-434b4354524c"
         private val ORIG_MODEL_NAMES = setOf(
             "origin",
@@ -96,6 +91,7 @@ private class NiceHckOrigProtocolSession : ProtocolSession {
                 add(ProtocolEvent.HandshakeAccepted)
             }
             battery?.let {
+                add(ProtocolEvent.CapabilitiesIdentified(battery = true))
                 add(
                     ProtocolEvent.FeatureStateChanged(
                         BatteryFeatureState(EarbudBattery(
@@ -107,6 +103,12 @@ private class NiceHckOrigProtocolSession : ProtocolSession {
                 )
             }
             noiseMode?.let { mode ->
+                add(
+                    ProtocolEvent.CapabilitiesIdentified(
+                        battery = false,
+                        noiseModes = NiceHckYuanDaoOrigAdapter.SUPPORTED_NOISE_MODES,
+                    ),
+                )
                 add(
                     ProtocolEvent.FeatureStateChanged(
                         NoiseModeFeatureState(mode.toDomainMode()),

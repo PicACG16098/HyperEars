@@ -152,15 +152,6 @@ class RoseEarfreeI5Adapter : RoseEarfreeProtocolFamilyAdapter() {
     override val id: String = ID
     override val displayName: String = "ROSESELSA EARFREE i5"
     override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
-    override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
-    override val transportReadiness: TransportReadiness = TransportReadiness.CONNECTED
-    override val capabilities: EarbudCapabilities = EarbudCapabilities(
-        battery = true,
-        noiseControl = true,
-        windNoiseControl = true,
-        audioHandoff = true,
-    )
-    override val supportedNoiseModes: Set<NoiseMode> = NoiseMode.entries.toSet()
 
     override fun matches(identity: EarbudIdentity): Boolean {
         if (identity.nativeSystemEarbud) return false
@@ -236,15 +227,6 @@ class RoseBudsFeelMk2Adapter : RoseBudsFeelProtocolFamilyAdapter() {
     override val id: String = ID
     override val displayName: String = "ROSE BudsFeel MK2"
     override val resolution: AdapterResolution = AdapterResolution.EXACT_MATCH
-    override val miLinkCardPresentationId: MiLinkCardPresentationId = PRESENTATION_ID
-    override val transportReadiness: TransportReadiness = TransportReadiness.CONNECTED
-    override val capabilities: EarbudCapabilities = EarbudCapabilities(
-        battery = true,
-        noiseControl = true,
-        windNoiseControl = true,
-        audioHandoff = true,
-    )
-    override val supportedNoiseModes: Set<NoiseMode> = NoiseMode.entries.toSet()
 
     override fun matches(identity: EarbudIdentity): Boolean {
         if (identity.nativeSystemEarbud) return false
