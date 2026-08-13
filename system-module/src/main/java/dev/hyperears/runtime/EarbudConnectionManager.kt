@@ -169,6 +169,11 @@ internal class EarbudConnectionManager(
                     COMPONENT,
                     "registered ${earbudAdapter.id} at ${maskBluetoothAddress(address)}",
                 )
+                ModuleLog.debug(
+                    "RoseDiag",
+                    "session registered adapter=${earbudAdapter.id} identity=$identity " +
+                        "snapshot=${registration.record.session.snapshot()}",
+                )
                 true
             }
         }
@@ -448,6 +453,13 @@ internal class EarbudConnectionManager(
                 "active=${state.sessionActive} connected=${state.connected} " +
                 "handshake=${state.handshakeAccepted} features=$featureSummary",
         )
+        if (state.modelId == dev.hyperears.integration.RoseLuliUltraAdapter.ID) {
+            ModuleLog.debug(
+                "RoseDiag",
+                "Bluetooth projection rev=${state.revision} adapter=${state.adapter} " +
+                    "lifecycle=${state.lifecycle} features=${state.features.values}",
+            )
+        }
     }
 
     private fun normalizeAddress(address: String): String =

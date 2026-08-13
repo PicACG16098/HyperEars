@@ -320,6 +320,7 @@ private class RoseEarfreeProtocolSession : ProtocolSession {
 
 private class RoseBudsFeelProtocolSession : ProtocolSession {
     private val decoder = RoseBudsFeelMk2WireCodec.Decoder()
+    private val diagnostics = mutableListOf<ProtocolDiagnostic>()
     private var sequence = 0
     private var handshakePublished = false
 
@@ -341,8 +342,16 @@ private class RoseBudsFeelProtocolSession : ProtocolSession {
     }
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> {
-        val states = decoder.offer(bytes)
-        if (states.isEmpty()) return emptyList()
+        val states = decoder.offer(bytes) { detail ->
+            diagnostics += ProtocolDiagnostic("rose-codec", detail)
+        }
+        if (states.isEmpty()) {
+            diagnostics += ProtocolDiagnostic(
+                "rose-session",
+                "no semantic state decoded; handshakePublished=$handshakePublished",
+            )
+            return emptyList()
+        }
         return buildList {
             if (!handshakePublished) {
                 add(ProtocolEvent.HandshakeAccepted)
@@ -376,11 +385,20 @@ private class RoseBudsFeelProtocolSession : ProtocolSession {
                     },
                 )
             }
+        }.also { events ->
+            diagnostics += ProtocolDiagnostic(
+                "rose-session",
+                "states=$states events=$events handshakePublished=$handshakePublished",
+            )
         }
     }
 
+    override fun drainDiagnostics(): List<ProtocolDiagnostic> =
+        diagnostics.toList().also { diagnostics.clear() }
+
     override fun reset() {
         decoder.reset()
+        diagnostics.clear()
         sequence = 0
         handshakePublished = false
     }

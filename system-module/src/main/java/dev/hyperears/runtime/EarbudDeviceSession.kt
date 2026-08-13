@@ -27,6 +27,7 @@ import dev.hyperears.integration.InitialProtocolFailureResolution
 import dev.hyperears.integration.PrivateTransportState
 import dev.hyperears.integration.ProtocolEvent
 import dev.hyperears.integration.ProtocolHandshakeState
+import dev.hyperears.integration.RoseLuliUltraAdapter
 import dev.hyperears.integration.SystemProfileState
 import dev.hyperears.integration.TransportReadiness
 import dev.hyperears.integration.standardIntegrationProjection
@@ -168,6 +169,13 @@ internal class EarbudDeviceSession(
     }
 
     fun start() {
+        if (adapter.id == RoseLuliUltraAdapter.ID) {
+            ModuleLog.debug(
+                "RoseDiag",
+                "session start adapter=${adapter.id} snapshot=${snapshot()} " +
+                    "externalOwner=${externalControlApp?.packageName}",
+            )
+        }
         publishCachedSystemBattery()
         if (externalControlApp != null) {
             publishSnapshot()
@@ -278,6 +286,15 @@ internal class EarbudDeviceSession(
 
     fun execute(request: ControlRequest): Boolean {
         if (closed.get()) return false
+        val roseDiagnostic = adapter.id == RoseLuliUltraAdapter.ID
+        if (roseDiagnostic) {
+            ModuleLog.debug(
+                "RoseDiag",
+                "control received request=$request connected=${lifecycle.operational} " +
+                    "channel=${channel?.endpointId} supports=${adapter.supportsControl(request)} " +
+                    "snapshot=${adapter.snapshot()} features=${adapter.runtimeState().features.values}",
+            )
+        }
         if (request === StandardControlRequest.Refresh && !refreshRequestGate.tryAcquire()) {
             ModuleLog.debug(
                 COMPONENT,
@@ -302,6 +319,15 @@ internal class EarbudDeviceSession(
             runCatching {
                 transactionMutex.withLock {
                     val result = adapter.executeControl(request)
+                    if (roseDiagnostic) {
+                        ModuleLog.debug(
+                            "RoseDiag",
+                            "control encoded request=$request accepted=${result.accepted} " +
+                                "commands=${result.commands.map { it.toHex() }} " +
+                                "readback=${result.readback.map { it.toHex() }} " +
+                                "stateChanged=${result.stateChanged} policy=$policy",
+                        )
+                    }
                     if (!result.accepted) return@withLock
                     sendCommands(
                         activeChannel = activeChannel,
@@ -317,6 +343,12 @@ internal class EarbudDeviceSession(
                     if (result.stateChanged) publishSnapshot()
                     val readback = result.readback
                     if (readback.isNotEmpty()) {
+                        if (roseDiagnostic) {
+                            ModuleLog.debug(
+                                "RoseDiag",
+                                "control readback scheduled request=$request delay=${policy.readbackDelayMs}ms",
+                            )
+                        }
                         delay(policy.readbackDelayMs)
                         sendCommands(
                             activeChannel = activeChannel,
@@ -483,6 +515,13 @@ internal class EarbudDeviceSession(
                 throw CancellationException("vendor control owned by external app")
             }
             val candidate = try {
+                if (adapter.id == RoseLuliUltraAdapter.ID) {
+                    ModuleLog.debug(
+                        "RoseDiag",
+                        "transport attempt adapter=${adapter.id} endpoint=${transport.id} " +
+                            "spec=$transport address=${maskBluetoothAddress(address)}",
+                    )
+                }
                 channelFactory.create(context, device, transport)
             } catch (error: Throwable) {
                 lastError = error
@@ -562,7 +601,22 @@ internal class EarbudDeviceSession(
         bytes: ByteArray,
     ): AdapterIoResult = transactionMutex.withLock {
         val receivingAdapter = adapter
+        val roseDiagnostic = receivingAdapter.id == RoseLuliUltraAdapter.ID
+        if (roseDiagnostic) {
+            ModuleLog.debug(
+                "RoseDiag",
+                "transport read endpoint=${activeChannel.endpointId} bytes=${bytes.size} " +
+                    "data=${bytes.toHex()} before=${receivingAdapter.snapshot()} " +
+                    "features=${receivingAdapter.runtimeState().features.values}",
+            )
+        }
         val result = receivingAdapter.receive(bytes)
+        result.diagnostics.forEach { diagnostic ->
+            ModuleLog.debug(
+                "RoseDiag/${diagnostic.stage}",
+                diagnostic.detail,
+            )
+        }
         if (result.commands.isNotEmpty()) {
             sendCommands(
                 activeChannel = activeChannel,
@@ -643,6 +697,15 @@ internal class EarbudDeviceSession(
             )
         }
         if (publishRequired) publishSnapshot()
+        if (roseDiagnostic) {
+            ModuleLog.debug(
+                "RoseDiag",
+                "read applied handshake=${result.handshake} stateChanged=${result.stateChanged} " +
+                    "publishRequired=$publishRequired commands=${result.commands.size} " +
+                    "effects=${result.effects} after=${adapter.snapshot()} " +
+                    "features=${adapter.runtimeState().features.values} lifecycle=$lifecycle",
+            )
+        }
         result
     }
 

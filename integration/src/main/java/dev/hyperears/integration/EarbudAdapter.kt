@@ -151,6 +151,8 @@ abstract class EarbudAdapter(
     fun receive(bytes: ByteArray): AdapterIoResult {
         val previousSnapshot = snapshot()
         val events = protocolSession.offer(bytes)
+        val diagnostics = protocolSession.drainDiagnostics().toMutableList()
+        val diagnosticRead = diagnostics.isNotEmpty()
         var changed = false
         var handshake: HandshakeResult? = null
         val unknown = mutableListOf<ProtocolEvent.UnknownFrame>()
@@ -161,8 +163,23 @@ abstract class EarbudAdapter(
         events.forEach { event ->
             when (event) {
                 is ProtocolEvent.FeatureStateChanged -> {
-                    if (!featureStateContract.accepts(this, event.state)) return@forEach
-                    when (onFeatureReported(event.state, eventScope)) {
+                    val contractAccepted = featureStateContract.accepts(this, event.state)
+                    if (diagnosticRead) {
+                        diagnostics += ProtocolDiagnostic(
+                            stage = "adapter-feature-contract",
+                            detail = "adapter=$id feature=${event.state.featureId} " +
+                                "accepted=$contractAccepted state=${event.state}",
+                        )
+                    }
+                    if (!contractAccepted) return@forEach
+                    val decision = onFeatureReported(event.state, eventScope)
+                    if (diagnosticRead) {
+                        diagnostics += ProtocolDiagnostic(
+                            stage = "adapter-feature-decision",
+                            detail = "adapter=$id feature=${event.state.featureId} decision=$decision",
+                        )
+                    }
+                    when (decision) {
                         FeatureReportDecision.ACCEPT -> {
                             if (event.state is BatteryFeatureState) {
                                 batterySourceAfterProtocolEvidence()?.let {
@@ -187,22 +204,47 @@ abstract class EarbudAdapter(
         events.forEach { event ->
             when (event) {
                 ProtocolEvent.HandshakeAccepted -> {
+                    if (diagnosticRead) {
+                        diagnostics += ProtocolDiagnostic(
+                            "adapter-handshake",
+                            "adapter=$id event=accepted",
+                        )
+                    }
                     if (handshake !is HandshakeResult.Replace) {
                         handshake = HandshakeResult.Ready
                     }
                 }
 
                 ProtocolEvent.HandshakeRejected -> {
+                    if (diagnosticRead) {
+                        diagnostics += ProtocolDiagnostic(
+                            "adapter-handshake",
+                            "adapter=$id event=rejected",
+                        )
+                    }
                     if (handshake !is HandshakeResult.Replace) {
                         handshake = HandshakeResult.Rejected
                     }
                 }
 
                 is ProtocolEvent.ProductIdentified -> {
+                    if (diagnosticRead) {
+                        diagnostics += ProtocolDiagnostic(
+                            "adapter-product",
+                            "adapter=$id productId=${event.productId}",
+                        )
+                    }
                     onProductIdentified(event.productId)?.let { handshake = it }
                 }
 
                 is ProtocolEvent.CapabilitiesIdentified -> {
+                    if (diagnosticRead) {
+                        diagnostics += ProtocolDiagnostic(
+                            "adapter-capability-evidence",
+                            "adapter=$id battery=${event.battery} " +
+                                "noiseModes=${event.noiseModes.sortedBy(NoiseMode::ordinal)}",
+                        )
+                    }
                     onCapabilitiesIdentified(event.battery, event.noiseModes)
                         ?.let { handshake = it }
                 }
@@ -221,12 +263,25 @@ abstract class EarbudAdapter(
                 replacement.adoptProtocolState(this)
             }
         changed = changed || snapshot() != previousSnapshot
+        if (diagnosticRead) {
+            val nextSnapshot = snapshot()
+            diagnostics += ProtocolDiagnostic(
+                stage = "adapter-result",
+                detail = "adapter=$id events=${events.map { it.javaClass.simpleName }} " +
+                    "handshake=$handshake stateChanged=$changed effects=${eventScope.effects()} " +
+                    "capabilities=${nextSnapshot.capabilities} " +
+                    "noiseModes=${nextSnapshot.supportedNoiseModes.sortedBy(NoiseMode::ordinal)} " +
+                    "presentation=${nextSnapshot.presentationId?.value} " +
+                    "features=${runtimeState.features.values}",
+            )
+        }
         return AdapterIoResult(
             commands = commands,
             handshake = handshake,
             stateChanged = changed,
             unknownFrames = unknown,
             effects = eventScope.effects(),
+            diagnostics = diagnostics,
         )
     }
 

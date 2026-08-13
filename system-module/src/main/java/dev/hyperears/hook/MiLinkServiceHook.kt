@@ -23,6 +23,7 @@ import dev.hyperears.integration.MiLinkCardPresentationId
 import dev.hyperears.integration.MiLinkStateCodec
 import dev.hyperears.integration.NoiseMode
 import dev.hyperears.integration.NoiseModeFeatureState
+import dev.hyperears.integration.RoseLuliUltraAdapter
 import dev.hyperears.integration.withFeature
 import dev.hyperears.settings.ModuleSettings
 import dev.hyperears.settings.ModuleSettingsRuntime
@@ -167,6 +168,16 @@ internal class MiLinkServiceHook : HookContext() {
                     ?: return@hookAfter
                 val adapter = state.adapter
                     ?: return@hookAfter
+                if (adapter.id == RoseLuliUltraAdapter.ID) {
+                    ModuleLog.debug(
+                        "RoseDiag",
+                        "presentation query adapter=${adapter.id} " +
+                            "capabilities=${adapter.capabilities} " +
+                            "noiseModes=${adapter.supportedNoiseModes} " +
+                            "presentation=${adapter.presentationId?.value} " +
+                            "noiseState=${state.noiseMode}",
+                    )
+                }
                 val presentationId = adapter.presentationId ?: return@hookAfter
                 val serviceInfo = result ?: return@hookAfter
                 val properties = runCatching {
@@ -216,6 +227,19 @@ internal class MiLinkServiceHook : HookContext() {
                     ?.takeIf(::isTargetAddress)
                     ?: args.firstNotNullOfOrNull(::headsetAddress)
                 if (address == null) return@hookAfter
+                stateForAddress(address)
+                    .takeIf { it.modelId == RoseLuliUltraAdapter.ID }
+                    ?.let { state ->
+                        ModuleLog.debug(
+                            "RoseDiag",
+                            "detail bind address=${maskBluetoothAddress(address)} " +
+                                "publishedPresentation=${publishedPresentationId?.value} " +
+                                "adapterPresentation=${state.adapter?.presentationId?.value} " +
+                                "capabilities=${state.adapter?.capabilities} " +
+                                "noiseModes=${state.adapter?.supportedNoiseModes} " +
+                                "noiseState=${state.noiseMode}",
+                        )
+                    }
                 extension.bind(
                     root = root,
                     address = address,
@@ -710,6 +734,15 @@ internal class MiLinkServiceHook : HookContext() {
                         "published raw ANC capabilities modes=$result " +
                             "address=${maskBluetoothAddress(address)}",
                     )
+                    if (adapter.id == RoseLuliUltraAdapter.ID) {
+                        ModuleLog.debug(
+                            "RoseDiag",
+                            "ANC capability query result=$result capabilities=${adapter.capabilities} " +
+                                "noiseModes=${adapter.supportedNoiseModes} " +
+                                "presentation=${adapter.presentationId?.value} " +
+                                "address=${maskBluetoothAddress(address)}",
+                        )
+                    }
                 }
                 installed += 1
             }.onFailure {
@@ -742,7 +775,19 @@ internal class MiLinkServiceHook : HookContext() {
             headsetAddress(info)?.let {
                 recordBridgeStage(it, methodName.bridgeStage())
             }
-            value(info)?.let { result = it }
+                value(info)?.let { projected ->
+                    result = projected
+                    stateForHeadsetInfo(info)
+                        .takeIf { it.modelId == RoseLuliUltraAdapter.ID }
+                        ?.let { state ->
+                            ModuleLog.debug(
+                                "RoseDiag",
+                                "MiLink HeadsetInfo.$methodName projected=$projected " +
+                                    "adapter=${state.adapter} noiseState=${state.noiseMode} " +
+                                    "battery=${state.battery}",
+                            )
+                        }
+                }
         }
     }
 
@@ -803,10 +848,25 @@ internal class MiLinkServiceHook : HookContext() {
         if (ModuleRuntimeGate.paused) return
         val incoming = with(ModuleContract) { intent.readState() } ?: return
         val sessionToken = with(ModuleContract) { intent.readSessionToken() } ?: return
+        if (incoming.modelId == RoseLuliUltraAdapter.ID) {
+            ModuleLog.debug(
+                "RoseDiag",
+                "MiLink state broadcast incoming rev=${incoming.revision} " +
+                    "adapter=${incoming.adapter} lifecycle=${incoming.lifecycle} " +
+                    "features=${incoming.features.values} tokenPresent=${sessionToken.isNotBlank()}",
+            )
+        }
         val previous = incoming.address
             ?.let(ProcessStateStore::knownSnapshot)
             ?: EarbudState()
         val state = ProcessStateStore.accept(intent) ?: return
+        if (state.modelId == RoseLuliUltraAdapter.ID) {
+            ModuleLog.debug(
+                "RoseDiag",
+                "MiLink state accepted rev=${state.revision} adapter=${state.adapter} " +
+                    "lifecycle=${state.lifecycle} features=${state.features.values}",
+            )
+        }
         state.address?.let {
             val normalized = normalizeAddress(it)
             val systemOwned = deviceOwnership.isSystemOwned(it)
@@ -1117,6 +1177,16 @@ internal class MiLinkServiceHook : HookContext() {
         val ancChanged =
             capabilities.noiseControl &&
                 (identityChanged || adapterChanged || previous.noiseMode != snapshot.noiseMode)
+        if (snapshot.modelId == RoseLuliUltraAdapter.ID) {
+            ModuleLog.debug(
+                "RoseDiag",
+                "MiLink runtime diff identityChanged=$identityChanged adapterChanged=$adapterChanged " +
+                    "connectionChanged=$connectionChanged batteryChanged=$batteryChanged " +
+                    "ancChanged=$ancChanged owners=${owners.size} listeners=${propertyListeners.size} " +
+                    "previousNoise=${previous.noiseMode} nextNoise=${snapshot.noiseMode} " +
+                    "capabilities=$capabilities",
+            )
+        }
         if (!adapterChanged && !connectionChanged && !batteryChanged && !ancChanged) return
 
         val address = snapshot.address ?: return
@@ -1219,7 +1289,15 @@ internal class MiLinkServiceHook : HookContext() {
         return MiLinkStateCodec.batteryLevels(
             state = state,
             formFactor = adapter.formFactor,
-        )
+        ).also { levels ->
+            if (adapter.id == RoseLuliUltraAdapter.ID) {
+                ModuleLog.debug(
+                    "RoseDiag",
+                    "battery projection source=${state.battery} result=$levels " +
+                        "formFactor=${adapter.formFactor}",
+                )
+            }
+        }
     }
 
     private fun nativeAncState(state: EarbudState): Int {
@@ -1230,7 +1308,15 @@ internal class MiLinkServiceHook : HookContext() {
             ?: state.noiseMode
         return MiLinkStateCodec.ancState(
             projectedMode?.let { state.withFeature(NoiseModeFeatureState(it)) } ?: state,
-        )
+        ).also { nativeState ->
+            if (state.modelId == RoseLuliUltraAdapter.ID) {
+                ModuleLog.debug(
+                    "RoseDiag",
+                    "noise projection source=${state.noiseMode} projected=$projectedMode " +
+                        "native=$nativeState presentation=${state.adapter?.presentationId?.value}",
+                )
+            }
+        }
     }
 
     private fun requestState() {
@@ -1299,6 +1385,14 @@ internal class MiLinkServiceHook : HookContext() {
         }
         send()
         ModuleLog.debug("MiLink", "forwarded ${request.javaClass.simpleName}")
+        if (snapshot.modelId == RoseLuliUltraAdapter.ID) {
+            ModuleLog.debug(
+                "RoseDiag",
+                "control forwarded request=$request rev=${snapshot.revision} " +
+                    "noiseState=${snapshot.noiseMode} tokenPresent=${token.isNotBlank()} " +
+                    "address=${maskBluetoothAddress(address)}",
+            )
+        }
     }
 
     private fun normalizeAddress(address: String): String = address.uppercase(Locale.ROOT)

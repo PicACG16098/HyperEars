@@ -569,7 +569,25 @@ data class AdapterIoResult(
     val stateChanged: Boolean = false,
     val unknownFrames: List<ProtocolEvent.UnknownFrame> = emptyList(),
     val effects: List<AdapterEffect> = emptyList(),
+    /** Ordered diagnostics drained from the protocol and Adapter admission path for this read. */
+    val diagnostics: List<ProtocolDiagnostic> = emptyList(),
 )
+
+/**
+ * One structured, human-readable diagnostic emitted while handling a private-protocol read.
+ *
+ * Protocol implementations never write Android or LSPosed logs directly. The Android runtime
+ * decides whether diagnostics are enabled and is the only layer allowed to publish them.
+ */
+data class ProtocolDiagnostic(
+    val stage: String,
+    val detail: String,
+) {
+    init {
+        require(stage.isNotBlank())
+        require(detail.isNotBlank())
+    }
+}
 
 data class AdapterControlResult(
     val accepted: Boolean,
@@ -641,5 +659,9 @@ interface ProtocolSession {
     fun readback(request: ControlRequest): List<ByteArray> = emptyList()
 
     fun offer(bytes: ByteArray): List<ProtocolEvent>
+
+    /** Drains diagnostics produced by the most recent protocol operation, in occurrence order. */
+    fun drainDiagnostics(): List<ProtocolDiagnostic> = emptyList()
+
     fun reset()
 }

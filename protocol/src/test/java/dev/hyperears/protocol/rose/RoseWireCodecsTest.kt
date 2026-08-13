@@ -1,6 +1,7 @@
 package dev.hyperears.protocol.rose
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RoseWireCodecsTest {
@@ -118,6 +119,35 @@ class RoseWireCodecsTest {
             CERAMICS_STATES,
             decoder.offer(CERAMICS_EXTENDED_FRAME),
         )
+    }
+
+    @Test
+    fun budsFeelDiagnosticTraceReportsFrameAndSemanticFields() {
+        val trace = mutableListOf<String>()
+
+        assertEquals(
+            CERAMICS_STATES,
+            RoseBudsFeelMk2WireCodec.Decoder().offer(CERAMICS_EXTENDED_FRAME, trace::add),
+        )
+        assertTrue(trace.any { it.startsWith("frame accepted") })
+        assertTrue(trace.any { it.contains("noise raw=3 decoded=TRANSPARENCY") })
+        assertTrue(trace.any { it.contains("battery decoded=Battery") })
+        assertTrue(trace.any { it.startsWith("decode complete states=") })
+    }
+
+    @Test
+    fun budsFeelDiagnosticTracePreservesUnknownNoiseValue() {
+        val trace = mutableListOf<String>()
+        val response = responseFrame(
+            sequence = 0x21,
+            payload = byteArrayOf(0x09, 0x7F),
+        )
+
+        assertEquals(
+            emptyList<RoseBudsFeelMk2WireCodec.State>(),
+            RoseBudsFeelMk2WireCodec.Decoder().offer(response, trace::add),
+        )
+        assertTrue(trace.any { it.contains("direct noise raw=127 decoded=null") })
     }
 
     @Test

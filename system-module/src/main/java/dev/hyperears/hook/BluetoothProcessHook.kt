@@ -81,6 +81,14 @@ internal class BluetoothProcessHook : HookContext() {
 
         val identity = device.toEarbudIdentity()
         val address = runCatching { device.address }.getOrNull()
+        ModuleLog.debug(
+            "RoseDiag",
+            "A2DP identity name=${identity.deviceName} standard=${identity.standardHeadset} " +
+                "nativeSystem=${identity.nativeSystemEarbud} " +
+                "class=${identity.bluetoothDeviceClass} uuids=${identity.serviceUuids.sorted()} " +
+                "disabledAdapters=${ModuleSettingsRuntime.current.disabledAdapterIds.sorted()} " +
+                "address=${maskBluetoothAddress(address)}",
+        )
         if (PlatformReservedHeadsetPolicy.reserves(identity)) {
             ModuleLog.debug(
                 "Bluetooth",
@@ -105,6 +113,13 @@ internal class BluetoothProcessHook : HookContext() {
             "Bluetooth",
             "A2DP state=$state adapter=${earbudAdapter.id} " +
                 "address=${maskBluetoothAddress(address)}",
+        )
+        ModuleLog.debug(
+            "RoseDiag",
+            "registry selected adapter=${earbudAdapter.id} name=${earbudAdapter.displayName} " +
+                "resolution=${earbudAdapter.resolution} private=${earbudAdapter.privateProtocolRequired} " +
+                "transports=${earbudAdapter.transports.map { it.id }} " +
+                "initialSnapshot=${earbudAdapter.snapshot()}",
         )
         EarbudSessionService.registerDevice(device, identity, earbudAdapter)
     }

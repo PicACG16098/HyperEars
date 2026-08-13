@@ -39,30 +39,66 @@ object RoseBudsFeelMk2WireCodec {
     class Decoder {
         private var pending = ByteArray(0)
 
-        fun offer(bytes: ByteArray): List<State> {
-            if (bytes.isEmpty()) return emptyList()
+        fun offer(
+            bytes: ByteArray,
+            trace: ((String) -> Unit)? = null,
+        ): List<State> {
+            if (bytes.isEmpty()) {
+                trace?.invoke("empty input ignored pending=${pending.size}")
+                return emptyList()
+            }
+            trace?.invoke(
+                "chunk received bytes=${bytes.size} pendingBefore=${pending.size} " +
+                    "data=${bytes.toHex()}",
+            )
             pending += bytes
+            trace?.invoke("stream buffered pending=${pending.size}")
             val states = mutableListOf<State>()
 
             while (pending.size >= MIN_FRAME_SIZE) {
                 val marker = pending.indexOf(RESPONSE_MARKER)
                 if (marker < 0) {
+                    trace?.invoke(
+                        "response marker absent; dropped=${pending.size} data=${pending.toHex()}",
+                    )
                     pending = ByteArray(0)
                     break
                 }
-                if (marker > 0) pending = pending.copyOfRange(marker, pending.size)
+                if (marker > 0) {
+                    trace?.invoke(
+                        "discarded prefix bytes=$marker data=${pending.copyOfRange(0, marker).toHex()}",
+                    )
+                    pending = pending.copyOfRange(marker, pending.size)
+                }
 
-                val end = pending.validFrameEnd()
-                if (end == INCOMPLETE_FRAME) break
+                val end = pending.validFrameEnd(trace)
+                if (end == INCOMPLETE_FRAME) {
+                    trace?.invoke(
+                        "frame incomplete pending=${pending.size} " +
+                            "declaredPayload=${pending.getOrNull(PAYLOAD_LENGTH_INDEX)?.unsigned()}",
+                    )
+                    break
+                }
                 if (end == INVALID_FRAME) {
+                    trace?.invoke(
+                        "invalid frame head discarded byte=%02X pending=${pending.size}".format(
+                            pending.first().unsigned(),
+                        ),
+                    )
                     pending = pending.copyOfRange(1, pending.size)
                     continue
                 }
 
                 val frame = pending.copyOfRange(0, end + 1)
                 pending = pending.copyOfRange(end + 1, pending.size)
-                states += parseFrame(frame)
+                trace?.invoke(
+                    "frame accepted bytes=${frame.size} sequence=${frame[1].unsigned()} " +
+                        "declaredPayload=${frame[PAYLOAD_LENGTH_INDEX].unsigned()} " +
+                        "remaining=${pending.size} data=${frame.toHex()}",
+                )
+                states += parseFrame(frame, trace)
             }
+            trace?.invoke("decode complete states=$states pendingAfter=${pending.size}")
             return states
         }
 
@@ -71,7 +107,7 @@ object RoseBudsFeelMk2WireCodec {
         }
     }
 
-    private fun ByteArray.validFrameEnd(): Int {
+    private fun ByteArray.validFrameEnd(trace: ((String) -> Unit)?): Int {
         validatedFrameEndAt(0)?.let { return it }
 
         // A terminator or response marker can legally occur inside extension data. Therefore a
@@ -79,11 +115,19 @@ object RoseBudsFeelMk2WireCodec {
         // complete, checksum-valid frame is already available at a later response marker.
         for (candidateStart in 1 until size) {
             if (this[candidateStart] != RESPONSE_MARKER) continue
-            if (validatedFrameEndAt(candidateStart) != null) return INVALID_FRAME
+            if (validatedFrameEndAt(candidateStart) != null) {
+                trace?.invoke(
+                    "checksum-valid later frame found offset=$candidateStart; resynchronizing",
+                )
+                return INVALID_FRAME
+            }
         }
 
         // A permanently corrupt frame cannot retain the stream indefinitely.
-        if (size > MAX_FRAME_SIZE) return INVALID_FRAME
+        if (size > MAX_FRAME_SIZE) {
+            trace?.invoke("pending frame exceeded max bytes=$size max=$MAX_FRAME_SIZE")
+            return INVALID_FRAME
+        }
         return INCOMPLETE_FRAME
     }
 
@@ -113,71 +157,134 @@ object RoseBudsFeelMk2WireCodec {
         return null
     }
 
-    private fun parseFrame(frame: ByteArray): List<State> {
-        if (frame.size < MIN_FRAME_SIZE) return emptyList()
+    private fun parseFrame(
+        frame: ByteArray,
+        trace: ((String) -> Unit)?,
+    ): List<State> {
+        if (frame.size < MIN_FRAME_SIZE) {
+            trace?.invoke("accepted boundary shorter than minimum bytes=${frame.size}")
+            return emptyList()
+        }
         val payloadLength = frame[PAYLOAD_LENGTH_INDEX].unsigned()
         val payloadEnd = FRAME_HEADER_SIZE + payloadLength
-        if (payloadEnd + FRAME_TRAILER_SIZE > frame.size) return emptyList()
+        if (payloadEnd + FRAME_TRAILER_SIZE > frame.size) {
+            trace?.invoke(
+                "payload boundary invalid payloadEnd=$payloadEnd frameBytes=${frame.size}",
+            )
+            return emptyList()
+        }
+        val payload = frame.copyOfRange(FRAME_HEADER_SIZE, payloadEnd)
+        trace?.invoke("payload bytes=${payload.size} data=${payload.toHex()}")
         val states = parsePayload(
-            frame.copyOfRange(FRAME_HEADER_SIZE, payloadEnd),
+            payload,
+            trace,
         ).toMutableList()
         val extensionEnd = frame.size - FRAME_TRAILER_SIZE
         if (payloadEnd < extensionEnd) {
-            states += parseTlvBlock(frame, payloadEnd, extensionEnd)
+            trace?.invoke(
+                "extension bytes=${extensionEnd - payloadEnd} " +
+                    "data=${frame.copyOfRange(payloadEnd, extensionEnd).toHex()}",
+            )
+            states += parseTlvBlock(frame, payloadEnd, extensionEnd, trace, "extension")
         }
-        return states
+        return states.also { trace?.invoke("frame states=$it") }
     }
 
-    private fun parsePayload(payload: ByteArray): List<State> {
+    private fun parsePayload(
+        payload: ByteArray,
+        trace: ((String) -> Unit)?,
+    ): List<State> {
         if (payload.size == DIRECT_NOISE_PAYLOAD_LENGTH &&
             payload[0].unsigned() == NOISE_TYPE
         ) {
-            return payload[1].toNoiseMode()?.let { listOf(State.Noise(it)) }.orEmpty()
+            val rawMode = payload[1].unsigned()
+            val mode = payload[1].toNoiseMode()
+            trace?.invoke("direct noise raw=$rawMode decoded=$mode")
+            return mode?.let { listOf(State.Noise(it)) }.orEmpty()
         }
         if (payload.size == DIRECT_BATTERY_PAYLOAD_LENGTH &&
             payload[0].unsigned() == BATTERY_TYPE
         ) {
+            val state = State.Battery(
+                leftPercent = payload[1].batteryPercent(),
+                rightPercent = payload[2].batteryPercent(),
+                casePercent = payload[3].batteryPercent(),
+            )
+            trace?.invoke(
+                "direct battery raw=${payload.copyOfRange(1, 4).toHex()} decoded=$state",
+            )
             return listOf(
-                State.Battery(
-                    leftPercent = payload[1].batteryPercent(),
-                    rightPercent = payload[2].batteryPercent(),
-                    casePercent = payload[3].batteryPercent(),
-                ),
+                state,
             )
         }
-        return parseTlvBlock(payload, 0, payload.size)
+        trace?.invoke("payload treated as TLV block")
+        return parseTlvBlock(payload, 0, payload.size, trace, "payload")
     }
 
-    private fun parseTlvBlock(data: ByteArray, start: Int, end: Int): List<State> {
+    private fun parseTlvBlock(
+        data: ByteArray,
+        start: Int,
+        end: Int,
+        trace: ((String) -> Unit)?,
+        path: String,
+    ): List<State> {
         val result = mutableListOf<State>()
         var index = start
         while (index + 1 < end) {
             val length = data[index].unsigned()
             val entryEnd = index + length + 1
             if (length < 2 || entryEnd > end) {
+                trace?.invoke(
+                    "$path malformed TLV offset=$index length=$length end=$end; advance=1",
+                )
                 index += 1
                 continue
             }
 
-            when (data[index + 1].unsigned()) {
-                NOISE_TYPE -> data[index + 2].toNoiseMode()?.let {
-                    result += State.Noise(it)
+            val type = data[index + 1].unsigned()
+            val value = data.copyOfRange(index + 2, entryEnd)
+            trace?.invoke(
+                "$path TLV offset=$index length=$length type=0x%02X value=${value.toHex()}".format(
+                    type,
+                ),
+            )
+            when (type) {
+                NOISE_TYPE -> {
+                    val rawMode = data[index + 2].unsigned()
+                    val mode = data[index + 2].toNoiseMode()
+                    trace?.invoke("$path noise raw=$rawMode decoded=$mode")
+                    mode?.let { result += State.Noise(it) }
                 }
 
                 BATTERY_TYPE -> if (length >= 4) {
-                    result += State.Battery(
+                    val state = State.Battery(
                         leftPercent = data[index + 2].batteryPercent(),
                         rightPercent = data[index + 3].batteryPercent(),
                         casePercent = data[index + 4].batteryPercent(),
                     )
+                    trace?.invoke("$path battery decoded=$state")
+                    result += state
+                } else {
+                    trace?.invoke("$path battery TLV too short length=$length")
                 }
+
+                else -> trace?.invoke("$path unknown TLV type=0x%02X".format(type))
             }
 
             val nestedStart = index + 2
             if (entryEnd - nestedStart >= 3) {
-                result += parseTlvBlock(data, nestedStart, entryEnd)
+                result += parseTlvBlock(
+                    data,
+                    nestedStart,
+                    entryEnd,
+                    trace,
+                    "$path/$index",
+                )
             }
             index = entryEnd
+        }
+        if (index < end) {
+            trace?.invoke("$path trailing bytes=${end - index} data=${data.copyOfRange(index, end).toHex()}")
         }
         return result.distinct()
     }
@@ -188,6 +295,8 @@ object RoseBudsFeelMk2WireCodec {
     private fun Byte.batteryPercent(): Int? = unsigned().takeIf { it in 0..100 }
     private fun ByteArray.checksum(): Byte = sumOf { it.unsigned() }.and(0xFF).toByte()
     private fun Byte.unsigned(): Int = toInt() and 0xFF
+    private fun ByteArray.toHex(): String =
+        joinToString(separator = " ") { "%02X".format(it.unsigned()) }
 
     private const val STATUS_COMMAND = 0x1E
     private const val SET_COMMAND = 0x02
