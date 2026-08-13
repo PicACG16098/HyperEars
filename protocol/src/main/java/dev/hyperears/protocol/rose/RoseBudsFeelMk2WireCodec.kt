@@ -13,6 +13,8 @@ object RoseBudsFeelMk2WireCodec {
         OFF(2),
         TRANSPARENCY(3),
         WIND(4),
+        ADAPTIVE_ANC(5),
+        EXTREME_ANC(6),
     }
 
     sealed interface State {
@@ -137,13 +139,7 @@ object RoseBudsFeelMk2WireCodec {
         if (payload.size == DIRECT_BATTERY_PAYLOAD_LENGTH &&
             payload[0].unsigned() == BATTERY_TYPE
         ) {
-            return listOf(
-                State.Battery(
-                    leftPercent = payload[1].batteryPercent(),
-                    rightPercent = payload[2].batteryPercent(),
-                    casePercent = payload[3].batteryPercent(),
-                ),
-            )
+            return listOf(decodeBattery(payload, 1))
         }
         return parseTlvBlock(payload, 0, payload.size)
     }
@@ -165,11 +161,7 @@ object RoseBudsFeelMk2WireCodec {
                 }
 
                 BATTERY_TYPE -> if (length >= 4) {
-                    result += State.Battery(
-                        leftPercent = data[index + 2].batteryPercent(),
-                        rightPercent = data[index + 3].batteryPercent(),
-                        casePercent = data[index + 4].batteryPercent(),
-                    )
+                    result += decodeBattery(data, index + 2)
                 }
             }
 
@@ -185,7 +177,18 @@ object RoseBudsFeelMk2WireCodec {
     private fun Byte.toNoiseMode(): NoiseMode? =
         NoiseMode.entries.firstOrNull { it.value == unsigned() }
 
-    private fun Byte.batteryPercent(): Int? = unsigned().takeIf { it in 0..100 }
+    private fun decodeBattery(data: ByteArray, valueStart: Int): State.Battery {
+        return State.Battery(
+            leftPercent = data[valueStart].batteryPercent(),
+            rightPercent = data[valueStart + 1].batteryPercent(),
+            casePercent = data[valueStart + 2].batteryPercent(),
+        )
+    }
+
+    /** BudsFeel carries the percentage in the lower seven bits. Bit 7 remains reserved. */
+    private fun Byte.batteryPercent(): Int? =
+        (unsigned() and BATTERY_PERCENT_MASK).takeIf { it in 0..100 }
+
     private fun ByteArray.checksum(): Byte = sumOf { it.unsigned() }.and(0xFF).toByte()
     private fun Byte.unsigned(): Int = toInt() and 0xFF
 
@@ -200,6 +203,7 @@ object RoseBudsFeelMk2WireCodec {
     private const val MAX_FRAME_SIZE = 1024
     private const val DIRECT_NOISE_PAYLOAD_LENGTH = 2
     private const val DIRECT_BATTERY_PAYLOAD_LENGTH = 4
+    private const val BATTERY_PERCENT_MASK = 0x7F
     private const val INCOMPLETE_FRAME = -1
     private const val INVALID_FRAME = -2
     private const val REQUEST_MARKER: Byte = 0xFF.toByte()

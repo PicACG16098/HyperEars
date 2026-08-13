@@ -121,6 +121,43 @@ class RoseWireCodecsTest {
     }
 
     @Test
+    fun ceramicsUltraDecodesExtendedAncVariantsAndMaskedBatteryPercentages() {
+        val decoder = RoseBudsFeelMk2WireCodec.Decoder()
+
+        assertEquals(
+            listOf(
+                RoseBudsFeelMk2WireCodec.State.Noise(
+                    RoseBudsFeelMk2WireCodec.NoiseMode.EXTREME_ANC,
+                ),
+                RoseBudsFeelMk2WireCodec.State.Battery(
+                    leftPercent = 100,
+                    rightPercent = 100,
+                    casePercent = 94,
+                ),
+            ),
+            decoder.offer(CERAMICS_ULTRA_EXTREME_ANC_FRAME),
+        )
+    }
+
+    @Test
+    fun budsFeelRecognizesAdaptiveAncStatus() {
+        val decoder = RoseBudsFeelMk2WireCodec.Decoder()
+        val response = responseFrame(
+            sequence = 0x12,
+            payload = byteArrayOf(0x09, 0x05),
+        )
+
+        assertEquals(
+            listOf(
+                RoseBudsFeelMk2WireCodec.State.Noise(
+                    RoseBudsFeelMk2WireCodec.NoiseMode.ADAPTIVE_ANC,
+                ),
+            ),
+            decoder.offer(response),
+        )
+    }
+
+    @Test
     fun budsFeelSplitsExtendedFrameAcrossOffers() {
         val decoder = RoseBudsFeelMk2WireCodec.Decoder()
         val split = CERAMICS_EXTENDED_FRAME.size / 2
@@ -267,6 +304,13 @@ class RoseWireCodecsTest {
                 "15 00 02 07 00 02 09 03 04 0C 61 62 5C 04 0D 00 03 04 02 0E 00 " +
                 "02 12 01 02 2A 04 02 2B 01 02 2C 05 02 2D 01 02 2E 01 02 31 00 " +
                 "02 32 00 02 33 00 05 36 01 01 01 01 D3 AA",
+        )
+
+        val CERAMICS_ULTRA_EXTREME_ANC_FRAME: ByteArray = hex(
+            "DD 01 15 01 01 05 02 07 03 02 04 06 05 00 11 04 12 01 13 03 14 08 " +
+                "15 00 02 07 00 02 09 06 04 0C E4 E4 5E 04 0D 00 03 04 02 0E 00 " +
+                "02 12 01 02 2A 00 02 2B 00 02 2C 05 02 2D 05 02 2E 00 02 31 00 " +
+                "02 32 01 02 33 00 05 36 01 01 01 01 DF AA",
         )
 
         val CERAMICS_STATES: List<RoseBudsFeelMk2WireCodec.State> = listOf(

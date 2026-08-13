@@ -399,6 +399,8 @@ private class RoseBudsFeelProtocolSession : ProtocolSession {
 
     private fun RoseBudsFeelMk2WireCodec.NoiseMode.toDomainMode(): NoiseMode = when (this) {
         RoseBudsFeelMk2WireCodec.NoiseMode.ANC -> NoiseMode.ANC
+        RoseBudsFeelMk2WireCodec.NoiseMode.ADAPTIVE_ANC -> NoiseMode.ANC
+        RoseBudsFeelMk2WireCodec.NoiseMode.EXTREME_ANC -> NoiseMode.ANC
         RoseBudsFeelMk2WireCodec.NoiseMode.OFF -> NoiseMode.OFF
         RoseBudsFeelMk2WireCodec.NoiseMode.TRANSPARENCY -> NoiseMode.TRANSPARENCY
         RoseBudsFeelMk2WireCodec.NoiseMode.WIND -> NoiseMode.WIND

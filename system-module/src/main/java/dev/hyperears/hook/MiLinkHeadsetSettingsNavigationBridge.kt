@@ -8,12 +8,10 @@ import java.util.concurrent.CompletableFuture
 /**
  * Installs the semantic MiLink "more settings" bridge for the host version in use.
  *
- * MiLink 17.2.4 exposes a stable controller name. The known 17.2.0 build keeps the same
- * operation behind an obfuscated controller, so that one entry is isolated here and enabled
- * only for its verified package version and method signature. MiLink 17.2.2 (170020200)
- * uses `com.miui.circulate.api.protocol.headset.c0.j0` (single `CirculateServiceInfo`
- * parameter, `CompletableFuture` return) under the same "HeadsetServiceController"
- * log tag. Unknown builds are left untouched.
+ * MiLink 17.2.4 exposes a stable controller name. Verified 17.2.0 and 17.2.2 builds use
+ * version-scoped obfuscated entries. If neither stable symbols nor the verified table resolve,
+ * an exact and unique DEX semantic fingerprint may supply the same operation. No view hierarchy,
+ * obfuscated-name guessing or repeated scan participates in card interaction.
  */
 internal class MiLinkHeadsetSettingsNavigationBridge(
     private val contextProvider: () -> Context?,
@@ -50,7 +48,7 @@ internal class MiLinkHeadsetSettingsNavigationBridge(
             )?.let { NavigationMethod(OBFUSCATED_17_2_2_BRIDGE, it) }
 
             else -> null
-        }
+        } ?: findDexFallbackMethod(serviceInfoClass)
 
         if (bridge == null) {
             ModuleLog.debug(
@@ -100,6 +98,27 @@ internal class MiLinkHeadsetSettingsNavigationBridge(
         }
         ?.apply { isAccessible = true }
 
+    private fun findDexFallbackMethod(serviceInfoClass: Class<*>): NavigationMethod? {
+        val apkPath = contextProvider()?.applicationInfo?.sourceDir
+        if (apkPath.isNullOrBlank()) {
+            ModuleLog.debug(COMPONENT, "settings navigation DEX source unavailable")
+            return null
+        }
+        val resolution = MiLinkHeadsetSettingsDexResolver.resolve(
+            apkPath = apkPath,
+            appClassLoader = appClassLoader,
+            serviceInfoClass = serviceInfoClass,
+        )
+        ModuleLog.debug(
+            COMPONENT,
+            "settings navigation DEX fallback result=${resolution.detail}",
+        )
+        return resolution.method?.let { method ->
+            method.isAccessible = true
+            NavigationMethod(DEX_FINGERPRINT_BRIDGE, method)
+        }
+    }
+
     private data class NavigationMethod(
         val name: String,
         val method: Method,
@@ -119,6 +138,7 @@ internal class MiLinkHeadsetSettingsNavigationBridge(
             "com.miui.circulate.api.protocol.headset.c0"
         const val OBFUSCATED_17_2_2_METHOD = "j0"
         const val OBFUSCATED_17_2_2_BRIDGE = "17.2.2-c0.j0"
+        const val DEX_FINGERPRINT_BRIDGE = "dex-semantic-fingerprint"
         const val LEGACY_VERSION_CODE = 170020001L
         const val VERSION_17_2_2_CODE = 170020200L
         const val HEADSET_OPERATION_SUCCESS = 100

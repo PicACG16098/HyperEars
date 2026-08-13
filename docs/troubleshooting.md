@@ -40,6 +40,10 @@
 `BluetoothDeviceDetailsFragment`；若 ROM 更改了 Settings Intent 或 Fragment 参数，模块会
 回退到蓝牙设置列表。提交问题时请附 Settings 崩溃堆栈和 ROM 完整版本。
 
+MiLink 入口优先按稳定类名和已验证版本表解析。未知版本仅在进程初始化时执行一次严格 DEX
+语义查询，并且只有唯一方法同时满足参数、返回值、精确日志常量和异步调用特征时才启用；查询
+失败或出现多个候选时保持系统原行为，不扫描 View、不遍历布局，也不在每次点击时重试。
+
 选择“厂商 App”后，模块只会打开当前 Adapter 在
 [控制 App 目录](control-apps.md#2-当前目录)中声明、已经安装且具有 Launcher Activity 的
 候选 App。没有可启动候选时仍进入真实蓝牙设备详情。App 页面跳转本身不依赖 LSPosed

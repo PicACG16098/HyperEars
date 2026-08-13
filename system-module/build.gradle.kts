@@ -22,8 +22,8 @@ android {
         applicationId = "dev.hyperears"
         minSdk = 35
         targetSdk = 36
-        versionCode = 20301
-        versionName = "2.3.1"
+        versionCode = 20302
+        versionName = "2.3.2"
     }
 
     signingConfigs {
@@ -94,6 +94,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     compileOnly(libs.libxposed.api)
     implementation(libs.libxposed.service)
+    implementation(libs.dexkit)
 
     testImplementation(libs.junit)
 }

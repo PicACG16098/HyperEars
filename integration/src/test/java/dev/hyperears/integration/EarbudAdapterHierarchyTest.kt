@@ -635,6 +635,30 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
+    fun roseLuliUltraMapsExtendedAncVariantAndMaskedBatteryIntoStandardState() {
+        val adapter = RoseLuliUltraAdapter()
+
+        val result = adapter.receive(
+            hex(
+                "DD 01 15 01 01 05 02 07 03 02 04 06 05 00 11 04 12 01 13 03 " +
+                    "14 08 15 00 02 07 00 02 09 06 04 0C E4 E4 5E 04 0D 00 03 " +
+                    "04 02 0E 00 02 12 01 02 2A 00 02 2B 00 02 2C 05 02 2D 05 " +
+                    "02 2E 00 02 31 00 02 32 01 02 33 00 05 36 01 01 01 01 DF AA",
+            ),
+        )
+
+        assertEquals(HandshakeResult.Ready, result.handshake)
+        assertTrue(adapter.snapshot().capabilities.noiseControl)
+        assertEquals(NoiseMode.ANC, adapter.runtimeState().noiseMode)
+        assertEquals(100, adapter.runtimeState().battery.left.percent)
+        assertFalse(adapter.runtimeState().battery.left.charging)
+        assertEquals(100, adapter.runtimeState().battery.right.percent)
+        assertFalse(adapter.runtimeState().battery.right.charging)
+        assertEquals(94, adapter.runtimeState().battery.case.percent)
+        assertFalse(adapter.runtimeState().battery.case.charging)
+    }
+
+    @Test
     fun furinaRemainsDormantAfterBoundedFailure() {
         assertEquals(
             InitialProtocolFailureResolution.KeepDormant,

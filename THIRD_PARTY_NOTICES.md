@@ -166,6 +166,17 @@ Gadgetbridge 的 AGPL 程序代码，也不分发 SonyHeadphonesClient、厂商�
 - Android Open Source Project: <https://source.android.com/>
 - libxposed API: <https://github.com/libxposed/api>
 
+## DexKit
+
+The optional MiLink compatibility resolver uses DexKit to locate one verified semantic method
+fingerprint when stable symbols and the exact-version table are unavailable.
+
+- Project: <https://github.com/LuckyPray/DexKit>
+- License used by HyperEars: Apache License 2.0 (selected from the artifact's published
+  Apache-2.0/LGPL-3.0 license metadata)
+- Scope in HyperEars: one bounded, unique-result DEX query during initialization of an otherwise
+  unsupported MiLink build; it is not used by Bluetooth protocol sessions or card interactions.
+
 各依赖的二进制和许可证信息由 Gradle 依赖元数据及其上游项目提供。
 
 ## Honor X5s Pro community contribution

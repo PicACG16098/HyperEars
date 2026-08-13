@@ -830,6 +830,8 @@ internal class ProtocolTestViewModel(application: Application) : AndroidViewMode
                 is RoseBudsFeelMk2WireCodec.State.Noise -> {
                     val modeLabel = when (state.mode) {
                         RoseBudsFeelMk2WireCodec.NoiseMode.ANC -> "降噪"
+                        RoseBudsFeelMk2WireCodec.NoiseMode.ADAPTIVE_ANC -> "自适应降噪"
+                        RoseBudsFeelMk2WireCodec.NoiseMode.EXTREME_ANC -> "极致降噪"
                         RoseBudsFeelMk2WireCodec.NoiseMode.OFF -> "关闭"
                         RoseBudsFeelMk2WireCodec.NoiseMode.TRANSPARENCY -> "通透"
                         RoseBudsFeelMk2WireCodec.NoiseMode.WIND -> "抗风噪"
