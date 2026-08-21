@@ -133,8 +133,10 @@ UUID `0cf12d31-…`。琉璃 X 使用与 Classic 音频地址分离的 `CERAMICS
 实机 HCI Snoop 确认 ATT value handle `0x0015` 以 Write Command 写入、`0x0017` 接收通知。
 厂商 value 使用 `0x27` 查询、`0x2C` 设置和 `0x28` 状态回报，模式值分别为抗风噪
 `0x00`、降噪 `0x01`、通透 `0x02`、关闭 `0x03`。初始仅保留系统整机电量；收到合法
-`00 27/28 02 00 03 0C 01 <mode>` 报告后才开放四态控制，设置后的 `0x28` 主动通知作为
-最终状态回读。抓包尚未确认私有电量字段，因此不发布组件电量。Furina Endless Solo of
+`00 27/28 02 00 03 0C 01 <mode>` 报告后才开放四态控制；设置后同时接受 `0x28` 主动通知，
+并执行一次 `0x27` 只读查询完成状态矫正。抓包尚未确认私有电量字段，因此不发布组件电量。
+无名广播中的 `0x8418` 仅为一次观测，在缺少稳定完整载荷前不作为配套端点身份依据。
+Furina Endless Solo of
 Solitude 复用 BudsFeel 帧格式，实机确认可独立上报左耳、右耳和充电盒电量。ROSE Ceramics
 Ultra（琉璃 Ultra）由 RoseLink 官方 App 经同一 `0cf12d31` RFCOMM 通道控制，实机确认复用
 BudsFeel 帧格式；其状态响应在首个

@@ -138,6 +138,7 @@ class RoseLuliXAdapter : RoseEarbudAdapter() {
             writeInstanceId = WRITE_ATTRIBUTE_HANDLE,
             notifyInstanceId = NOTIFY_ATTRIBUTE_HANDLE,
             writeMode = GattWriteMode.WITHOUT_RESPONSE,
+            notificationsRequired = true,
             peerSelection = GattPeerSelection.CompanionDevice(
                 filter = GattScanFilterSpec(deviceName = COMPANION_DEVICE_NAME),
                 matcher = RoseLuliXGattPeerMatcher,
@@ -148,7 +149,7 @@ class RoseLuliXAdapter : RoseEarbudAdapter() {
     )
 
     override fun matches(identity: EarbudIdentity): Boolean {
-        if (identity.nativeSystemEarbud) return false
+        if (!identity.standardHeadset || identity.nativeSystemEarbud) return false
         return normalizeDeviceName(identity.deviceName.orEmpty()) in MODEL_NAMES
     }
 
@@ -161,7 +162,6 @@ class RoseLuliXAdapter : RoseEarbudAdapter() {
         const val ID = "rose-luli-x-gatt"
         val PRESENTATION_ID = MiLinkCardPresentationId("rose-luli-x-gatt")
         const val COMPANION_DEVICE_NAME = "CERAMICS X BLE"
-        const val COMPANION_MANUFACTURER_ID = 0x8418
         const val SERVICE_UUID =
             "0000fdb3-0000-1000-8000-00805f9b34fb"
         const val WRITE_ATTRIBUTE_HANDLE = 0x0015
@@ -178,23 +178,13 @@ class RoseLuliXAdapter : RoseEarbudAdapter() {
 }
 
 internal object RoseLuliXGattPeerMatcher : GattPeerMatcher {
-    override fun matches(sessionDevice: GattPeerIdentity, candidate: GattPeerIdentity): Boolean =
-        matchReason(sessionDevice, candidate) != null
-
-    override fun matchReason(
+    override fun matches(
         sessionDevice: GattPeerIdentity,
         candidate: GattPeerIdentity,
-    ): String? {
+    ): Boolean {
         val sessionName = normalize(sessionDevice.deviceName)
-        if (sessionName !in setOf("roseceramicsx", "roselulix")) return null
-
-        val candidateName = normalize(candidate.deviceName)
-        return when {
-            candidateName == normalize(RoseLuliXAdapter.COMPANION_DEVICE_NAME) -> "device-name"
-            candidate.manufacturerData.containsKey(RoseLuliXAdapter.COMPANION_MANUFACTURER_ID) ->
-                "manufacturer-id"
-            else -> null
-        }
+        if (sessionName !in setOf("roseceramicsx", "roselulix")) return false
+        return normalize(candidate.deviceName) == normalize(RoseLuliXAdapter.COMPANION_DEVICE_NAME)
     }
 
     private fun normalize(value: String?): String =
@@ -342,7 +332,8 @@ private class RoseLuliXProtocolSession : ProtocolSession {
         else -> emptyList()
     }
 
-    override fun readback(request: ControlRequest): List<ByteArray> = emptyList()
+    override fun readback(request: ControlRequest): List<ByteArray> =
+        if (request is StandardControlRequest.SetNoiseMode) initialReadCommands() else emptyList()
 
     override fun offer(bytes: ByteArray): List<ProtocolEvent> {
         val mode = RoseCeramicsXWireCodec.parseNoiseMode(bytes) ?: return emptyList()

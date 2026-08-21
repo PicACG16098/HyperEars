@@ -521,6 +521,7 @@ class EarbudAdapterHierarchyTest {
         assertEquals(RoseLuliXAdapter.WRITE_ATTRIBUTE_HANDLE, transport.writeInstanceId)
         assertEquals(RoseLuliXAdapter.NOTIFY_ATTRIBUTE_HANDLE, transport.notifyInstanceId)
         assertEquals(GattWriteMode.WITHOUT_RESPONSE, transport.writeMode)
+        assertTrue(transport.notificationsRequired)
         val selection = transport.peerSelection as GattPeerSelection.CompanionDevice
         assertEquals(RoseLuliXAdapter.COMPANION_DEVICE_NAME, selection.filter.deviceName)
         assertEquals(
@@ -535,31 +536,16 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun roseLuliXCompanionMatcherAcceptsObservedNamelessManufacturer() {
+    fun roseLuliXCompanionMatcherDoesNotUseUnverifiedManufacturerKeyAlone() {
         val session = GattPeerIdentity("ROSE Ceramics X", "00:11:22:33:44:55")
 
-        assertTrue(
+        assertFalse(
             RoseLuliXGattPeerMatcher.matches(
                 session,
                 GattPeerIdentity(
                     deviceName = null,
                     deviceAddress = "66:77:88:99:AA:BB",
-                    manufacturerData = mapOf(
-                        RoseLuliXAdapter.COMPANION_MANUFACTURER_ID to byteArrayOf(0x01),
-                    ),
-                ),
-            ),
-        )
-        assertEquals(
-            "manufacturer-id",
-            RoseLuliXGattPeerMatcher.matchReason(
-                session,
-                GattPeerIdentity(
-                    deviceName = null,
-                    deviceAddress = "66:77:88:99:AA:BB",
-                    manufacturerData = mapOf(
-                        RoseLuliXAdapter.COMPANION_MANUFACTURER_ID to byteArrayOf(0x01),
-                    ),
+                    manufacturerData = mapOf(0x8418 to byteArrayOf(0x01)),
                 ),
             ),
         )
@@ -599,6 +585,10 @@ class EarbudAdapterHierarchyTest {
         assertEquals(
             listOf(0x00, 0x2C, 0x01, 0x00, 0x01, 0x01),
             result.commands.single().map { it.toInt() and 0xFF },
+        )
+        assertEquals(
+            listOf(0x00, 0x27, 0x01, 0x00, 0x01, 0x0C),
+            result.readback.single().map { it.toInt() and 0xFF },
         )
         adapter.receive(hex("00 28 02 00 03 0C 01 01"))
         assertEquals(NoiseMode.ANC, adapter.runtimeState().noiseMode)
