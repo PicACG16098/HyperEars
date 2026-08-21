@@ -30,6 +30,7 @@ StarRing, ROSESELSA, NiceHCK, MOONDROP, Honor, QCY and Sony devices.
 
 - Publishes battery according to the headset form and confirmed protocol: left/right and case, headphone aggregate, or Android system battery.
 - Publishes noise cancellation, off, transparency and model-specific modes only after private-protocol confirmation; unconfirmed private controls remain unavailable.
+- Supports the stock three-state headset cards used by earlier HyperOS releases and HyperOS 4. A confirmed wind-noise mode is presented as an ANC-branch switch without replacing the native mode items.
 - Devices with confirmed noise control can select the existing Mode metric on the HyperEars home-page session card and switch modes from its drop-down list.
 - The MiLink card's “More settings” action can open the real Android Bluetooth-device details page, the declared vendor controller, or HyperEars. An unavailable controller falls back to system settings.
 
@@ -62,6 +63,9 @@ need vendor telemetry and remain bound to the corresponding device session.
   [controller-app catalog](docs/control-apps.md); opening an installed controller from “More
   settings” does not by itself require that optional scope;
 - a headset already paired through Android Bluetooth settings.
+
+The public test baseline includes the HyperOS 4 MiLink three-state card. AOSP, MIUI, non-Xiaomi
+ROMs and Android releases below 15 remain outside the supported scope.
 
 ## Compatibility overview
 

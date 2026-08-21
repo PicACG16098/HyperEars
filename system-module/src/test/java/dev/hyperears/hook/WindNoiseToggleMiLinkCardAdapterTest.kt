@@ -13,7 +13,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class StarRingUltraMiLinkCardAdapterTest {
+class WindNoiseToggleMiLinkCardAdapterTest {
     private val connected = EarbudState(
         lifecycle = DeviceLifecycle(
             SystemProfileState.CONNECTED,
@@ -24,8 +24,8 @@ class StarRingUltraMiLinkCardAdapterTest {
 
     @Test
     fun windIsAnAncBranchSwitchRatherThanAFourthPeerButton() {
-        val anc = StarRingWindControlPolicy.render(connected.withNoiseMode(NoiseMode.ANC))
-        val wind = StarRingWindControlPolicy.render(connected.withNoiseMode(NoiseMode.WIND))
+        val anc = WindNoiseToggleControlPolicy.render(connected.withNoiseMode(NoiseMode.ANC))
+        val wind = WindNoiseToggleControlPolicy.render(connected.withNoiseMode(NoiseMode.WIND))
 
         assertTrue(anc.enabled)
         assertFalse(anc.checked)
@@ -38,23 +38,23 @@ class StarRingUltraMiLinkCardAdapterTest {
         val anc = connected.withNoiseMode(NoiseMode.ANC)
         val wind = connected.withNoiseMode(NoiseMode.WIND)
 
-        assertEquals(NoiseMode.WIND, StarRingWindControlPolicy.request(anc, checked = true))
-        assertEquals(NoiseMode.ANC, StarRingWindControlPolicy.request(wind, checked = false))
-        assertNull(StarRingWindControlPolicy.request(anc, checked = false))
-        assertNull(StarRingWindControlPolicy.request(wind, checked = true))
+        assertEquals(NoiseMode.WIND, WindNoiseToggleControlPolicy.request(anc, checked = true))
+        assertEquals(NoiseMode.ANC, WindNoiseToggleControlPolicy.request(wind, checked = false))
+        assertNull(WindNoiseToggleControlPolicy.request(anc, checked = false))
+        assertNull(WindNoiseToggleControlPolicy.request(wind, checked = true))
     }
 
     @Test
     fun switchIsDisabledOutsideAncBranchOrWithoutLiveSession() {
         listOf(NoiseMode.TRANSPARENCY, NoiseMode.OFF, null).forEach { mode ->
             val state = connected.withNoiseMode(mode)
-            assertFalse(StarRingWindControlPolicy.render(state).enabled)
-            assertNull(StarRingWindControlPolicy.request(state, checked = true))
+            assertFalse(WindNoiseToggleControlPolicy.render(state).enabled)
+            assertNull(WindNoiseToggleControlPolicy.request(state, checked = true))
         }
 
         val disconnected = connected.copy(lifecycle = DeviceLifecycle())
             .withNoiseMode(NoiseMode.ANC)
-        assertFalse(StarRingWindControlPolicy.render(disconnected).enabled)
-        assertNull(StarRingWindControlPolicy.request(disconnected, checked = true))
+        assertFalse(WindNoiseToggleControlPolicy.render(disconnected).enabled)
+        assertNull(WindNoiseToggleControlPolicy.request(disconnected, checked = true))
     }
 }
