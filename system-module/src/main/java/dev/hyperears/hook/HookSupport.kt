@@ -77,6 +77,11 @@ internal object ModuleLog {
     fun debug(component: String, message: String) =
         emit(Log.DEBUG, component, message)
 
+    fun debug(component: String, message: () -> String) {
+        if (!ModuleSettingsRuntime.current.diagnosticLogging) return
+        emit(Log.DEBUG, component, message())
+    }
+
     fun warn(component: String, message: String, error: Throwable? = null) {
         if (error == null) emit(Log.WARN, component, message)
         else emit(Log.ERROR, component, message, error)

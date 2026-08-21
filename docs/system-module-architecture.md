@@ -412,7 +412,9 @@ MiLink 设备 ID 只由 `AdapterSnapshot.formFactor` 映射：TWS 使用一个�
 处理；该层只读取不可变状态快照，不连接蓝牙、不持有 Adapter 或 ProtocolSession、也不轮询。
 卡片扩展只依赖稳定的原生 View ID，不 Hook 混淆回调：例如 Bose
 AudioModes 两态设备保留系统三项布局，但把协议不支持的“关闭”项设为不可点击；支持
-抗风噪的具体型号则由对应 Adapter 选择明确的卡片呈现 ID。
+抗风噪的具体型号则由对应 Adapter 选择明确的卡片呈现 ID。共享的抗风噪 CardAdapter 同时
+识别旧版 HyperOS 的原生 ANC 行和 HyperOS 4 的原生三态选择行，保留三个系统模式项，仅在
+标题区增加降噪分支开关。
 
 ## 9. UI 投影
 

@@ -179,7 +179,7 @@ AA EC C1 00 02 BE A1 B8
    response opens private battery; a valid ANC state response records that device's returned
    supported dialect and only then opens writable noise modes. A D8 function reply confirms the
    BES transport but does not by itself claim battery or ANC support.
-10. The stock MiLink transport has three ANC states. After four-mode evidence is confirmed,
-    HyperEars replaces only the conflicting visible ANC slot and appends WIND with MiLink's native
-    item class. One CardAdapter renders all four selections from authoritative Adapter state; the
-    protocol and card keep no duplicate UI state.
+10. The stock MiLink card keeps its native transparency, ANC and off controls. After four-mode
+    evidence is confirmed, HyperEars exposes WIND as a switch beside that native section. The same
+    CardAdapter recognizes both the original ANC row and HyperOS 4's select-card row; the switch is
+    rendered from authoritative Adapter state and keeps no duplicate UI state.

@@ -29,6 +29,8 @@ vivo / iQOO、OPPO Enco、Bose、Edifier、StarRing、ROSESELSA、NiceHCK、水�
 
 - 按耳机形态和已确认的协议提供电量：左右耳与充电盒、头戴式整机，或 Android 系统整机。
 - 仅在私有协议确认成功后发布降噪、关闭、通透和型号专属模式；未确认时不发布对应的私有控制。
+- 支持旧版 HyperOS 与 HyperOS 4 的原生三态耳机卡片；已确认的抗风噪能力作为降噪分支开关
+  呈现，不替换系统原生模式按钮。
 - 已开放噪声控制的设备可点击 HyperEars 主页会话卡片中的“模式”指标，从下拉列表切换模式。
 - MiLink 耳机卡片的“更多设置”可选择打开真实蓝牙设备详情、对应厂商控制 App 或 HyperEars；
   厂商 App 不可用时自动回退到系统设备详情。
@@ -87,8 +89,8 @@ GATT、RFCOMM 或 BR/EDR L2CAP 控制通道只为需要协议遥测的适配器�
   “更多设置”厂商 App 跳转时，安装且可启动即可；
 - 耳机已通过系统蓝牙完成配对。
 
-目前公开测试基线来自 HyperOS 设备。AOSP、MIUI、非小米 ROM 和低于 Android 15 的
-系统不在支持范围内。
+目前公开测试基线来自 HyperOS 设备，包含 HyperOS 4 的 MiLink 原生三态卡片。AOSP、MIUI、
+非小米 ROM 和低于 Android 15 的系统不在支持范围内。
 
 ## 安装
 

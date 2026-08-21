@@ -222,7 +222,8 @@ HyperEars 实机验证。协议边界见 [QCY 标准 GATT 协议](qcy-standard-g
 
 当前目标平台为 Android 15+ 的 Xiaomi HyperOS 和 LSPosed API 101。MiLink、蓝牙服务和
 原生卡片属于 ROM 内部实现，不承诺跨 HyperOS 大版本二进制稳定。已在 Xiaomi 14 Pro、
-Xiaomi Pad 6S Pro 12.4 和 REDMI K Pad 上验证流转路径；实际兼容性仍取决于 ROM 构建。
+Xiaomi Pad 6S Pro 12.4 和 REDMI K Pad 上验证流转路径；HyperOS 4 的 MiLink 原生三态卡片
+与抗风噪分支开关也已完成实机验证。实际兼容性仍取决于 ROM 构建。
 
 MiLink 原始耳机准入结果具有最高优先级：只要当前 ROM 已原生接管该地址，HyperEars 就不
 覆盖身份、能力或控制查询，并关闭同地址的模块会话。该仲裁不依赖品牌名称，因此同样适用

@@ -292,6 +292,39 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
+    fun protocolResetRevokesEdifierPrivateEvidenceUntilTheNextHandshake() {
+        val adapter = EdifierEvoProAdapter()
+        adapter.onSystemBatteryChanged(73)
+        adapter.receive(hex("BB EC F2 00 06 A6 C1 C7 A5 A6 B4 CC"))
+        adapter.receive(hex("BB EC CC 00 02 BE A3 D6"))
+
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
+        assertTrue(adapter.snapshot().capabilities.noiseControl)
+        assertEquals(NoiseMode.OFF, adapter.runtimeState().noiseMode)
+        assertEquals(EdifierMiLinkPresentationIds.FOUR_MODE, adapter.snapshot().presentationId)
+
+        adapter.resetProtocolSession()
+
+        assertEquals(null, adapter.runtimeState().battery.left.percent)
+        assertEquals(null, adapter.runtimeState().battery.right.percent)
+        adapter.onSystemBatteryChanged(73)
+
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+        assertTrue(adapter.snapshot().supportedNoiseModes.isEmpty())
+        assertEquals(null, adapter.snapshot().presentationId)
+        assertEquals(null, adapter.runtimeState().noiseMode)
+        assertEquals(73, adapter.runtimeState().battery.left.percent)
+        assertEquals(73, adapter.runtimeState().battery.right.percent)
+
+        adapter.receive(hex("BB EC CC 00 02 BE A3 D6"))
+
+        assertTrue(adapter.snapshot().capabilities.noiseControl)
+        assertEquals(NoiseMode.OFF, adapter.runtimeState().noiseMode)
+        assertEquals(EdifierMiLinkPresentationIds.FOUR_MODE, adapter.snapshot().presentationId)
+    }
+
+    @Test
     fun edifierFamilySelectsTheEvoDialectFromReadOnlyAncEvidence() {
         val adapter = EdifierEarbudAdapter()
 

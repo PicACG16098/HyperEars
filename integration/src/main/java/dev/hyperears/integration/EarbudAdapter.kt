@@ -409,7 +409,25 @@ abstract class EarbudAdapter(
     )
 
     fun resetProtocolSession() {
+        val previousBatterySource = effectiveBatterySource()
         protocolSession.reset()
+        confirmedCapabilities = null
+        confirmedNoiseModes = null
+        confirmedBatterySource = null
+        runtimeState = runtimeState.copy(
+            features = runtimeState.features
+                .remove(NoiseModeFeatureState.FEATURE_ID)
+                .let { features ->
+                    if (
+                        previousBatterySource == BatterySource.SYSTEM_AGGREGATE &&
+                        batterySource == BatterySource.SYSTEM_AGGREGATE
+                    ) {
+                        features
+                    } else {
+                        features.remove(BatteryFeatureState.FEATURE_ID)
+                    }
+                },
+        )
         onProtocolReset()
     }
 

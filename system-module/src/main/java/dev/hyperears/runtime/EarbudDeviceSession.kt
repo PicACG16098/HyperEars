@@ -561,6 +561,9 @@ internal class EarbudDeviceSession(
         activeChannel: EarbudChannel,
         bytes: ByteArray,
     ): AdapterIoResult = transactionMutex.withLock {
+        ModuleLog.debug(COMPONENT) {
+            "received endpoint=${activeChannel.endpointId} bytes=${bytes.toHex()}"
+        }
         val receivingAdapter = adapter
         val result = receivingAdapter.receive(bytes)
         if (result.commands.isNotEmpty()) {
@@ -828,6 +831,9 @@ internal class EarbudDeviceSession(
             channel.also {
                 channel = null
                 adapter.resetProtocolSession()
+                if (adapter.effectiveBatterySource() == BatterySource.SYSTEM_AGGREGATE) {
+                    adapter.onSystemBatteryChanged(systemBatteryPercent)
+                }
             }
         }
         oldChannel?.close()
