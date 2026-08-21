@@ -6,8 +6,8 @@
 - 耳机：HUAWEI FreeBuds Pro 3。
 - 传输：Bluetooth Classic RFCOMM SPP（Channel 1）。
 - 厂商 App：华为智慧音频。
-- 证据等级：公开实现。字节向量与 OpenFreebuds 测试夹具一致；尚未在 HyperEars
-  本地完成实机抓包验证。
+- 证据等级：FreeBuds Pro 3 实机验证；其他家族候选依据公开实现，在合法协议响应后开放
+  对应能力。
 
 ## 帧格式
 
@@ -23,7 +23,7 @@
 - 参数 TLV：`<type:1> <len:1> <value...>`；空参数为 `<type> 00`。
 - 校验：CRC16/XMODEM（poly `0x1021`，init `0x0000`，无反射、无最终异或），
   覆盖 CRC 之前的所有字节，与 OpenFreebuds 表格实现逐字节一致。
-  字段值视为权威，不校验接收帧校验和，与参考客户端一致。
+  HyperEars 对接收帧执行同一 CRC 校验；校验失败的帧不能成为握手或能力证据。
 
 ## 命令表
 
@@ -59,7 +59,7 @@
 ```
 
 **注意字节序不对称**：读回传参数 1 为 `[level, mode]`，模式字节在第二位。
-依据：OpenFreebuds `anc.py` 官方实现 `active_mode = data[1]`，以及
+依据：OpenFreebuds `anc.py` 公开参考实现 `active_mode = data[1]`，以及
 Melianmiko 的 FreeBuds 4i 协议笔记（“Second — current ANC mode”）。
 
 | mode | 含义 |
@@ -103,14 +103,15 @@ level 含义依赖当前 mode：
 
 按“标准能力起步、有效响应确认”：
 
-- 适配器初始保持标准能力（系统整机电量、媒体流转、原生三态卡片）。
+- 适配器初始只保留系统整机电量与媒体流转，不开放私有模式控制。
 - 私有通道连接后进入 `PROTOCOL_HANDSHAKE`，首帧发送 `01 08` 与 `2B 2A`。
-- 收到结构完整、字段合法的电量帧后，开放组件电量并切换私有电量来源。
-- 收到结构完整、字段合法的模式状态帧后，开放降噪、关闭、通透三态与
-  型号专属档位特性（`huawei.freebuds_pro3.anc_level`）。
+- 收到 CRC、结构和字段均合法的电量帧后，开放组件或整机电量并切换私有电量来源。
+- 收到 CRC、结构和字段均合法的模式状态帧后，按具体型号 Profile 开放模式；Pro 3
+  同时开放型号专属档位特性（`huawei.freebuds_pro3.anc_level`）。
 - 模式/档位写入由读回确认（`DEVICE_REPORT`）；`2B 03` 设备侧变更通知
   触发一次 `2B 2A` 重新读取。
-- 私有通道在有限次数内未获得有效响应时，关闭通道并保持标准耳机回退。
+- 具体型号使用已确认的 Channel；家族候选由同一 Adapter 依次试探 Channel 1、16。单个
+  端点在有限次数内未获得有效响应时进入下一端点，全部失败后保持标准耳机回退。
 
 ## 已观察但尚未建模
 

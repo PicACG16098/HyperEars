@@ -167,16 +167,16 @@ Gadgetbridge 的 AGPL 程序代码，也不分发 SonyHeadphonesClient、厂商�
 - Reviewed revision: `035bf2a87cdda9e9c8e8e90c662b7fa61270c6ee`
 - Upstream license: GNU GPL-3.0（仓库 `LICENSE` 文件，版权归 MelianMiko）
 
-用于理解华为 FreeBuds Pro 3 的私有 SPP 通道 1 帧格式与 CRC16-XMODEM 校验、电量查询
-（读响应 `[level, mode]` 与写命令 `[mode, level]` 的字节序差异、组件电量与整机充电标志
-语义）、ANC 档位与透传档位枚举、`2B 03` 降噪变更通知等协议事实。HyperEars 在自身
+用于核对华为 FreeBuds Pro 3 的私有 SPP 通道 1 帧格式与 CRC16-XMODEM 校验、电量查询、
+组件电量与整机充电标志语义，以及 ANC 状态读取 `[level, mode]`、控制写入
+`[mode, level]`、档位枚举和 `2B 03` 变更通知等协议事实。HyperEars 在自身
 WireCodec、ProtocolSession 与 Adapter 边界内重新组织实现，不复制或分发 OpenFreebuds 的
 程序代码、应用、界面、图片或品牌资源；上游 GPL-3.0 义务以该仓库 `LICENSE` 原文为准。
 
 ## Huawei FreeBuds Pro 3 / 智慧音频
 
-华为 FreeBuds Pro 3 的协议字段语义以 OpenFreebuds 的公开实现与可互操作协议事实为唯一
-依据；华为智慧音频（`com.huawei.smartaudio`）仅作为控制权边界与导航目标登记在
+华为 FreeBuds Pro 3 的协议字段语义依据 OpenFreebuds 的公开实现、贡献者实机记录与
+可互操作协议事实；华为智慧音频（`com.huawei.smartaudio`）仅作为控制权边界与导航目标登记在
 `ControlAppCatalog`、`scope.list` 与[控制 App 目录](docs/control-apps.md)中，不作为耳机
 品牌或型号的识别证据。HyperEars 不随 APK 分发华为应用、反编译产物、固件、抓包文件、
 图片或品牌资源；所有商标、产品名称归其各自权利人所有。

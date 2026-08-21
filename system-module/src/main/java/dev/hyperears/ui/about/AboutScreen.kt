@@ -310,13 +310,7 @@ private val supportBrands = listOf(
                 noiseControl = "降噪 / 关闭",
             ),
             SupportEntry(
-                name = "其他华为 SPP Port 1 耳机",
-                evidence = EvidenceLevel.FAMILY_PROBE,
-                battery = BatteryCapability.COMPONENT,
-                noiseControl = "降噪 / 关闭 / 通透",
-            ),
-            SupportEntry(
-                name = "其他华为 SPP Port 16 耳机",
+                name = "其他 FreeBuds / FreeClip / FreeLace",
                 evidence = EvidenceLevel.FAMILY_PROBE,
                 battery = BatteryCapability.COMPONENT,
                 noiseControl = "降噪 / 关闭 / 通透",

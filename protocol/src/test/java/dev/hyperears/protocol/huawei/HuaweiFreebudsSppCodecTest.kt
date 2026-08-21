@@ -177,6 +177,10 @@ class HuaweiFreebudsSppCodecTest {
                 hex("5A 00 09 01 01 08 01 00 02 00 03 00 FB B9"),
             ),
         )
+        val badCrc = HuaweiFreebudsSppCodec.queryBattery.copyOf().also { bytes ->
+            bytes[bytes.lastIndex] = (bytes.last().toInt() xor 0x01).toByte()
+        }
+        assertNull(HuaweiFreebudsSppCodec.parseFrame(badCrc))
     }
 
     @Test

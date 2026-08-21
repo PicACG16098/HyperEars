@@ -16,7 +16,7 @@ package dev.hyperears.protocol.huawei
  *   the high length byte is `00` in practice, but the field is read and written as 16-bit.
  * - command id and parameter TLV fields are 1-byte values; an empty parameter is `[type][00]`.
  * - CRC16/XMODEM (poly `0x1021`, init `0x0000`) over all preceding bytes. Fields are treated as
- *   authoritative and incoming checksums are not validated, matching the reference client.
+ *   authoritative; incoming checksums are validated before a frame can become protocol evidence.
  *
  * Known commands:
  * - `01 08` battery read / response, `01 27` battery push
@@ -102,7 +102,12 @@ object HuaweiFreebudsSppCodec {
      */
     fun packet(command: Int, params: List<Pair<Int, ByteArray>>): ByteArray {
         require(command in 0..0xFFFF)
+        params.forEach { (type, value) ->
+            require(type in 0..0xFF)
+            require(value.size <= 0xFF) { "parameter value exceeds 255 bytes" }
+        }
         val bodySize = 2 + params.sumOf { 2 + it.second.size }
+        require(bodySize + 6 <= MAX_FRAME_SIZE)
         val frame = ByteArray(bodySize + 6)
         frame[0] = MARKER
         val length = bodySize + 1
@@ -113,7 +118,6 @@ object HuaweiFreebudsSppCodec {
         frame[5] = command.toByte()
         var offset = 6
         for ((type, value) in params) {
-            require(value.size <= 0xFF) { "parameter value exceeds 255 bytes" }
             frame[offset++] = type.toByte()
             frame[offset++] = value.size.toByte()
             value.copyInto(frame, offset)
@@ -140,13 +144,15 @@ object HuaweiFreebudsSppCodec {
         return crc
     }
 
-    /** Decodes a full frame; returns null for malformed bytes (bad magic, length, or TLV). */
+    /** Decodes a full frame; returns null for malformed bytes or a mismatched CRC. */
     fun parseFrame(bytes: ByteArray): Frame? {
         if (bytes.size < MIN_FRAME_SIZE) return null
         if (bytes[0] != MARKER) return null
         val length = (bytes[1].unsigned() shl 8) or bytes[2].unsigned()
         if (bytes.size != length + 5) return null
         if (bytes[3] != 0x00.toByte()) return null
+        val expectedCrc = (bytes[bytes.lastIndex - 1].unsigned() shl 8) or bytes.last().unsigned()
+        if (crc16Xmodem(bytes, 0, bytes.size - 2) != expectedCrc) return null
         val command = (bytes[4].unsigned() shl 8) or bytes[5].unsigned()
         val params = LinkedHashMap<Int, ByteArray>()
         var position = 6
@@ -154,6 +160,7 @@ object HuaweiFreebudsSppCodec {
             val type = bytes[position].unsigned()
             val valueLength = bytes[position + 1].unsigned()
             if (position + 2 + valueLength > bytes.size - 2) return null
+            if (params.containsKey(type)) return null
             params[type] = bytes.copyOfRange(position + 2, position + 2 + valueLength)
             position += valueLength + 2
         }

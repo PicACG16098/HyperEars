@@ -945,13 +945,13 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun huaweiNameVariantsDoNotCaptureUnrelatedHeadsets() {
-        assertTrue(
-            resolve("HUAWEI FreeBuds Pro", standard = true) is StandardEarbudAdapter,
-        )
-        assertTrue(
-            resolve("HUAWEI FreeBuds", standard = true) is StandardEarbudAdapter,
-        )
+    fun huaweiFamilyMatchesAudioProductLinesWithoutCapturingHonorOrGenericHuaweiDevices() {
+        assertTrue(resolve("HUAWEI FreeBuds Pro", standard = true) is HuaweiFreebudsFamilyAdapter)
+        assertTrue(resolve("FreeBuds Unknown", standard = true) is HuaweiFreebudsFamilyAdapter)
+        assertTrue(resolve("HUAWEI FreeClip", standard = true) is HuaweiFreebudsFamilyAdapter)
+        assertTrue(resolve("FreeLace Pro", standard = true) is HuaweiFreebudsFamilyAdapter)
+        assertFalse(resolve("HONOR Unknown", standard = true) is HuaweiFreebudsFamilyAdapter)
+        assertFalse(resolve("HUAWEI Sound Joy", standard = true) is HuaweiFreebudsFamilyAdapter)
     }
 
     @Test
@@ -1019,53 +1019,8 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun huaweiPort1FamilyMatchesHuaweiDevices() {
-        // Port 1 family matches any Huawei device not caught by specific adapters
-        assertTrue(resolve("HUAWEI Unknown Model", standard = true) is HuaweiPort1FamilyAdapter)
-        assertTrue(resolve("FreeBuds Unknown", standard = true) is HuaweiPort1FamilyAdapter)
-        assertTrue(resolve("FreeClip Unknown", standard = true) is HuaweiPort1FamilyAdapter)
-        assertTrue(resolve("HONOR Unknown", standard = true) is HuaweiPort1FamilyAdapter)
-    }
-
-    @Test
-    fun huaweiPort1FamilyDoesNotMatchNonHuaweiDevices() {
-        // Non-Huawei devices should not match family adapters
-        val sony = EarbudAdapterRegistry.resolve(
-            EarbudIdentity(deviceName = "Sony WH-1000XM5", standardHeadset = true),
-        )
-        val airpods = EarbudAdapterRegistry.resolve(
-            EarbudIdentity(deviceName = "AirPods Pro", standardHeadset = true),
-        )
-        assertTrue(sony == null || sony is StandardEarbudAdapter)
-        assertTrue(airpods == null || airpods is StandardEarbudAdapter)
-    }
-
-    @Test
-    fun huaweiPort16FamilyMatchesHuaweiDevices() {
-        // Port 16 family is registered after Port 1 family, so it won't be reached
-        // for devices that Port 1 family already matches. This test verifies the
-        // adapter exists and can be instantiated.
-        val adapter = HuaweiPort16FamilyAdapter()
-        assertEquals(AdapterResolution.FAMILY_MATCH, adapter.snapshot().resolution)
-        assertTrue(adapter.privateProtocolRequired)
-    }
-
-    @Test
-    fun huaweiPort16FamilyDoesNotMatchNonHuaweiDevices() {
-        // Non-Huawei devices should not match family adapters
-        val sony = EarbudAdapterRegistry.resolve(
-            EarbudIdentity(deviceName = "Sony WH-1000XM5", standardHeadset = true),
-        )
-        val airpods = EarbudAdapterRegistry.resolve(
-            EarbudIdentity(deviceName = "AirPods Pro", standardHeadset = true),
-        )
-        assertTrue(sony == null || sony is StandardEarbudAdapter)
-        assertTrue(airpods == null || airpods is StandardEarbudAdapter)
-    }
-
-    @Test
-    fun huaweiPort1FamilyStartsWithLockedStandardCapabilities() {
-        val adapter = HuaweiPort1FamilyAdapter()
+    fun huaweiFamilyOwnsOneOrderedChannelFallbackAndStartsLocked() {
+        val adapter = HuaweiFreebudsFamilyAdapter()
 
         assertEquals(AdapterResolution.FAMILY_MATCH, adapter.snapshot().resolution)
         assertEquals(HeadsetFormFactor.TWS, adapter.snapshot().formFactor)
@@ -1076,6 +1031,10 @@ class EarbudAdapterHierarchyTest {
         assertTrue(adapter.snapshot().privateProtocolRequired)
         assertTrue(adapter.snapshot().supportedNoiseModes.isEmpty())
         assertEquals(
+            listOf(1, 16),
+            adapter.transports.map { (it as RfcommEndpointSpec.Channel).number },
+        )
+        assertEquals(
             listOf(
                 HuaweiFreebudsSppCodec.queryBattery.toList(),
                 HuaweiFreebudsSppCodec.queryNoiseState.toList(),
@@ -1085,23 +1044,41 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun huaweiPort16FamilyStartsWithLockedStandardCapabilities() {
-        val adapter = HuaweiPort16FamilyAdapter()
+    fun huaweiFamilyUnlocksObservedProtocolWithoutClaimingAncDepth() {
+        val adapter = HuaweiFreebudsFamilyAdapter()
 
-        assertEquals(AdapterResolution.FAMILY_MATCH, adapter.snapshot().resolution)
-        assertEquals(HeadsetFormFactor.TWS, adapter.snapshot().formFactor)
-        assertEquals(null, adapter.snapshot().presentationId)
-        assertFalse(adapter.snapshot().capabilities.noiseControl)
-        assertTrue(adapter.snapshot().capabilities.battery)
-        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
-        assertTrue(adapter.snapshot().privateProtocolRequired)
-        assertTrue(adapter.snapshot().supportedNoiseModes.isEmpty())
+        val result = adapter.receive(
+            HuaweiFreebudsSppCodec.packet(0x2B2A, listOf(1 to byteArrayOf(0x02, 0x01))),
+        )
+
+        assertEquals(HandshakeResult.Ready, result.handshake)
+        assertEquals(NoiseMode.ANC, adapter.runtimeState().noiseMode)
         assertEquals(
-            listOf(
-                HuaweiFreebudsSppCodec.queryBattery.toList(),
-                HuaweiFreebudsSppCodec.queryNoiseState.toList(),
-            ),
-            adapter.beginHandshake().commands.map(ByteArray::toList),
+            setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
+            adapter.snapshot().supportedNoiseModes,
+        )
+        assertNull(adapter.runtimeState().features.get<HuaweiAncLevelFeatureState>())
+        assertFalse(
+            adapter.executeControl(
+                HuaweiControlRequest.SetAncLevel(HuaweiAncLevel.ULTRA),
+            ).accepted,
+        )
+    }
+
+    @Test
+    fun huaweiFreeBuds4UnlocksOnlyItsTwoConfirmedModes() {
+        val adapter = HuaweiFreeBuds4Adapter()
+
+        adapter.receive(
+            HuaweiFreebudsSppCodec.packet(0x2B2A, listOf(1 to byteArrayOf(0x00, 0x01))),
+        )
+
+        assertEquals(setOf(NoiseMode.ANC, NoiseMode.OFF), adapter.snapshot().supportedNoiseModes)
+        assertTrue(adapter.executeControl(StandardControlRequest.SetNoiseMode(NoiseMode.OFF)).accepted)
+        assertFalse(
+            adapter.executeControl(
+                StandardControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY),
+            ).accepted,
         )
     }
 
