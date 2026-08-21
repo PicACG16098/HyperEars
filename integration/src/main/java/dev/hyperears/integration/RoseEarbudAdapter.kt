@@ -1,6 +1,7 @@
 package dev.hyperears.integration
 
 import dev.hyperears.protocol.rose.RoseBudsFeelMk2WireCodec
+import dev.hyperears.protocol.rose.RoseCeramicsXAdvertisementCodec
 import dev.hyperears.protocol.rose.RoseCeramicsXWireCodec
 import dev.hyperears.protocol.rose.RoseEarfreeI5WireCodec
 
@@ -162,6 +163,7 @@ class RoseLuliXAdapter : RoseEarbudAdapter() {
         const val ID = "rose-luli-x-gatt"
         val PRESENTATION_ID = MiLinkCardPresentationId("rose-luli-x-gatt")
         const val COMPANION_DEVICE_NAME = "CERAMICS X BLE"
+        const val COMPANION_MANUFACTURER_ID = RoseCeramicsXAdvertisementCodec.MANUFACTURER_ID
         const val SERVICE_UUID =
             "0000fdb3-0000-1000-8000-00805f9b34fb"
         const val WRITE_ATTRIBUTE_HANDLE = 0x0015
@@ -184,11 +186,30 @@ internal object RoseLuliXGattPeerMatcher : GattPeerMatcher {
     ): Boolean {
         val sessionName = normalize(sessionDevice.deviceName)
         if (sessionName !in setOf("roseceramicsx", "roselulix")) return false
-        return normalize(candidate.deviceName) == normalize(RoseLuliXAdapter.COMPANION_DEVICE_NAME)
+
+        val exactCompanionName =
+            normalize(candidate.deviceName) == normalize(RoseLuliXAdapter.COMPANION_DEVICE_NAME)
+        if (exactCompanionName) return true
+        val manufacturerData =
+            candidate.manufacturerData[RoseLuliXAdapter.COMPANION_MANUFACTURER_ID]
+                ?: return false
+        val advertisement =
+            RoseCeramicsXAdvertisementCodec.parse(manufacturerData) ?: return false
+        val sessionAddressSuffix = normalizeAddress(sessionDevice.deviceAddress)
+            ?.takeLast(4)
+            ?.toIntOrNull(16)
+
+        return sessionAddressSuffix != null &&
+            advertisement.audioDeviceAddressSuffix == sessionAddressSuffix
     }
 
     private fun normalize(value: String?): String =
         value.orEmpty().lowercase().filter(Char::isLetterOrDigit)
+
+    private fun normalizeAddress(value: String?): String? = value
+        ?.filter(Char::isLetterOrDigit)
+        ?.uppercase()
+        ?.takeIf { it.length == 12 }
 }
 
 /**

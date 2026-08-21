@@ -536,8 +536,27 @@ class EarbudAdapterHierarchyTest {
     }
 
     @Test
-    fun roseLuliXCompanionMatcherDoesNotUseUnverifiedManufacturerKeyAlone() {
-        val session = GattPeerIdentity("ROSE Ceramics X", "00:11:22:33:44:55")
+    fun roseLuliXCompanionMatcherAssociatesUnnamedAdvertisementWithAudioAddress() {
+        val session = GattPeerIdentity("ROSE Ceramics X", "00:11:22:33:D7:84")
+
+        assertTrue(
+            RoseLuliXGattPeerMatcher.matches(
+                session,
+                GattPeerIdentity(
+                    deviceName = null,
+                    deviceAddress = "66:77:88:99:AA:BB",
+                    manufacturerData = mapOf(
+                        RoseLuliXAdapter.COMPANION_MANUFACTURER_ID to
+                            hex("01 09 00 01 02 03 04 D7 84 04 64 64 00"),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun roseLuliXCompanionMatcherRejectsUnlinkedOrMalformedManufacturerData() {
+        val session = GattPeerIdentity("ROSE Ceramics X", "00:11:22:33:D7:84")
 
         assertFalse(
             RoseLuliXGattPeerMatcher.matches(
@@ -545,7 +564,22 @@ class EarbudAdapterHierarchyTest {
                 GattPeerIdentity(
                     deviceName = null,
                     deviceAddress = "66:77:88:99:AA:BB",
-                    manufacturerData = mapOf(0x8418 to byteArrayOf(0x01)),
+                    manufacturerData = mapOf(
+                        RoseLuliXAdapter.COMPANION_MANUFACTURER_ID to
+                            hex("01 09 00 01 02 03 04 10 20 04 64 64 00"),
+                    ),
+                ),
+            ),
+        )
+        assertFalse(
+            RoseLuliXGattPeerMatcher.matches(
+                session,
+                GattPeerIdentity(
+                    deviceName = null,
+                    deviceAddress = "66:77:88:99:AA:BB",
+                    manufacturerData = mapOf(
+                        RoseLuliXAdapter.COMPANION_MANUFACTURER_ID to byteArrayOf(0x01),
+                    ),
                 ),
             ),
         )
