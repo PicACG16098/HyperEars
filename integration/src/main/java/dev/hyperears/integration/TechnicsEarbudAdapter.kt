@@ -11,13 +11,6 @@ class TechnicsEarbudAdapter : StandardEarbudAdapter() {
     override val transportReadiness: TransportReadiness = TransportReadiness.PROTOCOL_HANDSHAKE
     override val controlApps: List<ControlAppSpec> =
         listOf(ControlAppCatalog.technicsAudioConnect)
-    private var noiseStateConfirmedForSession = false
-    override val controlRequestContract: ControlRequestContract =
-        ControlRequestContract { adapter, request ->
-            StandardControlRequestContract.supports(adapter, request) &&
-                (request !is StandardControlRequest.SetNoiseMode ||
-                    noiseStateConfirmedForSession)
-        }
     override val transports: List<EarbudTransportSpec> = listOf(
         RfcommEndpointSpec.ServiceUuid(
             uuid = TECHNICS_SPP_UUID,
@@ -35,18 +28,6 @@ class TechnicsEarbudAdapter : StandardEarbudAdapter() {
     }
 
     override fun createProtocolSession(): ProtocolSession = TechnicsRaceProtocolSession()
-
-    override fun onCapabilitiesIdentified(
-        battery: Boolean,
-        noiseModes: Set<NoiseMode>,
-    ): HandshakeResult? {
-        if (noiseModes.isNotEmpty()) noiseStateConfirmedForSession = true
-        return super.onCapabilitiesIdentified(battery, noiseModes)
-    }
-
-    override fun onProtocolReset() {
-        noiseStateConfirmedForSession = false
-    }
 
     override fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
         InitialProtocolFailureResolution.KeepDormant

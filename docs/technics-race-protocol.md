@@ -8,8 +8,8 @@ HyperEars 为 Technics EAH-AZ 系列真无线耳机实现接入 MiLink 所需的
 | 证据 | 当前结论 |
 |---|---|
 | 公开参考实现 | 以 MartinKayJr/TechincsPods 固定提交 [`a378106`](https://github.com/MartinKayJr/TechincsPods/tree/a378106659d4a90ed7ac28a4ac94d592bebbec85) 的当前代码为准；README 中英文说明和旧协议笔记不作为当前行为依据 |
-| 贡献者设备验证 | 贡献者已在 AZ100、AZ80、AZ60 等型号上验证该参考实现可与耳机通信；这说明协议具有产品线适用性，不等同于 HyperEars 对每个型号完成实机验证 |
-| 本次本地范围 | 只使用 AZ80；已通过厂商 UUID 建立 RFCOMM。SDP 当次解析到 channel 21，此值只是该设备与会话的观测结果 |
+| 参考实现验证 | 参考实现贡献者已在 AZ100、AZ80、AZ60 等型号上验证通信；这说明协议具有产品线适用性，不等同于 HyperEars 对每个型号完成实机验证 |
+| 本分支验证范围 | 贡献者使用 AZ80 验证 HyperEars；已通过厂商 UUID 建立 RFCOMM。SDP 当次解析到 channel 21，此值只是该设备与会话的观测结果 |
 | 只读实测 | `0x000A` Outside Control GET 连续两次返回完整模式和等级；本次只实现该三态状态读取 |
 | HyperEars 实机验证 | AZ80 的左右耳与充电盒电量、关闭、降噪、通透三态写入及 `0x000A` 设备回读均正常 |
 
