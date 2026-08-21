@@ -194,12 +194,18 @@ class EdifierFitClipUltraAdapter : EdifierEarbudAdapter() {
         ancDialects = emptyList(),
     )
 
-    override fun matches(identity: EarbudIdentity): Boolean =
-        super.matches(identity) &&
-            "fitclip" in normalizeDeviceName(identity.deviceName.orEmpty())
+    override fun matches(identity: EarbudIdentity): Boolean {
+        if (!identity.standardHeadset || identity.nativeSystemEarbud) return false
+        return normalizeDeviceName(identity.deviceName.orEmpty()) in MODEL_NAMES
+    }
 
     companion object {
         const val ID = "edifier-fitclip-ultra"
+
+        private val MODEL_NAMES = setOf(
+            "edifierfitclipultra",
+            "fitclipultra",
+        )
     }
 }
 
