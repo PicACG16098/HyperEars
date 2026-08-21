@@ -295,6 +295,35 @@ private val supportBrands = listOf(
         ),
     ),
     SupportBrand(
+        name = "华为",
+        entries = listOf(
+            SupportEntry(
+                name = "HUAWEI FreeBuds Pro 3",
+                evidence = EvidenceLevel.VERIFIED,
+                battery = BatteryCapability.COMPONENT,
+                noiseControl = "降噪 / 关闭 / 通透",
+            ),
+            SupportEntry(
+                name = "HUAWEI FreeBuds 4",
+                evidence = EvidenceLevel.PUBLIC_IMPLEMENTATION,
+                battery = BatteryCapability.COMPONENT,
+                noiseControl = "降噪 / 关闭",
+            ),
+            SupportEntry(
+                name = "其他华为 SPP Port 1 耳机",
+                evidence = EvidenceLevel.FAMILY_PROBE,
+                battery = BatteryCapability.COMPONENT,
+                noiseControl = "降噪 / 关闭 / 通透",
+            ),
+            SupportEntry(
+                name = "其他华为 SPP Port 16 耳机",
+                evidence = EvidenceLevel.FAMILY_PROBE,
+                battery = BatteryCapability.COMPONENT,
+                noiseControl = "降噪 / 关闭 / 通透",
+            ),
+        ),
+    ),
+    SupportBrand(
         name = "QCY",
         entries = listOf(
             SupportEntry(

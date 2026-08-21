@@ -67,6 +67,11 @@ object ControlAppCatalog {
         displayName = "QCY",
     )
 
+    val huaweiSmartAudio = ControlAppSpec(
+        packageName = "com.huawei.smartaudio",
+        displayName = "智慧音频",
+    )
+
     val all: List<ControlAppSpec> = listOf(
         vivoEarphones,
         heyMelody,
@@ -80,6 +85,7 @@ object ControlAppCatalog {
         yuanDao,
         sonySoundConnect,
         qcy,
+        huaweiSmartAudio,
     )
 
     private val byPackage = all.associateBy(ControlAppSpec::packageName)
