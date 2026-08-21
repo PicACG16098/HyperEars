@@ -34,7 +34,14 @@ class EarbudAdapterHierarchyTest {
         assertTrue(resolve("OPPO Enco Air2 Pro", standard = true) is OppoEncoAir2ProAdapter)
         assertTrue(resolve("OPPO Enco Buds2", standard = true) is OppoEarbudAdapter)
         assertTrue(resolve("漫步者・花再 Evo Pro", standard = true) is EdifierEvoProAdapter)
+        assertTrue(resolve("EDIFIER FitClip Ultra", standard = true) is EdifierFitClipUltraAdapter)
         assertTrue(resolve("Unknown headset", standard = true) is StandardEarbudAdapter)
+    }
+
+    @Test
+    fun fitClipUltraMatchingDoesNotClaimOtherFitClipModels() {
+        assertTrue(resolve("FitClip Ultra", standard = true) is EdifierFitClipUltraAdapter)
+        assertTrue(resolve("EDIFIER FitClip 2", standard = true) is EdifierEarbudAdapter)
     }
 
     @Test
@@ -289,6 +296,48 @@ class EarbudAdapterHierarchyTest {
                 control.commands.single().toList(),
             )
         }
+    }
+
+    @Test
+    fun fitClipUltraUsesDeviceStateBatteryWithoutProbingAnc() {
+        val adapter = EdifierFitClipUltraAdapter()
+
+        assertEquals(AdapterResolution.EXACT_MATCH, adapter.snapshot().resolution)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+        assertEquals(
+            listOf(
+                EdifierWireCodec.queryDeviceState.toList(),
+                EdifierWireCodec.queryFunction.toList(),
+            ),
+            adapter.beginHandshake().commands.map(ByteArray::toList),
+        )
+
+        val battery = adapter.receive(hex("BB EC F2 00 06 A6 C1 C7 A5 A6 B4 CC"))
+
+        assertEquals(HandshakeResult.Ready, battery.handshake)
+        assertEquals(BatterySource.PRIVATE_PROTOCOL, adapter.snapshot().batterySource)
+        assertEquals(100, adapter.runtimeState().battery.left.percent)
+        assertEquals(98, adapter.runtimeState().battery.right.percent)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+        assertTrue(adapter.snapshot().supportedNoiseModes.isEmpty())
+        assertFalse(
+            adapter.executeControl(StandardControlRequest.SetNoiseMode(NoiseMode.ANC)).accepted,
+        )
+    }
+
+    @Test
+    fun fitClipUltraResetRestoresTheSystemBatteryFallback() {
+        val adapter = EdifierFitClipUltraAdapter()
+        adapter.onSystemBatteryChanged(61)
+        adapter.receive(hex("BB EC F2 00 06 A6 C1 C7 A5 A6 B4 CC"))
+
+        adapter.resetProtocolSession()
+        adapter.onSystemBatteryChanged(61)
+
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
+        assertEquals(61, adapter.runtimeState().battery.left.percent)
+        assertEquals(61, adapter.runtimeState().battery.right.percent)
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
     }
 
     @Test
