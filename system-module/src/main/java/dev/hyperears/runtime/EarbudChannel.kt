@@ -27,10 +27,13 @@ import dev.hyperears.integration.GattTransportSpec
 import dev.hyperears.integration.GattWriteMode
 import dev.hyperears.integration.L2capEndpointSpec
 import dev.hyperears.integration.RfcommEndpointSpec
+import dev.hyperears.hook.ModuleLog
+import dev.hyperears.hook.maskBluetoothAddress
 import java.io.Closeable
 import java.io.IOException
 import java.lang.reflect.InvocationTargetException
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
@@ -493,25 +496,54 @@ private class AndroidGattChannel(
             ?: throw IOException("BLE scanner is unavailable")
         val completion = CompletableDeferred<BluetoothDevice>()
         peerResolution = completion
+        val callbackCount = AtomicInteger(0)
+        val uniqueCandidates = ConcurrentHashMap.newKeySet<String>()
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
-                accept(result)
+                callbackCount.incrementAndGet()
+                accept(result, callbackType)
             }
 
             override fun onBatchScanResults(results: MutableList<ScanResult>) {
-                results.forEach(::accept)
+                callbackCount.addAndGet(results.size)
+                results.forEach { result -> accept(result, callbackType = null) }
             }
 
             override fun onScanFailed(errorCode: Int) {
+                ModuleLog.debug(
+                    GATT_SCAN_COMPONENT,
+                    "scan failed endpoint=${spec.id} error=$errorCode " +
+                        "callbacks=${callbackCount.get()} unique=${uniqueCandidates.size}",
+                )
                 completion.completeExceptionally(
                     IOException("BLE companion scan failed with error=$errorCode"),
                 )
             }
 
-            private fun accept(result: ScanResult) {
+            private fun accept(result: ScanResult, callbackType: Int?) {
                 if (completion.isCompleted || result.device.sameAddressAs(sessionDevice)) return
                 val candidate = result.toGattPeerIdentity()
-                if (selection.matcher.matches(sessionIdentity, candidate)) {
+                val candidateKey = candidate.deviceAddress
+                    ?: "anonymous-${System.identityHashCode(result.device)}"
+                val firstObservation = uniqueCandidates.add(candidateKey)
+                val matched = selection.matcher.matches(sessionIdentity, candidate)
+                if (firstObservation || matched) {
+                    ModuleLog.debug(GATT_SCAN_COMPONENT) {
+                        "candidate endpoint=${spec.id} callbackType=${callbackType ?: "batch"} " +
+                            "address=${maskBluetoothAddress(candidate.deviceAddress)} " +
+                            "name=${candidate.deviceName ?: "<none>"} rssi=${result.rssi} " +
+                            "services=${candidate.serviceUuids.ifEmpty { setOf("<none>") }} " +
+                            "manufacturerData=${candidate.manufacturerData.diagnosticSummary()} " +
+                            "matched=$matched"
+                    }
+                }
+                if (matched) {
+                    ModuleLog.debug(
+                        GATT_SCAN_COMPONENT,
+                        "companion matched endpoint=${spec.id} " +
+                            "address=${maskBluetoothAddress(candidate.deviceAddress)} " +
+                            "callbacks=${callbackCount.get()} unique=${uniqueCandidates.size}",
+                    )
                     completion.complete(result.device)
                 }
             }
@@ -529,11 +561,21 @@ private class AndroidGattChannel(
         val scanSettings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
+        ModuleLog.debug(
+            GATT_SCAN_COMPONENT,
+            "scan starting endpoint=${spec.id} timeoutMs=${selection.scanTimeoutMs} " +
+                "platformFilters=${scanFilters.size} callbackType=${scanSettings.callbackType}",
+        )
         try {
             scanner.startScan(scanFilters, scanSettings, callback)
             return try {
                 withTimeout(selection.scanTimeoutMs) { completion.await() }
             } catch (error: TimeoutCancellationException) {
+                ModuleLog.debug(
+                    GATT_SCAN_COMPONENT,
+                    "scan timed out endpoint=${spec.id} callbacks=${callbackCount.get()} " +
+                        "unique=${uniqueCandidates.size}",
+                )
                 throw IOException(
                     "BLE companion endpoint was not found within ${selection.scanTimeoutMs}ms",
                     error,
@@ -541,6 +583,11 @@ private class AndroidGattChannel(
             }
         } finally {
             runCatching { scanner.stopScan(callback) }
+            ModuleLog.debug(
+                GATT_SCAN_COMPONENT,
+                "scan stopped endpoint=${spec.id} completed=${completion.isCompleted} " +
+                    "callbacks=${callbackCount.get()} unique=${uniqueCandidates.size}",
+            )
             if (peerResolution === completion) peerResolution = null
         }
     }
@@ -681,6 +728,18 @@ private class AndroidGattChannel(
         )
     }
 
+    private fun Map<Int, ByteArray>.diagnosticSummary(): String =
+        if (isEmpty()) {
+            "<none>"
+        } else {
+            entries.joinToString(prefix = "[", postfix = "]") { (id, bytes) ->
+                "0x${id.toString(16).uppercase()}:${bytes.toHex()}"
+            }
+        }
+
+    private fun ByteArray.toHex(): String =
+        joinToString(separator = "") { byte -> "%02X".format(byte) }
+
     private fun BluetoothDevice.sameAddressAs(other: BluetoothDevice): Boolean {
         val first = runCatching { address }.getOrNull() ?: return false
         val second = runCatching { other.address }.getOrNull() ?: return false
@@ -688,6 +747,7 @@ private class AndroidGattChannel(
     }
 
     private companion object {
+        const val GATT_SCAN_COMPONENT = "GattScan"
         const val WRITE_TIMEOUT_MS = 4_000L
         val CLIENT_CHARACTERISTIC_CONFIGURATION_UUID: UUID =
             UUID.fromString("00002902-0000-1000-8000-00805F9B34FB")
