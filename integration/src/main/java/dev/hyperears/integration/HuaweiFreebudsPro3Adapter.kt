@@ -22,7 +22,7 @@ internal class HuaweiFreebudsPro3Adapter : HuaweiFreebudsProtocolAdapter(
     }
 }
 
-private val PRO3_LEVEL_PROFILE = object : HuaweiLevelProfile {
+private val PRO3_PROTOCOL_EXTENSION = object : HuaweiProtocolExtension {
     override val featureIds: Set<String> = setOf(HuaweiAncLevelFeatureState.FEATURE_ID)
 
     override fun acceptsState(state: DeviceFeatureState): Boolean =
@@ -42,7 +42,7 @@ private val PRO3_LEVEL_PROFILE = object : HuaweiLevelProfile {
     override fun encode(request: ControlRequest): ByteArray? =
         (request as? HuaweiControlRequest.SetAncLevel)?.let {
             HuaweiFreebudsSppCodec.noiseLevelCommand(
-                it.level.domainNoiseMode().toWireMode(),
+                it.level.domainNoiseMode().toHuaweiWireMode(),
                 it.level.toWireLevel(),
             )
         }
@@ -89,5 +89,5 @@ private val PRO3_LEVEL_PROFILE = object : HuaweiLevelProfile {
 
 private val PRO3_PROFILE = HuaweiProtocolProfile(
     noiseModes = setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
-    levelProfile = PRO3_LEVEL_PROFILE,
+    extension = PRO3_PROTOCOL_EXTENSION,
 )
