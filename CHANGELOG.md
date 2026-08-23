@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### 华为 FreeBuds 5i
+
+- 增加 FreeBuds 5i 的 RFCOMM Channel 16 适配和标准三态控制；私有能力仍须通过合法电量与
+  模式状态帧确认。
+- 完成 FreeBuds 5i 端到端实机验证：型号识别、私有连接、状态读取、三态控制写入与 MiLink
+  卡片回读均已在真实设备上通过；型号识别与通道选择以脱敏抓包记录为起始证据。
+
 ## [2.4.1] - 2026-08-23
 
 本版新增 Edifier FitClip Ultra 与华为 FreeBuds 系列适配，并修复部分旧版 MiLink 耳机

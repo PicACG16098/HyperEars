@@ -38,6 +38,8 @@ class EarbudAdapterHierarchyTest {
         assertTrue(resolve("EDIFIER FitClip Ultra", standard = true) is EdifierFitClipUltraAdapter)
         assertTrue(resolve("HUAWEI FreeBuds Pro 3", standard = true) is HuaweiFreebudsPro3Adapter)
         assertTrue(resolve("FreeBuds Pro 3", standard = true) is HuaweiFreebudsPro3Adapter)
+        assertTrue(resolve("HUAWEI FreeBuds 5i", standard = true) is HuaweiFreebuds5iAdapter)
+        assertTrue(resolve("FreeBuds 5i", standard = true) is HuaweiFreebuds5iAdapter)
         assertTrue(resolve("HUAWEI FreeBuds 4", standard = true) is HuaweiFreeBuds4Adapter)
         assertTrue(resolve("FreeBuds 4", standard = true) is HuaweiFreeBuds4Adapter)
         assertTrue(resolve("Unknown headset", standard = true) is StandardEarbudAdapter)
@@ -837,6 +839,61 @@ class EarbudAdapterHierarchyTest {
             ),
             adapter.beginHandshake().commands.map(ByteArray::toList),
         )
+    }
+
+    @Test
+    fun huaweiFreebuds5iUsesChannel16AndStandardNoiseModes() {
+        val adapter = HuaweiFreebuds5iAdapter()
+
+        assertEquals(AdapterResolution.EXACT_MATCH, adapter.snapshot().resolution)
+        assertEquals(
+            listOf(16),
+            adapter.transports.map { (it as RfcommEndpointSpec.Channel).number },
+        )
+        assertFalse(adapter.snapshot().capabilities.noiseControl)
+        assertEquals(BatterySource.SYSTEM_AGGREGATE, adapter.snapshot().batterySource)
+
+        val result = adapter.receive(
+            HuaweiFreebudsSppCodec.packet(0x2B2A, listOf(1 to byteArrayOf(0x02, 0x01))),
+        )
+
+        assertEquals(HandshakeResult.Ready, result.handshake)
+        assertEquals(NoiseMode.ANC, adapter.runtimeState().noiseMode)
+        assertEquals(
+            setOf(NoiseMode.ANC, NoiseMode.OFF, NoiseMode.TRANSPARENCY),
+            adapter.snapshot().supportedNoiseModes,
+        )
+        assertEquals(1, adapter.runtimeState().features.values.size)
+
+        val control = adapter.executeControl(
+            StandardControlRequest.SetNoiseMode(NoiseMode.TRANSPARENCY),
+        )
+
+        assertTrue(control.accepted)
+        assertEquals(
+            HuaweiFreebudsSppCodec
+                .noiseModeCommand(HuaweiFreebudsSppCodec.NoiseMode.TRANSPARENCY)
+                .toList(),
+            control.commands.single().toList(),
+        )
+        assertEquals(
+            HuaweiFreebudsSppCodec.queryNoiseState.toList(),
+            control.readback.single().toList(),
+        )
+    }
+
+    @Test
+    fun huaweiFreebuds5iRejectsUnsupportedWindMode() {
+        val adapter = HuaweiFreebuds5iAdapter()
+        adapter.receive(
+            HuaweiFreebudsSppCodec.packet(0x2B2A, listOf(1 to byteArrayOf(0x00, 0x00))),
+        )
+
+        val result = adapter.executeControl(
+            StandardControlRequest.SetNoiseMode(NoiseMode.WIND),
+        )
+
+        assertFalse(result.accepted)
     }
 
     @Test
