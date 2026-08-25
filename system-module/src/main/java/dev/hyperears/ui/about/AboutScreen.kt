@@ -38,19 +38,19 @@ import dev.hyperears.update.ReleaseInfo
 import dev.hyperears.update.UpdateCheckResult
 import dev.hyperears.update.UpdateCheckUiState
 
-private data class SupportEntry(
+internal data class SupportEntry(
     val name: String,
     val evidence: EvidenceLevel,
     val battery: BatteryCapability,
     val noiseControl: String,
 )
 
-private data class SupportBrand(
+internal data class SupportBrand(
     val name: String,
     val entries: List<SupportEntry>,
 )
 
-private enum class EvidenceLevel(val label: String) {
+internal enum class EvidenceLevel(val label: String) {
     VERIFIED("实机验证"),
     PUBLIC_IMPLEMENTATION("公开实现"),
     REFERENCE_PROTOCOL("参考协议"),
@@ -58,7 +58,7 @@ private enum class EvidenceLevel(val label: String) {
     STANDARD_FALLBACK("标准回退"),
 }
 
-private enum class BatteryCapability(val label: String) {
+internal enum class BatteryCapability(val label: String) {
     COMPONENT("组件电量"),
     LEFT_RIGHT("左右耳电量"),
     DEVICE("整机电量"),
@@ -68,13 +68,13 @@ private enum class BatteryCapability(val label: String) {
     SYSTEM("系统电量"),
 }
 
-private data class ProjectLink(
+internal data class ProjectLink(
     val title: String,
     val detail: String,
     val url: String,
 )
 
-private val supportBrands = listOf(
+internal val supportBrands = listOf(
     SupportBrand(
         name = "vivo / iQOO",
         entries = listOf(
@@ -394,7 +394,7 @@ private val supportBrands = listOf(
     ),
 )
 
-private val projectLinks = listOf(
+internal val projectLinks = listOf(
     ProjectLink(
         title = "源代码",
         detail = "github.com/silverpoetry/HyperEars",

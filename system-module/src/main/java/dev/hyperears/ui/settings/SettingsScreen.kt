@@ -58,6 +58,7 @@ import dev.hyperears.settings.ModuleSettings
 import dev.hyperears.settings.MoreSettingsTarget
 import dev.hyperears.ui.components.HyperEarsPage
 import dev.hyperears.ui.components.rememberSwitchHaptics
+import dev.hyperears.ui.theme.UiStyle
 
 enum class SettingsDestination {
     ADAPTERS,
@@ -71,8 +72,10 @@ fun SettingsScreen(
     autoCheckUpdates: Boolean,
     rootAvailable: Boolean?,
     rootActionState: RootActionState,
+    uiStyle: UiStyle,
     onSettingsChanged: (ModuleSettings) -> Unit,
     onAutoCheckUpdatesChanged: (Boolean) -> Unit,
+    onUiStyleChanged: (UiStyle) -> Unit,
     onRunRootAction: (RootAction) -> Unit,
     onOpenDebug: () -> Unit,
 ) {
@@ -103,6 +106,11 @@ fun SettingsScreen(
                         onCheckedChange = {
                             onSettingsChanged(settings.copy(modulePaused = it))
                         },
+                    )
+                    PreferenceDivider()
+                    UiStylePreference(
+                        selected = uiStyle,
+                        onSelected = onUiStyleChanged,
                     )
                     PreferenceDivider()
                     MoreSettingsTargetPreference(
@@ -191,6 +199,69 @@ fun SettingsScreen(
                 },
             )
         }
+    }
+}
+
+@Composable
+private fun UiStylePreference(
+    selected: UiStyle,
+    onSelected: (UiStyle) -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            headlineContent = {
+                Text(
+                    text = "界面风格",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                )
+            },
+            trailingContent = {
+                Box {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = selected.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "选择界面风格",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                    ) {
+                        UiStyle.entries.forEach { style ->
+                            DropdownMenuItem(
+                                text = { Text(style.displayName) },
+                                onClick = {
+                                    expanded = false
+                                    if (style != selected) onSelected(style)
+                                },
+                                trailingIcon = if (style == selected) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "当前选项",
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                            )
+                        }
+                    }
+                }
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true },
+        )
     }
 }
 
