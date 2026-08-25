@@ -38,8 +38,11 @@ fun HyperEarsTheme(
         }
 
         UiStyle.MIUIX -> {
-            val controller = remember {
-                ThemeController(colorSchemeMode = ColorSchemeMode.MonetSystem)
+            val controller = remember(darkTheme) {
+                ThemeController(
+                    colorSchemeMode = ColorSchemeMode.System,
+                    isDark = darkTheme,
+                )
             }
             MiuixTheme(controller = controller) {
                 preservedContent(content)
