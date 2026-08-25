@@ -16,7 +16,7 @@ val releaseSigningConfigured = listOf(
 
 android {
     namespace = "dev.hyperears"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.hyperears"
