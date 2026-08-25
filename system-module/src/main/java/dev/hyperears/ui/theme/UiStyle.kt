@@ -9,6 +9,6 @@ enum class UiStyle(
 
     companion object {
         fun fromStoredValue(value: String?): UiStyle =
-            entries.firstOrNull { it.name == value } ?: MATERIAL3
+            entries.firstOrNull { it.name == value } ?: MIUIX
     }
 }

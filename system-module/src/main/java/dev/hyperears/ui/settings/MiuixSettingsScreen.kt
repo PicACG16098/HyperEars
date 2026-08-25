@@ -35,20 +35,15 @@ import dev.hyperears.ui.components.MiuixHyperEarsPage
 import dev.hyperears.ui.components.rememberSwitchHaptics
 import dev.hyperears.ui.theme.UiStyle
 import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.preference.WindowSpinnerPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
 fun MiuixSettingsScreen(
@@ -64,7 +59,6 @@ fun MiuixSettingsScreen(
     onOpenDebug: () -> Unit,
 ) {
     MiuixHyperEarsPage(title = "设置") { pagePadding, scrollBehavior ->
-        var pendingRootAction by remember { mutableStateOf<RootAction?>(null) }
         LazyColumn(
             state = rememberLazyListState(),
             modifier = Modifier
@@ -79,7 +73,10 @@ fun MiuixSettingsScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item(key = "preferences") {
+            item(key = "module-header") {
+                MiuixPreferenceSectionTitle("模块")
+            }
+            item(key = "module-preferences") {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     MiuixSwitchPreference(
                         title = "暂停模块",
@@ -89,16 +86,6 @@ fun MiuixSettingsScreen(
                             onSettingsChanged(settings.copy(modulePaused = it))
                         },
                     )
-                    MiuixDivider()
-                    MiuixUiStylePreference(uiStyle, onUiStyleChanged)
-                    MiuixDivider()
-                    MiuixMoreSettingsPreference(
-                        selected = settings.moreSettingsTarget,
-                        onSelected = { target ->
-                            onSettingsChanged(settings.copy(moreSettingsTarget = target))
-                        },
-                    )
-                    MiuixDivider()
                     MiuixSwitchPreference(
                         title = "运行时退避",
                         summary = "厂商控制 App 运行时自动让出耳机私有控制通道，需勾选对应作用域。",
@@ -107,14 +94,26 @@ fun MiuixSettingsScreen(
                             onSettingsChanged(settings.copy(yieldToVendorControlApp = it))
                         },
                     )
-                    MiuixDivider()
+                }
+            }
+            item(key = "application-header") {
+                MiuixPreferenceSectionTitle("界面与行为")
+            }
+            item(key = "application-preferences") {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    MiuixUiStylePreference(uiStyle, onUiStyleChanged)
+                    MiuixMoreSettingsPreference(
+                        selected = settings.moreSettingsTarget,
+                        onSelected = { target ->
+                            onSettingsChanged(settings.copy(moreSettingsTarget = target))
+                        },
+                    )
                     MiuixSwitchPreference(
                         title = "自动检查更新",
                         summary = "打开应用时检查 GitHub Release，每天最多一次。",
                         checked = autoCheckUpdates,
                         onCheckedChange = onAutoCheckUpdatesChanged,
                     )
-                    MiuixDivider()
                     ArrowPreference(
                         title = "调试",
                         summary = "适配器、详细日志与日志导出。",
@@ -122,40 +121,30 @@ fun MiuixSettingsScreen(
                     )
                 }
             }
+            item(key = "quick-actions-header") {
+                MiuixPreferenceSectionTitle("快捷控制")
+            }
             item(key = "quick-actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (rootAvailable != true) {
                         MiuixRootRequirement(rootAvailable)
                     }
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        RootAction.entries.forEachIndexed { index, action ->
+                        RootAction.entries.forEach { action ->
                             MiuixActionPreference(
                                 title = action.title,
                                 summary = action.detail,
-                                actionLabel = "执行",
                                 available = rootAvailable == true,
                                 running = rootActionState is RootActionState.Running &&
                                     rootActionState.action == action,
-                                onClick = { pendingRootAction = action },
+                                onClick = { onRunRootAction(action) },
                             )
-                            if (index != RootAction.entries.lastIndex) MiuixDivider()
                         }
                     }
                 }
             }
         }
 
-        pendingRootAction?.let { action ->
-            MiuixConfirmationDialog(
-                title = action.title,
-                summary = action.detail,
-                onDismiss = { pendingRootAction = null },
-                onConfirm = {
-                    pendingRootAction = null
-                    onRunRootAction(action)
-                },
-            )
-        }
     }
 }
 
@@ -179,6 +168,9 @@ fun MiuixDebugSettingsScreen(
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            item(key = "debug-header") {
+                MiuixPreferenceSectionTitle("诊断")
+            }
             item(key = "debug-preferences") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (rootAvailable != true) {
@@ -199,7 +191,6 @@ fun MiuixDebugSettingsScreen(
                             summary = "按品牌管理具体型号与家族回退。",
                             onClick = onOpenAdapters,
                         )
-                        MiuixDivider()
                         MiuixSwitchPreference(
                             title = "详细日志",
                             summary = "记录模块生命周期、协议与退避状态；需在 LSPosed 中允许详细日志并输出到守护进程。",
@@ -208,11 +199,9 @@ fun MiuixDebugSettingsScreen(
                                 onSettingsChanged(settings.copy(diagnosticLogging = it))
                             },
                         )
-                        MiuixDivider()
                         MiuixActionPreference(
                             title = "导出日志",
                             summary = "导出 LSPosed 模块日志与应用操作日志。",
-                            actionLabel = "导出",
                             available = rootAvailable == true,
                             running = false,
                             onClick = onExportLogs,
@@ -251,58 +240,59 @@ fun MiuixAdapterSettingsScreen(
                 val enabledCount = group.adapters.count { adapter ->
                     adapter.id !in settings.disabledAdapterIds
                 }
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    MiuixAdapterGroupHeader(
-                        title = group.displayName,
-                        enabledCount = enabledCount,
-                        totalCount = group.adapters.size,
-                        expanded = expanded,
-                        enabled = enabledCount > 0,
-                        onEnabledChange = { enabled ->
-                            val disabled = if (enabled) {
-                                settings.disabledAdapterIds - adapterIds
-                            } else {
-                                settings.disabledAdapterIds + adapterIds
-                            }
-                            onSettingsChanged(settings.copy(disabledAdapterIds = disabled))
-                        },
-                        onClick = {
-                            expandedGroupId = group.id.takeUnless { expanded }
-                        },
-                    )
-                    if (expanded) {
-                        EarbudAdapterKind.entries.forEach { kind ->
-                            val adapters = group.adapters.filter { it.kind == kind }
-                            if (adapters.isNotEmpty()) {
-                                MiuixDivider()
-                                Text(
-                                    text = kind.miuixSectionTitle,
-                                    modifier = Modifier.padding(
-                                        start = 16.dp,
-                                        end = 16.dp,
-                                        top = 12.dp,
-                                        bottom = 4.dp,
-                                    ),
-                                    style = MiuixTheme.textStyles.subtitle,
-                                    color = MiuixTheme.colorScheme.primary,
-                                )
-                                adapters.forEachIndexed { index, adapter ->
-                                    if (index > 0) MiuixDivider()
-                                    MiuixSwitchPreference(
-                                        title = adapter.displayName,
-                                        summary = adapter.id,
-                                        checked = adapter.id !in settings.disabledAdapterIds,
-                                        onCheckedChange = { enabled ->
-                                            val disabled = if (enabled) {
-                                                settings.disabledAdapterIds - adapter.id
-                                            } else {
-                                                settings.disabledAdapterIds + adapter.id
-                                            }
-                                            onSettingsChanged(
-                                                settings.copy(disabledAdapterIds = disabled),
-                                            )
-                                        },
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MiuixPreferenceSectionTitle(group.displayName)
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        MiuixAdapterGroupHeader(
+                            title = "全部适配器",
+                            enabledCount = enabledCount,
+                            totalCount = group.adapters.size,
+                            expanded = expanded,
+                            enabled = enabledCount > 0,
+                            onEnabledChange = { enabled ->
+                                val disabled = if (enabled) {
+                                    settings.disabledAdapterIds - adapterIds
+                                } else {
+                                    settings.disabledAdapterIds + adapterIds
+                                }
+                                onSettingsChanged(settings.copy(disabledAdapterIds = disabled))
+                            },
+                            onClick = {
+                                expandedGroupId = group.id.takeUnless { expanded }
+                            },
+                        )
+                        if (expanded) {
+                            EarbudAdapterKind.entries.forEach { kind ->
+                                val adapters = group.adapters.filter { it.kind == kind }
+                                if (adapters.isNotEmpty()) {
+                                    Text(
+                                        text = kind.miuixSectionTitle,
+                                        modifier = Modifier.padding(
+                                            start = 16.dp,
+                                            end = 16.dp,
+                                            top = 12.dp,
+                                            bottom = 4.dp,
+                                        ),
+                                        style = MiuixTheme.textStyles.subtitle,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                     )
+                                    adapters.forEach { adapter ->
+                                        MiuixSwitchPreference(
+                                            title = adapter.displayName,
+                                            summary = adapter.id,
+                                            checked = adapter.id !in settings.disabledAdapterIds,
+                                            onCheckedChange = { enabled ->
+                                                val disabled = if (enabled) {
+                                                    settings.disabledAdapterIds - adapter.id
+                                                } else {
+                                                    settings.disabledAdapterIds + adapter.id
+                                                }
+                                                onSettingsChanged(
+                                                    settings.copy(disabledAdapterIds = disabled),
+                                                )
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -412,22 +402,21 @@ private fun MiuixAdapterGroupHeader(
 private fun MiuixActionPreference(
     title: String,
     summary: String,
-    actionLabel: String,
     available: Boolean,
     running: Boolean,
     onClick: () -> Unit,
 ) {
     BasicComponent(
         title = title,
-        summary = summary,
+        summary = if (running) "$summary\n正在执行" else summary,
         enabled = available,
+        onClick = { if (available && !running) onClick() },
         endActions = {
-            Button(
-                onClick = onClick,
-                enabled = available && !running,
-            ) {
-                Text(if (running) "执行中" else actionLabel)
-            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+            )
         },
     )
 }
@@ -443,37 +432,13 @@ private fun MiuixRootRequirement(rootAvailable: Boolean?) {
 }
 
 @Composable
-private fun MiuixConfirmationDialog(
-    title: String,
-    summary: String,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    WindowDialog(
-        show = true,
-        title = title,
-        summary = summary,
-        onDismissRequest = onDismiss,
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextButton(
-                text = "取消",
-                onClick = onDismiss,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(
-                text = "执行",
-                onClick = onConfirm,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-            )
-        }
-    }
-}
-
-@Composable
-private fun MiuixDivider() {
-    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+private fun MiuixPreferenceSectionTitle(title: String) {
+    Text(
+        text = title,
+        modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 2.dp),
+        style = MiuixTheme.textStyles.subtitle,
+        color = MiuixTheme.colorScheme.onBackgroundVariant,
+    )
 }
 
 private val MoreSettingsTarget.miuixActionLabel: String

@@ -38,7 +38,9 @@ import dev.hyperears.root.RootAction
 import dev.hyperears.root.RootActionState
 import dev.hyperears.settings.ModuleSettings
 import dev.hyperears.ui.about.AboutScreen
+import dev.hyperears.ui.about.CompatibilityScreen
 import dev.hyperears.ui.about.MiuixAboutScreen
+import dev.hyperears.ui.about.MiuixCompatibilityScreen
 import dev.hyperears.ui.dashboard.DashboardScreen
 import dev.hyperears.ui.dashboard.DashboardUiState
 import dev.hyperears.ui.dashboard.MiuixDashboardScreen
@@ -47,7 +49,6 @@ import dev.hyperears.ui.settings.DebugSettingsScreen
 import dev.hyperears.ui.settings.MiuixAdapterSettingsScreen
 import dev.hyperears.ui.settings.MiuixDebugSettingsScreen
 import dev.hyperears.ui.settings.MiuixSettingsScreen
-import dev.hyperears.ui.settings.SettingsDestination
 import dev.hyperears.ui.settings.SettingsScreen
 import dev.hyperears.ui.theme.UiStyle
 import dev.hyperears.update.ReleaseInfo
@@ -74,6 +75,12 @@ private val appPages = listOf(
 )
 
 private const val TOP_LEVEL_PAGE_PRELOAD_COUNT = 1
+
+private enum class SecondaryDestination {
+    DEBUG,
+    ADAPTERS,
+    COMPATIBILITY,
+}
 
 /**
  * Owns navigation state shared by both visual renderers. Material 3 and Miuix only render the
@@ -102,23 +109,23 @@ fun HyperEarsApp(
 ) {
     val pagerState = rememberPagerState(pageCount = { appPages.size })
     val coroutineScope = rememberCoroutineScope()
-    var settingsDestination by rememberSaveable { mutableStateOf<SettingsDestination?>(null) }
+    var secondaryDestination by rememberSaveable { mutableStateOf<SecondaryDestination?>(null) }
 
-    BackHandler(enabled = settingsDestination != null) {
-        settingsDestination = previousSettingsDestination(settingsDestination)
+    BackHandler(enabled = secondaryDestination != null) {
+        secondaryDestination = previousSecondaryDestination(secondaryDestination)
     }
 
-    if (settingsDestination != null) {
-        RenderSettingsDestination(
+    if (secondaryDestination != null) {
+        RenderSecondaryDestination(
             style = uiStyle,
-            destination = settingsDestination ?: return,
+            destination = secondaryDestination ?: return,
             settings = settings,
             rootAvailable = rootAvailable,
             onSettingsChanged = onSettingsChanged,
             onExportLogs = onExportLogs,
-            onOpenAdapters = { settingsDestination = SettingsDestination.ADAPTERS },
+            onOpenAdapters = { secondaryDestination = SecondaryDestination.ADAPTERS },
             onNavigateBack = {
-                settingsDestination = previousSettingsDestination(settingsDestination)
+                secondaryDestination = previousSecondaryDestination(secondaryDestination)
             },
         )
         return
@@ -154,10 +161,17 @@ fun HyperEarsApp(
                     onAutoCheckUpdatesChanged = onAutoCheckUpdatesChanged,
                     onUiStyleChanged = onUiStyleChanged,
                     onRunRootAction = onRunRootAction,
-                    onOpenDebug = { settingsDestination = SettingsDestination.DEBUG },
+                    onOpenDebug = { secondaryDestination = SecondaryDestination.DEBUG },
                 )
 
-                2 -> AboutScreen(updateCheckState, onCheckUpdates, onOpenRelease)
+                2 -> AboutScreen(
+                    updateCheckState = updateCheckState,
+                    onCheckUpdates = onCheckUpdates,
+                    onOpenRelease = onOpenRelease,
+                    onOpenCompatibility = {
+                        secondaryDestination = SecondaryDestination.COMPATIBILITY
+                    },
+                )
             }
 
             UiStyle.MIUIX -> when (page) {
@@ -172,10 +186,17 @@ fun HyperEarsApp(
                     onAutoCheckUpdatesChanged = onAutoCheckUpdatesChanged,
                     onUiStyleChanged = onUiStyleChanged,
                     onRunRootAction = onRunRootAction,
-                    onOpenDebug = { settingsDestination = SettingsDestination.DEBUG },
+                    onOpenDebug = { secondaryDestination = SecondaryDestination.DEBUG },
                 )
 
-                2 -> MiuixAboutScreen(updateCheckState, onCheckUpdates, onOpenRelease)
+                2 -> MiuixAboutScreen(
+                    updateCheckState = updateCheckState,
+                    onCheckUpdates = onCheckUpdates,
+                    onOpenRelease = onOpenRelease,
+                    onOpenCompatibility = {
+                        secondaryDestination = SecondaryDestination.COMPATIBILITY
+                    },
+                )
             }
         }
     }
@@ -214,17 +235,20 @@ fun HyperEarsApp(
     }
 }
 
-private fun previousSettingsDestination(
-    destination: SettingsDestination?,
-): SettingsDestination? = when (destination) {
-    SettingsDestination.ADAPTERS -> SettingsDestination.DEBUG
-    SettingsDestination.DEBUG, null -> null
+private fun previousSecondaryDestination(
+    destination: SecondaryDestination?,
+): SecondaryDestination? = when (destination) {
+    SecondaryDestination.ADAPTERS -> SecondaryDestination.DEBUG
+    SecondaryDestination.DEBUG,
+    SecondaryDestination.COMPATIBILITY,
+    null,
+    -> null
 }
 
 @Composable
-private fun RenderSettingsDestination(
+private fun RenderSecondaryDestination(
     style: UiStyle,
-    destination: SettingsDestination,
+    destination: SecondaryDestination,
     settings: ModuleSettings,
     rootAvailable: Boolean?,
     onSettingsChanged: (ModuleSettings) -> Unit,
@@ -234,37 +258,45 @@ private fun RenderSettingsDestination(
 ) {
     when (style) {
         UiStyle.MATERIAL3 -> when (destination) {
-            SettingsDestination.ADAPTERS -> AdapterSettingsScreen(
+            SecondaryDestination.ADAPTERS -> AdapterSettingsScreen(
                 groups = EarbudAdapterRegistry.groups,
                 settings = settings,
                 onSettingsChanged = onSettingsChanged,
                 onNavigateBack = onNavigateBack,
             )
 
-            SettingsDestination.DEBUG -> DebugSettingsScreen(
+            SecondaryDestination.DEBUG -> DebugSettingsScreen(
                 settings = settings,
                 rootAvailable = rootAvailable,
                 onSettingsChanged = onSettingsChanged,
                 onExportLogs = onExportLogs,
                 onOpenAdapters = onOpenAdapters,
+                onNavigateBack = onNavigateBack,
+            )
+
+            SecondaryDestination.COMPATIBILITY -> CompatibilityScreen(
                 onNavigateBack = onNavigateBack,
             )
         }
 
         UiStyle.MIUIX -> when (destination) {
-            SettingsDestination.ADAPTERS -> MiuixAdapterSettingsScreen(
+            SecondaryDestination.ADAPTERS -> MiuixAdapterSettingsScreen(
                 groups = EarbudAdapterRegistry.groups,
                 settings = settings,
                 onSettingsChanged = onSettingsChanged,
                 onNavigateBack = onNavigateBack,
             )
 
-            SettingsDestination.DEBUG -> MiuixDebugSettingsScreen(
+            SecondaryDestination.DEBUG -> MiuixDebugSettingsScreen(
                 settings = settings,
                 rootAvailable = rootAvailable,
                 onSettingsChanged = onSettingsChanged,
                 onExportLogs = onExportLogs,
                 onOpenAdapters = onOpenAdapters,
+                onNavigateBack = onNavigateBack,
+            )
+
+            SecondaryDestination.COMPATIBILITY -> MiuixCompatibilityScreen(
                 onNavigateBack = onNavigateBack,
             )
         }

@@ -5,9 +5,9 @@ import org.junit.Test
 
 class UiStyleTest {
     @Test
-    fun material3IsTheCompatibilityDefault() {
-        assertEquals(UiStyle.MATERIAL3, UiStyle.fromStoredValue(null))
-        assertEquals(UiStyle.MATERIAL3, UiStyle.fromStoredValue("unknown"))
+    fun miuixIsTheDefaultWhenNoPreferenceExists() {
+        assertEquals(UiStyle.MIUIX, UiStyle.fromStoredValue(null))
+        assertEquals(UiStyle.MIUIX, UiStyle.fromStoredValue("unknown"))
     }
 
     @Test

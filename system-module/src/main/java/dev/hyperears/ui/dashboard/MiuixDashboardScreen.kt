@@ -2,21 +2,29 @@ package dev.hyperears.ui.dashboard
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,18 +35,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.hyperears.integration.NoiseMode
 import dev.hyperears.ui.components.MiuixHyperEarsPage
 import java.text.DateFormat
 import java.util.Date
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
@@ -62,7 +72,10 @@ fun MiuixDashboardScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item(key = "runtime") { MiuixRuntimeCard(uiState, onRefresh) }
+            item(key = "runtime-status") { MiuixRuntimeStatusCard(uiState, onRefresh) }
+            item(key = "runtime-stats") { MiuixRuntimeStats(uiState) }
+            item(key = "runtime-header") { MiuixGroupTitle("MiLink 处理") }
+            item(key = "runtime-details") { MiuixRuntimeDetailsCard(uiState, onRefresh) }
             item(key = "session-header") {
                 MiuixSectionHeader("设备会话", uiState.sessions.size)
             }
@@ -83,90 +96,180 @@ fun MiuixDashboardScreen(
 }
 
 @Composable
-private fun MiuixRuntimeCard(
-    uiState: DashboardUiState,
-    onRefresh: () -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+private fun MiuixRuntimeStatusCard(uiState: DashboardUiState, onRefresh: () -> Unit) {
+    val ready = uiState.runtimeResponsive && uiState.miLinkProcesses.isNotEmpty()
+    val bluetoothOnly = uiState.runtimeResponsive && uiState.miLinkProcesses.isEmpty()
+    val title = when {
+        ready -> "运行正常"
+        bluetoothOnly -> "等待 MiLink"
+        else -> "模块未响应"
+    }
+    val summary = when {
+        ready -> "蓝牙与 MiLink 已响应"
+        bluetoothOnly -> "蓝牙进程已响应"
+        else -> "未收到蓝牙或 MiLink 状态"
+    }
+    val dark = isSystemInDarkTheme()
+    val container = when {
+        ready && dark -> Color(0xFF1A3825)
+        ready -> Color(0xFFDFFAE4)
+        dark -> Color(0xFF381A1A)
+        else -> Color(0xFFFAEEEE)
+    }
+    val accent = if (ready) Color(0xFF36D167) else Color(0xFFF72727)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = top.yukonga.miuix.kmp.basic.CardDefaults.defaultColors(
+            color = container,
+            contentColor = MiuixTheme.colorScheme.onSurface,
+        ),
+        onClick = onRefresh,
+        showIndication = true,
+        pressFeedbackType = PressFeedbackType.Tilt,
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .offset(50.dp, 38.dp),
+                contentAlignment = Alignment.BottomEnd,
+            ) {
+                Icon(
+                    imageVector = if (ready) {
+                        Icons.Rounded.CheckCircleOutline
+                    } else {
+                        Icons.Default.Warning
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.size(170.dp),
+                    tint = accent,
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
             ) {
                 Text(
-                    text = "运行状态",
-                    modifier = Modifier.weight(1f),
-                    style = MiuixTheme.textStyles.headline1,
+                    text = title,
+                    modifier = Modifier.fillMaxWidth(),
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                TextButton(text = "同步", onClick = onRefresh)
-            }
-            MiuixRuntimeProcessRow(
-                label = "蓝牙进程 Hook",
-                status = if (uiState.runtimeResponsive) {
-                    "已响应 · ${uiState.lastUpdatedAtMillis?.let(::formatMiuixTime) ?: "—"}"
-                } else {
-                    "未响应"
-                },
-                online = uiState.runtimeResponsive,
-            )
-            MiuixRuntimeProcessRow(
-                label = "MiLink 进程 Hook",
-                status = if (uiState.miLinkProcesses.isEmpty()) {
-                    "未响应"
-                } else {
-                    "${uiState.miLinkProcesses.size} 个进程响应"
-                },
-                online = uiState.miLinkProcesses.isNotEmpty(),
-            )
-            HorizontalDivider()
-            Row(modifier = Modifier.fillMaxWidth()) {
-                MiuixSummaryMetric("状态接收", uiState.miLinkObservedCount, Modifier.weight(1f))
-                MiuixSummaryMetric("身份查询", uiState.identityQueriedCount, Modifier.weight(1f))
-                MiuixSummaryMetric("能力查询", uiState.capabilitiesQueriedCount, Modifier.weight(1f))
-                MiuixSummaryMetric("活动会话", uiState.sessions.size, Modifier.weight(1f))
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = summary,
+                    modifier = Modifier.fillMaxWidth(),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                )
+                Spacer(Modifier.height(36.dp))
+                Text(
+                    text = "${uiState.connectedCount} 个活动会话 · ${uiState.miLinkProcesses.size} 个 MiLink 进程",
+                    modifier = Modifier.fillMaxWidth(),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun MiuixRuntimeProcessRow(
-    label: String,
-    status: String,
-    online: Boolean,
-) {
+private fun MiuixRuntimeStats(uiState: DashboardUiState) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        MiuixStatusDot(
-            if (online) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.error,
+        MiuixStatCard(
+            "活动会话",
+            uiState.connectedCount,
+            Modifier.weight(1f).fillMaxHeight(),
         )
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MiuixTheme.textStyles.body1,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            text = status,
-            style = MiuixTheme.textStyles.body2,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        MiuixStatCard(
+            "协议已确认",
+            uiState.handshakeCount,
+            Modifier.weight(1f).fillMaxHeight(),
         )
     }
 }
 
 @Composable
-private fun MiuixSummaryMetric(
-    label: String,
-    value: Int,
-    modifier: Modifier = Modifier,
-) {
+private fun MiuixStatCard(label: String, value: Int, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier,
+        insideMargin = PaddingValues(16.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.Start,
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.fillMaxWidth(),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            Text(
+                text = value.toString(),
+                modifier = Modifier.fillMaxWidth(),
+                fontSize = 26.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MiuixRuntimeDetailsCard(uiState: DashboardUiState, onRefresh: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onRefresh),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "处理进度",
+                    style = MiuixTheme.textStyles.body1,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = uiState.lastUpdatedAtMillis?.let(::formatMiuixTime) ?: "点击同步",
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.primary,
+                )
+            }
+            Row(modifier = Modifier.fillMaxWidth()) {
+                MiuixRuntimeMetric("状态", uiState.miLinkObservedCount, Modifier.weight(1f))
+                MiuixRuntimeMetric("身份", uiState.identityQueriedCount, Modifier.weight(1f))
+                MiuixRuntimeMetric("能力", uiState.capabilitiesQueriedCount, Modifier.weight(1f))
+                MiuixRuntimeMetric(
+                    "通知",
+                    uiState.sessions.count { it.runtimeNotified },
+                    Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiuixRuntimeMetric(label: String, value: Int, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -174,7 +277,7 @@ private fun MiuixSummaryMetric(
     ) {
         Text(
             text = value.toString(),
-            style = MiuixTheme.textStyles.title2,
+            style = MiuixTheme.textStyles.title3,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
@@ -196,8 +299,8 @@ private fun MiuixSectionHeader(title: String, count: Int) {
     ) {
         Text(
             text = title,
-            style = MiuixTheme.textStyles.title3,
-            fontWeight = FontWeight.SemiBold,
+            style = MiuixTheme.textStyles.subtitle,
+            color = MiuixTheme.colorScheme.onBackgroundVariant,
         )
         Text(
             text = count.toString(),
@@ -205,6 +308,16 @@ private fun MiuixSectionHeader(title: String, count: Int) {
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
         )
     }
+}
+
+@Composable
+private fun MiuixGroupTitle(title: String) {
+    Text(
+        text = title,
+        modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 2.dp),
+        style = MiuixTheme.textStyles.subtitle,
+        color = MiuixTheme.colorScheme.onBackgroundVariant,
+    )
 }
 
 @Composable
@@ -238,7 +351,7 @@ private fun MiuixDeviceSessionCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Row(
@@ -267,7 +380,6 @@ private fun MiuixDeviceSessionCard(
             MiuixSessionStatusList(session.headsetLifecycle)
             MiuixSectionLabel("MiLink 处理")
             MiuixLifecycleStrip(session.miLinkLifecycle)
-            HorizontalDivider()
             MiuixMetricStrip(session.metrics, session.noiseControl, onSetNoiseMode)
         }
     }
@@ -292,7 +404,11 @@ private fun MiuixAdapterFacts(session: DeviceSessionUiModel) {
         MiuixTheme.colorScheme.error
     }
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(session.adapterSummary, style = MiuixTheme.textStyles.footnote1, color = color)
+        Text(
+            text = session.adapterSummary,
+            style = MiuixTheme.textStyles.footnote1,
+            color = color,
+        )
         if (session.adapterResolved) {
             Text(
                 text = "控制  ${session.controlSummary}",
@@ -315,11 +431,8 @@ private fun MiuixSectionLabel(text: String) {
 @Composable
 private fun MiuixSessionStatusList(stages: List<DeviceLinkStage>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        stages.forEachIndexed { index, stage ->
+        stages.forEach { stage ->
             MiuixSessionStatusRow(stage)
-            if (index != stages.lastIndex) {
-                HorizontalDivider(modifier = Modifier.padding(start = 20.dp))
-            }
         }
     }
 }
@@ -357,6 +470,7 @@ private fun MiuixSessionStatusRow(stage: DeviceLinkStage) {
 
 @Composable
 private fun MiuixLifecycleStrip(stages: List<DeviceLifecycleStage>) {
+    val dark = isSystemInDarkTheme()
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -370,6 +484,15 @@ private fun MiuixLifecycleStrip(stages: List<DeviceLifecycleStage>) {
             Card(
                 modifier = Modifier.weight(1f),
                 cornerRadius = 14.dp,
+                colors = top.yukonga.miuix.kmp.basic.CardDefaults.defaultColors(
+                    color = if (stage.complete || stage.active) {
+                        color.copy(alpha = 0.12f)
+                    } else if (dark) {
+                        Color(0xFF2C2C2E)
+                    } else {
+                        Color(0xFFF2F2F2)
+                    },
+                ),
             ) {
                 Column(
                     modifier = Modifier.padding(vertical = 10.dp),
@@ -379,12 +502,15 @@ private fun MiuixLifecycleStrip(stages: List<DeviceLifecycleStage>) {
                     MiuixStatusDot(color)
                     Text(
                         text = stage.label,
+                        modifier = Modifier.fillMaxWidth(),
                         style = MiuixTheme.textStyles.footnote2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        textAlign = TextAlign.Center,
                         maxLines = 1,
                     )
                     Text(
                         text = stage.value,
+                        modifier = Modifier.fillMaxWidth(),
                         style = MiuixTheme.textStyles.footnote2,
                         color = color,
                         fontWeight = if (stage.complete || stage.active) {
@@ -392,6 +518,9 @@ private fun MiuixLifecycleStrip(stages: List<DeviceLifecycleStage>) {
                         } else {
                             FontWeight.Normal
                         },
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -438,12 +567,22 @@ private fun MiuixNoiseModeMetric(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(
-            text = metric.value,
-            style = MiuixTheme.textStyles.headline2,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = metric.value,
+                style = MiuixTheme.textStyles.headline2,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            if (selectable) {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "切换模式",
+                    modifier = Modifier.size(18.dp),
+                    tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                )
+            }
+        }
         Text(
             text = metric.label,
             style = MiuixTheme.textStyles.footnote2,
