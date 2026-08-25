@@ -42,6 +42,7 @@ StarRing, ROSESELSA, NiceHCK, MOONDROP, Honor, Huawei, QCY and Sony devices.
 
 ### Settings and diagnostics
 
+- Switches instantly between Material 3 and Miuix while preserving the current page, settings destination and earbud sessions.
 - Provides a drop-down for choosing what the MiLink card's “More settings” action opens, plus settings for runtime yielding, automatic update checks and pausing the integration.
 - Provides a Debug > Adapters page that groups every model, family fallback and standard fallback Adapter by brand, with a group switch that disables or restores all Adapters in that brand.
 - Provides a Debug page for detailed logging and diagnostic export.

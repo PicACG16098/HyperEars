@@ -44,6 +44,7 @@ vivo / iQOO、OPPO Enco、Bose、Edifier、StarRing、ROSESELSA、NiceHCK、水�
 
 ### 设置与诊断
 
+- 可在 Material 3 与 Miuix 界面间即时切换；当前页面、设置层级和耳机会话保持不变。
 - 在设置页配置点击 MiLink 卡片“更多设置”时打开的目标，以及运行时退避、自动更新检查和
   模块暂停。
 - 在“调试 > 适配器”中按品牌管理每个具体型号、家族回退和标准回退 Adapter；品牌总开关可一次停用或恢复该组全部 Adapter。
