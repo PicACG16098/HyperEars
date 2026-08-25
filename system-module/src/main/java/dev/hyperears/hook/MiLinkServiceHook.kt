@@ -111,7 +111,15 @@ internal class MiLinkServiceHook : HookContext() {
             }
             hookBluetoothDeviceResult(className, "getAncState") { device, adapter ->
                 if (adapter.capabilities.noiseControl) {
-                    nativeAncState(stateFor(device))
+                    val state = stateFor(device)
+                    nativeAncState(state).also { nativeState ->
+                        logAncProjection(
+                            source = "$className.getAncState",
+                            address = runCatching { device.address }.getOrNull(),
+                            state = state,
+                            nativeState = nativeState,
+                        )
+                    }
                 } else {
                     NO_ANC_STATE
                 }
@@ -401,7 +409,15 @@ internal class MiLinkServiceHook : HookContext() {
             "getAncState",
         ) { device, adapter ->
             if (adapter.capabilities.noiseControl) {
-                nativeAncState(stateFor(device))
+                val state = stateFor(device)
+                nativeAncState(state).also { nativeState ->
+                    logAncProjection(
+                        source = "AncBatteryController.getAncState",
+                        address = runCatching { device.address }.getOrNull(),
+                        state = state,
+                        nativeState = nativeState,
+                    )
+                }
             } else {
                 NO_ANC_STATE
             }
@@ -473,13 +489,35 @@ internal class MiLinkServiceHook : HookContext() {
         hookHeadsetInfo("getMode") { info ->
             val state = activeStateForHeadsetInfo(info) ?: return@hookHeadsetInfo null
             adapterIdentity(state)?.let { adapter ->
-                if (adapter.capabilities.noiseControl) nativeAncState(state) else NO_ANC_STATE
+                if (adapter.capabilities.noiseControl) {
+                    nativeAncState(state).also { nativeState ->
+                        logAncProjection(
+                            source = "HeadsetInfo.getMode",
+                            address = state.address,
+                            state = state,
+                            nativeState = nativeState,
+                        )
+                    }
+                } else {
+                    NO_ANC_STATE
+                }
             }
         }
         hookHeadsetInfo("component5") { info ->
             val state = activeStateForHeadsetInfo(info) ?: return@hookHeadsetInfo null
             adapterIdentity(state)?.let { adapter ->
-                if (adapter.capabilities.noiseControl) nativeAncState(state) else NO_ANC_STATE
+                if (adapter.capabilities.noiseControl) {
+                    nativeAncState(state).also { nativeState ->
+                        logAncProjection(
+                            source = "HeadsetInfo.component5",
+                            address = state.address,
+                            state = state,
+                            nativeState = nativeState,
+                        )
+                    }
+                } else {
+                    NO_ANC_STATE
+                }
             }
         }
         hookHeadsetInfo("getSwitchState") { info ->
@@ -658,11 +696,22 @@ internal class MiLinkServiceHook : HookContext() {
                     !adapter.capabilities.noiseControl ||
                     mode !in adapter.supportedNoiseModes
                 ) {
+                    ModuleLog.debug("AncTrace") {
+                        "native control rejected source=$className.$methodName " +
+                            "adapter=${adapter.id} requested=$mode " +
+                            "supported=${adapter.supportedNoiseModes}"
+                    }
                     result = HEADSET_OPERATION_UNSUPPORTED
                     return@hookBefore
                 }
                 rememberRuntimeOwner(className, instance)
                 captureContext(instance)
+                ModuleLog.debug("AncTrace") {
+                    "native control accepted source=$className.$methodName " +
+                        "adapter=${adapter.id} " +
+                        "address=${maskBluetoothAddress(runCatching { device?.address }.getOrNull())} " +
+                        "requested=$mode"
+                }
                 sendControl(StandardControlRequest.SetNoiseMode(mode), device)
                 result = HEADSET_OPERATION_SUCCESS
             }
@@ -807,6 +856,18 @@ internal class MiLinkServiceHook : HookContext() {
             ?.let(ProcessStateStore::knownSnapshot)
             ?: EarbudState()
         val state = ProcessStateStore.accept(intent) ?: return
+        if (
+            previous.noiseMode != state.noiseMode ||
+            previous.adapter != state.adapter
+        ) {
+            ModuleLog.debug("AncTrace") {
+                "bridge state accepted address=${maskBluetoothAddress(state.address)} " +
+                    "adapter=${state.adapter?.id} " +
+                    "mode=${previous.noiseMode}->${state.noiseMode} " +
+                    "supported=${state.adapter?.supportedNoiseModes} " +
+                    "sessionActive=${state.sessionActive}"
+            }
+        }
         state.address?.let {
             val normalized = normalizeAddress(it)
             val systemOwned = deviceOwnership.isSystemOwned(it)
@@ -1103,7 +1164,15 @@ internal class MiLinkServiceHook : HookContext() {
     private fun notifyRuntimeChanged(previous: EarbudState, snapshot: EarbudState) {
         val owners = synchronized(runtimeOwners) { runtimeOwners.toList() }
         val propertyListeners = propertyChangeListeners()
-        if (owners.isEmpty() && propertyListeners.isEmpty()) return
+        if (owners.isEmpty() && propertyListeners.isEmpty()) {
+            if (previous.noiseMode != snapshot.noiseMode) {
+                ModuleLog.debug("AncTrace") {
+                    "runtime dispatch skipped address=${maskBluetoothAddress(snapshot.address)} " +
+                        "reason=no-runtime-owner mode=${previous.noiseMode}->${snapshot.noiseMode}"
+                }
+            }
+            return
+        }
 
         val capabilities = adapterIdentity(snapshot)?.capabilities ?: return
         val identityChanged =
@@ -1118,6 +1187,13 @@ internal class MiLinkServiceHook : HookContext() {
             capabilities.noiseControl &&
                 (identityChanged || adapterChanged || previous.noiseMode != snapshot.noiseMode)
         if (!adapterChanged && !connectionChanged && !batteryChanged && !ancChanged) return
+
+        ModuleLog.debug("AncTrace") {
+            "runtime change address=${maskBluetoothAddress(snapshot.address)} " +
+                "adapter=${snapshot.adapter?.id} mode=${previous.noiseMode}->${snapshot.noiseMode} " +
+                "ancChanged=$ancChanged adapterChanged=$adapterChanged " +
+                "owners=${owners.size} propertyListeners=${propertyListeners.size}"
+        }
 
         val address = snapshot.address ?: return
         val device = runCatching {
@@ -1139,11 +1215,20 @@ internal class MiLinkServiceHook : HookContext() {
             listeners = propertyListeners,
         )
 
-        val battery = batteryLevelsFor(snapshot)?.toIntArray() ?: return
+        val battery = batteryLevelsFor(snapshot)?.toIntArray() ?: run {
+            ModuleLog.debug("AncTrace") {
+                "runtime callback skipped address=${maskBluetoothAddress(snapshot.address)} " +
+                    "reason=battery-projection-unavailable ancChanged=$ancChanged"
+            }
+            return
+        }
         val anc = nativeAncState(snapshot)
         val deviceId = adapterIdentity(snapshot)
             ?.let(MiLinkCarrierIdentity::deviceId)
             ?: return
+        var callbackCount = 0
+        var ancChangedSuccess = 0
+        var ancReportSuccess = 0
         owners.forEach { owner ->
             val callbackCollections = listOf("mCallbacks", "callbacks")
                 .mapNotNull { field ->
@@ -1154,6 +1239,7 @@ internal class MiLinkServiceHook : HookContext() {
                 .flatMap { it.filterNotNull() }
                 .distinctBy(System::identityHashCode)
                 .forEach { callback ->
+                    callbackCount += 1
                     if (identityChanged) {
                         runCatching {
                             callMethod(callback, "onDeviceIdUpdate", device, deviceId)
@@ -1163,8 +1249,18 @@ internal class MiLinkServiceHook : HookContext() {
                         runCatching { callMethod(callback, "onBatteryLevel", device, battery) }
                     }
                     if (ancChanged) {
-                        runCatching { callMethod(callback, "onAncStateChanged", device, anc) }
-                        runCatching { callMethod(callback, "onReportAncState", device, anc) }
+                        if (runCatching {
+                                callMethod(callback, "onAncStateChanged", device, anc)
+                            }.isSuccess
+                        ) {
+                            ancChangedSuccess += 1
+                        }
+                        if (runCatching {
+                                callMethod(callback, "onReportAncState", device, anc)
+                            }.isSuccess
+                        ) {
+                            ancReportSuccess += 1
+                        }
                     }
                     if (connectionChanged) runCatching {
                         callMethod(
@@ -1175,6 +1271,13 @@ internal class MiLinkServiceHook : HookContext() {
                         )
                     }
                 }
+        }
+        if (ancChanged) {
+            ModuleLog.debug("AncTrace") {
+                "runtime ANC dispatched address=${maskBluetoothAddress(snapshot.address)} " +
+                    "mode=${snapshot.noiseMode} native=$anc callbacks=$callbackCount " +
+                    "onAncStateChanged=$ancChangedSuccess onReportAncState=$ancReportSuccess"
+            }
         }
         if (snapshot.sessionActive) {
             recordBridgeStage(address, BridgeStage.RUNTIME_NOTIFIED)
@@ -1231,6 +1334,20 @@ internal class MiLinkServiceHook : HookContext() {
         return MiLinkStateCodec.ancState(
             projectedMode?.let { state.withFeature(NoiseModeFeatureState(it)) } ?: state,
         )
+    }
+
+    private fun logAncProjection(
+        source: String,
+        address: String?,
+        state: EarbudState,
+        nativeState: Int,
+    ) {
+        ModuleLog.debug("AncTrace") {
+            "native state queried source=$source address=${maskBluetoothAddress(address)} " +
+                "adapter=${state.adapter?.id} mode=${state.noiseMode} native=$nativeState " +
+                "supported=${state.adapter?.supportedNoiseModes} " +
+                "presentation=${state.adapter?.presentationId?.value}"
+        }
     }
 
     private fun requestState() {

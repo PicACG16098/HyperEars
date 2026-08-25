@@ -301,8 +301,24 @@ internal class EarbudDeviceSession(
         scope.launch {
             runCatching {
                 transactionMutex.withLock {
+                    val previousNoiseMode = adapter.runtimeState().noiseMode
                     val result = adapter.executeControl(request)
-                    if (!result.accepted) return@withLock
+                    if (!result.accepted) {
+                        ModuleLog.debug("AncTrace") {
+                            "control rejected adapter=${adapter.id} " +
+                                "address=${maskBluetoothAddress(address)} " +
+                                "request=${request.description()}"
+                        }
+                        return@withLock
+                    }
+                    ModuleLog.debug("AncTrace") {
+                        "control accepted adapter=${adapter.id} " +
+                            "address=${maskBluetoothAddress(address)} " +
+                            "request=${request.description()} " +
+                            "mode=$previousNoiseMode->${adapter.runtimeState().noiseMode} " +
+                            "stateChanged=${result.stateChanged} " +
+                            "commands=${result.commands.size} readback=${result.readback.size}"
+                    }
                     sendCommands(
                         activeChannel = activeChannel,
                         commands = result.commands,
@@ -565,7 +581,18 @@ internal class EarbudDeviceSession(
             "received endpoint=${activeChannel.endpointId} bytes=${bytes.toHex()}"
         }
         val receivingAdapter = adapter
+        val previousNoiseMode = receivingAdapter.runtimeState().noiseMode
         val result = receivingAdapter.receive(bytes)
+        val reportedNoiseMode = receivingAdapter.runtimeState().noiseMode
+        if (previousNoiseMode != reportedNoiseMode) {
+            ModuleLog.debug("AncTrace") {
+                "protocol state adapter=${receivingAdapter.id} " +
+                    "address=${maskBluetoothAddress(address)} " +
+                    "endpoint=${activeChannel.endpointId} " +
+                    "mode=$previousNoiseMode->$reportedNoiseMode " +
+                    "supported=${receivingAdapter.effectiveSupportedNoiseModes()}"
+            }
+        }
         if (result.commands.isNotEmpty()) {
             sendCommands(
                 activeChannel = activeChannel,

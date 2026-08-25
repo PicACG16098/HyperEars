@@ -16,21 +16,14 @@ import dev.hyperears.integration.EdifierControlRequest
 import dev.hyperears.integration.EdifierMiLinkPresentationIds
 import dev.hyperears.integration.GameModeFeatureState
 import dev.hyperears.integration.MiLinkCardPresentationId
-import dev.hyperears.integration.NoiseMode
 import java.lang.ref.WeakReference
 
 /**
  * W820NB 双金标版 MiLink card presentation.
  *
- * Two responsibilities, both rendered only from authoritative [EarbudState]:
- *
- *  1. A "游戏模式" switch beside the native ANC title (verified protocol: query `0x08`, set `0x09`).
- *  2. Current noise-mode highlight on the stock three-state card. The ROM renders the native
- *     buttons but has no state for private-channel devices, so the active button is projected
- *     from the module's confirmed noise mode instead of the ROM's own model.
- *
- * The native transparency / ANC / off actions stay untouched; only their selection visuals are
- * driven from module state.
+ * Adds the verified "游戏模式" switch beside MiLink's native ANC controls. The stock
+ * transparency / ANC / off row remains entirely owned by MiLink, including its click listeners,
+ * state binding and selected visuals.
  */
 internal object EdifierW820NBDoubleGoldMiLinkCardAdapter : MiLinkCardAdapter {
     override val presentationId: MiLinkCardPresentationId =
@@ -115,7 +108,6 @@ internal object EdifierW820NBDoubleGoldMiLinkCardAdapter : MiLinkCardAdapter {
             ancCard = ancCard,
             accessory = accessory,
             controller = controller,
-            nativeItems = resolveNativeItems(host),
         ).also {
             controller.bind()
             ModuleLog.debug(
@@ -207,7 +199,6 @@ internal object EdifierW820NBDoubleGoldMiLinkCardAdapter : MiLinkCardAdapter {
             ancCard = host.container,
             accessory = accessory,
             controller = controller,
-            nativeItems = resolveNativeItems(host),
         ).also {
             controller.bind()
             ModuleLog.debug(
@@ -227,7 +218,6 @@ internal object EdifierW820NBDoubleGoldMiLinkCardAdapter : MiLinkCardAdapter {
         ancCard: View,
         accessory: View,
         private val controller: GameToggleController,
-        private val nativeItems: NativeAncItems,
     ) : MiLinkCardBinding {
         private val parent = WeakReference(parent)
         private val wrapper = WeakReference(wrapper)
@@ -245,7 +235,6 @@ internal object EdifierW820NBDoubleGoldMiLinkCardAdapter : MiLinkCardAdapter {
             accessory.visibility =
                 if (ancCard.isVisible && title.isVisible) View.VISIBLE else View.GONE
             controller.render(state, accessory)
-            nativeItems.render(state)
         }
 
         override fun unbind() {
@@ -253,7 +242,6 @@ internal object EdifierW820NBDoubleGoldMiLinkCardAdapter : MiLinkCardAdapter {
             val wrapper = wrapper.get() ?: return
             val title = title.get() ?: return
             controller.unbind()
-            nativeItems.clear()
             if (wrapper.parent !== parent) return
 
             (title.parent as? ViewGroup)?.removeView(title)
@@ -273,7 +261,6 @@ internal object EdifierW820NBDoubleGoldMiLinkCardAdapter : MiLinkCardAdapter {
         ancCard: LinearLayout,
         accessory: View,
         private val controller: GameToggleController,
-        private val nativeItems: NativeAncItems,
     ) : MiLinkCardBinding {
         private val parent = WeakReference(parent)
         private val wrapper = WeakReference(wrapper)
@@ -287,12 +274,10 @@ internal object EdifierW820NBDoubleGoldMiLinkCardAdapter : MiLinkCardAdapter {
             wrapper.visibility = ancCard.visibility
             accessory.visibility = if (ancCard.isVisible) View.VISIBLE else View.GONE
             controller.render(state, accessory)
-            nativeItems.render(state)
         }
 
         override fun unbind() {
             controller.unbind()
-            nativeItems.clear()
             val parent = parent.get() ?: return
             val wrapper = wrapper.get() ?: return
             val ancCard = ancCard.get() ?: return
@@ -353,42 +338,6 @@ internal object EdifierW820NBDoubleGoldMiLinkCardAdapter : MiLinkCardAdapter {
         }
     }
 
-    /** Current-mode highlight projection onto the stock three-state items (best effort). */
-    /**
-     * Current-mode highlight projection onto the stock three-state items.
-     *
-     * The ROM renders the native buttons but has no state for private-channel devices, and its
-     * item views do not visibly react to `isSelected`/`isActivated`. The active mode is therefore
-     * shown with a universal alpha contrast: the selected item stays at full alpha while the other
-     * two are dimmed. Works regardless of the ROM's selector drawables.
-     */
-    private class NativeAncItems(
-        private val items: List<Pair<View, NoiseMode>>,
-    ) {
-        fun render(state: EarbudState) {
-            val current = state.noiseMode?.let { mode ->
-                when (mode) {
-                    NoiseMode.ANC, NoiseMode.WIND -> NoiseMode.ANC
-                    else -> mode
-                }
-            }
-            items.forEach { (view, itemMode) ->
-                val selected = current == itemMode
-                view.isSelected = selected
-                view.isActivated = selected
-                view.alpha = if (selected) SELECTED_ALPHA else UNSELECTED_ALPHA
-            }
-        }
-
-        fun clear() {
-            items.forEach { (view, _) ->
-                view.isSelected = false
-                view.isActivated = false
-                view.alpha = 1.0f
-            }
-        }
-    }
-
     private fun createHostToggle(
         context: Context,
         hostClassLoader: ClassLoader,
@@ -404,56 +353,6 @@ internal object EdifierW820NBDoubleGoldMiLinkCardAdapter : MiLinkCardAdapter {
 
     private fun Context.dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
-
-    private fun resolveNativeItems(host: TitleAncCard): NativeAncItems = when (host.generation) {
-        NativeAncCardGeneration.ORIGINAL -> nativeItemsFor(host.container)
-        NativeAncCardGeneration.SELECT_CARD ->
-            selectNativeItemsFor(host.container as? LinearLayout)
-    }
-
-    private fun resolveNativeItems(host: EmbeddedAncCard): NativeAncItems =
-        nativeItemsFor(host.container)
-
-    private fun nativeItemsFor(container: View): NativeAncItems {
-        val noiseCancellation = container.findMiLinkView(ORIGINAL_ANC_NOISE_CANCELLATION_ID)
-        val transparency = container.findMiLinkView(ORIGINAL_ANC_TRANSPARENCY_ID)
-        val off = container.findMiLinkView(ORIGINAL_ANC_OFF_ID)
-        return NativeAncItems(
-            buildList {
-                noiseCancellation?.let { add(it to NoiseMode.ANC) }
-                transparency?.let { add(it to NoiseMode.TRANSPARENCY) }
-                off?.let { add(it to NoiseMode.OFF) }
-            },
-        )
-    }
-
-    /** Select-card items carry no stable ids; match their visible labels instead. */
-    private fun selectNativeItemsFor(container: LinearLayout?): NativeAncItems {
-        if (container == null) return NativeAncItems(emptyList())
-        val items = mutableListOf<Pair<View, NoiseMode>>()
-        for (index in 0 until container.childCount) {
-            val item = container.getChildAt(index)
-            val text = findDescendantText(item) ?: continue
-            val mode = when {
-                text.contains(NOISE_CANCELLATION_TEXT) -> NoiseMode.ANC
-                text.contains(TRANSPARENCY_TEXT) -> NoiseMode.TRANSPARENCY
-                text.contains(OFF_TEXT) || text.contains(STANDARD_TEXT) -> NoiseMode.OFF
-                else -> null
-            } ?: continue
-            items += item to mode
-        }
-        return NativeAncItems(items)
-    }
-
-    private fun findDescendantText(view: View): String? {
-        if (view is TextView) return view.text?.toString()?.trim().orEmpty().takeIf { it.isNotEmpty() }
-        if (view is ViewGroup) {
-            for (index in 0 until view.childCount) {
-                findDescendantText(view.getChildAt(index))?.let { return it }
-            }
-        }
-        return null
-    }
 
     private fun resolveTitleAncCard(root: View): TitleAncCard? =
         resolveSelectAncCard(root) ?: resolveOriginalTitleAncCard(root)
@@ -547,12 +446,6 @@ internal object EdifierW820NBDoubleGoldMiLinkCardAdapter : MiLinkCardAdapter {
     private const val EMBEDDED_HEADER_HORIZONTAL_PADDING_DP = 20
     private const val ENABLED_ALPHA = 1.0f
     private const val DISABLED_ALPHA = 0.45f
-    private const val SELECTED_ALPHA = 1.0f
-    private const val UNSELECTED_ALPHA = 0.45f
-    private const val NOISE_CANCELLATION_TEXT = "降噪"
-    private const val TRANSPARENCY_TEXT = "通透"
-    private const val OFF_TEXT = "关闭"
-    private const val STANDARD_TEXT = "标准"
 }
 
 /** Pure game-mode-to-switch policy; UI code contains no independent mode state. */
